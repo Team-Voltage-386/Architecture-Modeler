@@ -33,7 +33,12 @@ from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.services.reconcile_service import ReconciliationResult, ReconciliationService
 from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
-from frc_arch_modeler.ui.details_panel import DetailsPanel, EditDescriptionCommand, EditNameCommand
+from frc_arch_modeler.ui.details_panel import (
+    DetailsPanel,
+    EditDescriptionCommand,
+    EditNameCommand,
+    EditRequirementsCommand,
+)
 from frc_arch_modeler.ui.scan_worker import JavaScanWorker
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
 
@@ -645,6 +650,7 @@ class MainWindow(QMainWindow):
         self.details_panel.set_element(
             element,
             *self._matched_code_details(element.id) if element is not None else (),
+            subsystem_options=self._subsystem_options(),
         )
         self._update_compact_details()
 
@@ -712,9 +718,32 @@ class MainWindow(QMainWindow):
             return
         self.undo_stack.push(EditNameCommand(element, name, self._name_changed))
 
+    def edit_selected_requirements(self, requirement_ids) -> None:  # type: ignore[no-untyped-def]
+        """Apply selected command requirement IDs through the undo stack."""
+        selected = self.scene.selected_blocks()
+        if self.project is None or len(selected) != 1:
+            return
+        element = next(
+            (item for item in self.project.commands if item.id == selected[0].element_id), None
+        )
+        if element is None:
+            return
+        valid_ids = {subsystem.id for subsystem in self.project.subsystems}
+        normalized = list(dict.fromkeys(requirement_ids))
+        if any(requirement_id not in valid_ids for requirement_id in normalized):
+            return
+        if element.requirement_ids != normalized:
+            self.undo_stack.push(
+                EditRequirementsCommand(element, normalized, self._requirements_changed)
+            )
+
     def _name_changed(self) -> None:
         self._mark_dirty("Name updated")
         self._update_selected_element()
+
+    def _requirements_changed(self) -> None:
+        self._mark_dirty("Requirements updated")
+        self._render_with_current_scan()
 
     def _description_changed(self) -> None:
         self._mark_dirty("Description updated")
@@ -781,7 +810,10 @@ class MainWindow(QMainWindow):
         dock.setObjectName("detailsDock")
         self.details_dock = dock
         self.details_panel = DetailsPanel(
-            self.edit_selected_description, self.edit_selected_name, self._open_source_anchor
+            self.edit_selected_description,
+            self.edit_selected_name,
+            self.edit_selected_requirements,
+            self._open_source_anchor,
         )
         dock.setWidget(self.details_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
@@ -823,7 +855,10 @@ class MainWindow(QMainWindow):
             dialog.setModal(False)
             dialog.resize(440, 520)
             panel = DetailsPanel(
-                self.edit_selected_description, self.edit_selected_name, self._open_source_anchor
+                self.edit_selected_description,
+                self.edit_selected_name,
+                self.edit_selected_requirements,
+                self._open_source_anchor,
             )
             layout = QVBoxLayout(dialog)
             layout.addWidget(panel)
@@ -864,7 +899,16 @@ class MainWindow(QMainWindow):
         self.compact_details_panel.set_element(
             element,
             *self._matched_code_details(element.id) if element is not None else (),
+            subsystem_options=self._subsystem_options(),
         )
+
+    def _subsystem_options(self) -> list[tuple]:  # type: ignore[type-arg]
+        if self.project is None:
+            return []
+        return [
+            (subsystem.id, subsystem.name.effective or "Unnamed")
+            for subsystem in self.project.subsystems
+        ]
 
     def _build_inventory_dock(self) -> None:
         dock = QDockWidget("Code Inventory", self)

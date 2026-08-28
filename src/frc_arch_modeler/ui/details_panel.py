@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from uuid import UUID
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QUndoCommand
 from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -62,6 +66,27 @@ class EditNameCommand(QUndoCommand):
         self.on_change()
 
 
+class EditRequirementsCommand(QUndoCommand):
+    """Undoable replacement of a command's designed subsystem requirements."""
+
+    def __init__(
+        self, element: Command, requirement_ids: list[UUID], on_change: Callable[[], None]
+    ) -> None:
+        super().__init__("Edit requirements")
+        self.element = element
+        self.previous = list(element.requirement_ids)
+        self.requirement_ids = list(requirement_ids)
+        self.on_change = on_change
+
+    def redo(self) -> None:
+        self.element.requirement_ids = list(self.requirement_ids)
+        self.on_change()
+
+    def undo(self) -> None:
+        self.element.requirement_ids = list(self.previous)
+        self.on_change()
+
+
 class DetailsPanel(QWidget):
     """Shows code evidence beside the editable user-authored description."""
 
@@ -69,11 +94,13 @@ class DetailsPanel(QWidget):
         self,
         on_description_edit: Callable[[str | None], None],
         on_name_edit: Callable[[str], None],
+        on_requirements_edit: Callable[[list[UUID]], None],
         on_open_source: Callable[[SourceAnchor], None] | None = None,
     ) -> None:
         super().__init__()
         self._on_description_edit = on_description_edit
         self._on_name_edit = on_name_edit
+        self._on_requirements_edit = on_requirements_edit
         self._element: ArchitectureElement | None = None
         self._source_anchor: SourceAnchor | None = None
         self._code_name: str | None = None
@@ -95,6 +122,9 @@ class DetailsPanel(QWidget):
         self.design_description.setObjectName("designDescription")
         self.design_description.setAccessibleName("Proposed architecture description")
         self.design_description.setPlaceholderText("Optional proposed description")
+        self.requirements = QListWidget(self)
+        self.requirements.setObjectName("designRequirements")
+        self.requirements.setAccessibleName("Proposed command subsystem requirements")
         self.save_button = QPushButton("Apply Proposed Fields", self)
         self.revert_button = QPushButton("Revert Design Override", self)
         self.adopt_name_button = QPushButton("Adopt Code Name", self)
@@ -104,6 +134,7 @@ class DetailsPanel(QWidget):
         form.addRow("Design / proposed name", self.design_name)
         form.addRow("From code", self.code_description)
         form.addRow("Design / proposed", self.design_description)
+        form.addRow("Required subsystems", self.requirements)
         layout.addWidget(self.title)
         layout.addLayout(form)
         layout.addWidget(self.save_button)
@@ -123,6 +154,7 @@ class DetailsPanel(QWidget):
         code_name: str | None = None,
         code_description: str | None = None,
         code_anchor: SourceAnchor | None = None,
+        subsystem_options: list[tuple[UUID, str]] | None = None,
     ) -> None:
         self._element = element
         self._source_anchor = code_anchor
@@ -133,6 +165,8 @@ class DetailsPanel(QWidget):
             self.code_name.setText("No code-derived name available.")
             self.design_name.clear()
             self.design_description.clear()
+            self.requirements.clear()
+            self.requirements.setVisible(False)
             self._set_editing_enabled(False)
             self.open_source_button.setEnabled(False)
             self.adopt_name_button.setEnabled(False)
@@ -147,6 +181,7 @@ class DetailsPanel(QWidget):
             or "No code-derived description available."
         )
         self.design_description.setPlainText(element.description.design or "")
+        self._set_requirement_options(element, subsystem_options or [])
         self._set_editing_enabled(True)
         self.open_source_button.setEnabled(
             code_anchor is not None and self._on_open_source is not None
@@ -169,6 +204,8 @@ class DetailsPanel(QWidget):
             f"Symbol: {anchor.qualified_symbol}\nConfidence: exact"
         )
         self.design_description.clear()
+        self.requirements.clear()
+        self.requirements.setVisible(False)
         self._set_editing_enabled(False)
         self.open_source_button.setEnabled(self._on_open_source is not None)
         self.adopt_name_button.setEnabled(False)
@@ -182,6 +219,23 @@ class DetailsPanel(QWidget):
         self.save_button.setEnabled(enabled)
         self.revert_button.setEnabled(enabled)
 
+    def _set_requirement_options(
+        self, element: ArchitectureElement, subsystem_options: list[tuple[UUID, str]]
+    ) -> None:
+        self.requirements.clear()
+        is_command = isinstance(element, Command)
+        self.requirements.setVisible(is_command)
+        if not is_command:
+            return
+        selected = set(element.requirement_ids)
+        for subsystem_id, name in subsystem_options:
+            item = QListWidgetItem(name, self.requirements)
+            item.setData(Qt.ItemDataRole.UserRole, str(subsystem_id))
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(
+                Qt.CheckState.Checked if subsystem_id in selected else Qt.CheckState.Unchecked
+            )
+
     def _apply_description(self) -> None:
         if self._element is not None:
             name = self.design_name.text().strip()
@@ -189,6 +243,14 @@ class DetailsPanel(QWidget):
                 self._on_name_edit(name)
             description = self.design_description.toPlainText().strip() or None
             self._on_description_edit(description)
+            if isinstance(self._element, Command):
+                requirement_ids = [
+                    UUID(item.data(Qt.ItemDataRole.UserRole))
+                    for index in range(self.requirements.count())
+                    if (item := self.requirements.item(index)).checkState()
+                    == Qt.CheckState.Checked
+                ]
+                self._on_requirements_edit(requirement_ids)
 
     def _revert_description(self) -> None:
         if self._element is not None:

@@ -146,6 +146,29 @@ def test_name_edit_undo_and_redo(qtbot) -> None:
     assert window.project.commands[0].name.design == "Driver Control"
 
 
+def test_command_requirement_edit_undo_and_redo(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    window.add_command("Teleop Drive")
+    command_block = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock) and item.kind == "command"
+    )
+    command_block.setSelected(True)
+
+    window.edit_selected_requirements([window.project.subsystems[0].id])
+
+    assert window.project.commands[0].requirement_ids == [window.project.subsystems[0].id]
+    window.undo_stack.undo()
+    assert window.project.commands[0].requirement_ids == []
+    window.undo_stack.redo()
+    assert window.project.commands[0].requirement_ids == [window.project.subsystems[0].id]
+
+
 def test_design_edit_creates_recoverable_draft_after_model_is_saved(qtbot, tmp_path) -> None:
     create_application([])
     window = MainWindow()
