@@ -30,7 +30,13 @@ class BindingStore:
         destination.parent.mkdir(parents=True, exist_ok=True)
         bindings = {
             str(element.id): element.code_binding.to_dict()
-            for element in [*project.commands, *project.subsystems]
+            for element in [
+                *project.commands,
+                *project.subsystems,
+                *project.devices,
+                *project.triggers,
+                *project.relationships,
+            ]
             if element.code_binding is not None
         }
         payload = json.dumps(
@@ -69,7 +75,16 @@ class BindingStore:
 
     def apply(self, project: ArchitectureProject) -> None:
         """Overlay sidecar mappings onto elements that still exist in the model."""
-        elements = {element.id: element for element in [*project.commands, *project.subsystems]}
+        elements = {
+            element.id: element
+            for element in [
+                *project.commands,
+                *project.subsystems,
+                *project.devices,
+                *project.triggers,
+                *project.relationships,
+            ]
+        }
         for element_id, anchor in self.load().items():
             if element_id in elements:
                 elements[element_id].code_binding = anchor

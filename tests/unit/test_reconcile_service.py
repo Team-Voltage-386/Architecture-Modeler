@@ -2,11 +2,13 @@ from frc_arch_modeler.domain.model import (
     ArchitectureProject,
     Command,
     ComparisonState,
+    Device,
     FieldValue,
     SourceAnchor,
     Subsystem,
+    TriggerBinding,
 )
-from frc_arch_modeler.importers.base import ScannedSymbol, ScanResult
+from frc_arch_modeler.importers.base import ScannedDevice, ScannedSymbol, ScannedTrigger, ScanResult
 from frc_arch_modeler.services.reconcile_service import ReconciliationService
 
 
@@ -52,6 +54,61 @@ def test_reconciliation_marks_explicitly_bound_renamed_symbol_as_modified(tmp_pa
 
     assert result.matches == {command.id: bound}
     assert result.statuses[command.id] == ComparisonState.MODIFIED
+
+
+def test_reconciliation_rolls_device_and_trigger_evidence_into_matched_status(tmp_path) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    command = Command(name=FieldValue(design="DriveCommand"))
+    project = ArchitectureProject(
+        name="Robot",
+        subsystems=[drive],
+        commands=[command],
+        devices=[
+            Device(
+                name=FieldValue(design="Left motor"),
+                device_type=FieldValue(design="SparkMax"),
+                owner_subsystem_id=drive.id,
+                mode=FieldValue(design="REAL"),
+            )
+        ],
+        triggers=[
+            TriggerBinding(
+                expression=FieldValue(design="Driver A"),
+                activation=FieldValue(design="onTrue"),
+                command_id=command.id,
+            )
+        ],
+    )
+    drive_symbol = _symbol("subsystem", "Drive")
+    command_symbol = _symbol("command", "DriveCommand")
+    scan = ScanResult(
+        tmp_path,
+        [drive_symbol, command_symbol],
+        triggers=[
+            ScannedTrigger(
+                "driver.a()",
+                "onTrue",
+                "new DriveCommand(drive)",
+                SourceAnchor("src/RobotContainer.java", "robot.Container", 8, 8),
+            )
+        ],
+        devices=[
+            ScannedDevice(
+                "SparkMax",
+                "4",
+                drive_symbol.anchor.qualified_symbol,
+                SourceAnchor("src/Drive.java", drive_symbol.anchor.qualified_symbol, 5, 5),
+                mode="REAL",
+            )
+        ],
+    )
+
+    result = ReconciliationService().reconcile(project, scan)
+
+    assert result.statuses == {
+        drive.id: ComparisonState.MATCHED,
+        command.id: ComparisonState.MATCHED,
+    }
 
 
 def _symbol(kind: str, name: str) -> ScannedSymbol:
