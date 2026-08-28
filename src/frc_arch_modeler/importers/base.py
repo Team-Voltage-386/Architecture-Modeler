@@ -27,12 +27,24 @@ class ScanDiagnostic:
     relative_path: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ScannedRelationship:
+    """A source-derived relationship with the original expression retained as evidence."""
+
+    kind: str
+    source_symbol: str
+    target_expression: str
+    anchor: SourceAnchor
+    confidence: str = "exact"
+
+
 @dataclass(slots=True)
 class ScanResult:
     """Current, regenerable code facts from one robot-project scan."""
 
     project_root: Path
     symbols: list[ScannedSymbol] = field(default_factory=list)
+    relationships: list[ScannedRelationship] = field(default_factory=list)
     diagnostics: list[ScanDiagnostic] = field(default_factory=list)
     files_scanned: int = 0
 

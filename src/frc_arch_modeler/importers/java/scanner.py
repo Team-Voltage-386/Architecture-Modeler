@@ -7,7 +7,12 @@ import re
 from pathlib import Path
 
 from frc_arch_modeler.domain.model import SourceAnchor
-from frc_arch_modeler.importers.base import ScanDiagnostic, ScannedSymbol, ScanResult
+from frc_arch_modeler.importers.base import (
+    ScanDiagnostic,
+    ScannedRelationship,
+    ScannedSymbol,
+    ScanResult,
+)
 
 PACKAGE_PATTERN = re.compile(r"^\s*package\s+([\w.]+)\s*;", re.MULTILINE)
 TYPE_PATTERN = re.compile(
@@ -18,6 +23,12 @@ TYPE_PATTERN = re.compile(
 COMMAND_METHOD_PATTERN = re.compile(
     r"^\s*(?:public\s+|protected\s+|private\s+|static\s+|final\s+)*Command\s+"
     r"(?P<name>\w+)\s*\(",
+    re.MULTILINE,
+)
+REQUIREMENT_PATTERN = re.compile(r"\baddRequirements\s*\((?P<arguments>[^)]*)\)")
+LIFECYCLE_PATTERN = re.compile(
+    r"@Override\s+(?:public|protected)\s+(?:void|boolean)\s+"
+    r"(?P<name>initialize|execute|isFinished|end)\s*\(",
     re.MULTILINE,
 )
 EXCLUDED_DIRECTORY_NAMES = {".gradle", "build", "bin", "vendordeps"}
@@ -70,17 +81,25 @@ class JavaProjectScanner:
             declaration = match.group("declaration")
             kind = self._type_kind(declaration)
             if kind:
-                result.symbols.append(
-                    self._symbol(
-                        kind,
-                        match.group("name"),
-                        package,
+                symbol = self._symbol(
+                    kind,
+                    match.group("name"),
+                    package,
+                    source,
+                    match.start(),
+                    relative_path,
+                    source_hash,
+                )
+                result.symbols.append(symbol)
+                if kind == "command":
+                    self._scan_command_body(
                         source,
-                        match.start(),
+                        match.end() - 1,
+                        symbol,
                         relative_path,
                         source_hash,
+                        result,
                     )
-                )
         for match in COMMAND_METHOD_PATTERN.finditer(source):
             result.symbols.append(
                 self._symbol(
@@ -93,6 +112,72 @@ class JavaProjectScanner:
                     source_hash,
                 )
             )
+
+    def _scan_command_body(
+        self,
+        source: str,
+        opening_brace: int,
+        command: ScannedSymbol,
+        relative_path: str,
+        source_hash: str,
+        result: ScanResult,
+    ) -> None:
+        body_end = self._matching_brace(source, opening_brace)
+        if body_end is None:
+            result.diagnostics.append(
+                ScanDiagnostic(
+                    "warning",
+                    f"Unclosed class body for command {command.name}.",
+                    relative_path,
+                )
+            )
+            return
+        body = source[opening_brace + 1 : body_end]
+        body_offset = opening_brace + 1
+        for match in REQUIREMENT_PATTERN.finditer(body):
+            for argument in (item.strip() for item in match.group("arguments").split(",")):
+                if argument:
+                    result.relationships.append(
+                        ScannedRelationship(
+                            kind="requires",
+                            source_symbol=command.anchor.qualified_symbol,
+                            target_expression=argument,
+                            anchor=self._anchor_at_offset(
+                                command.anchor.qualified_symbol,
+                                source,
+                                body_offset + match.start(),
+                                relative_path,
+                                source_hash,
+                            ),
+                        )
+                    )
+        for match in LIFECYCLE_PATTERN.finditer(body):
+            lifecycle_name = match.group("name")
+            result.symbols.append(
+                ScannedSymbol(
+                    kind="lifecycle_method",
+                    name=lifecycle_name,
+                    anchor=self._anchor_at_offset(
+                        f"{command.anchor.qualified_symbol}#{lifecycle_name}",
+                        source,
+                        body_offset + match.start(),
+                        relative_path,
+                        source_hash,
+                    ),
+                )
+            )
+
+    @staticmethod
+    def _matching_brace(source: str, opening_brace: int) -> int | None:
+        depth = 0
+        for index in range(opening_brace, len(source)):
+            if source[index] == "{":
+                depth += 1
+            elif source[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    return index
+        return None
 
     @staticmethod
     def _type_kind(declaration: str) -> str | None:
@@ -115,16 +200,28 @@ class JavaProjectScanner:
         relative_path: str,
         source_hash: str,
     ) -> ScannedSymbol:
-        line = source.count("\n", 0, offset) + 1
         qualified_name = f"{package}.{name}" if package else name
         return ScannedSymbol(
             kind=kind,
             name=name,
-            anchor=SourceAnchor(
-                relative_path=relative_path,
-                qualified_symbol=qualified_name,
-                start_line=line,
-                end_line=line,
-                source_hash=source_hash,
+            anchor=JavaProjectScanner._anchor_at_offset(
+                qualified_name, source, offset, relative_path, source_hash
             ),
+        )
+
+    @staticmethod
+    def _anchor_at_offset(
+        qualified_symbol: str,
+        source: str,
+        offset: int,
+        relative_path: str,
+        source_hash: str,
+    ) -> SourceAnchor:
+        line = source.count("\n", 0, offset) + 1
+        return SourceAnchor(
+            relative_path=relative_path,
+            qualified_symbol=qualified_symbol,
+            start_line=line,
+            end_line=line,
+            source_hash=source_hash,
         )
