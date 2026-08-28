@@ -12,6 +12,10 @@ htmlcov/
 # Virtual environments and local tooling
 .venv/
 venv/
+.qt-env/
+.runtime-env/
+.runtime-env-setup.out
+.runtime-env-setup.err
 .env
 
 # Qt and application-local state
