@@ -38,6 +38,7 @@ class MainWindow(QMainWindow):
         self.export_service = ArchitectureExportService()
         self.undo_stack = QUndoStack(self)
         self.scene = ArchitectureScene(self)
+        self.scene.layout_changed.connect(self._layout_changed)
         self._build_toolbar()
         self._build_canvas()
         self._build_details_dock()
@@ -74,17 +75,23 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.redo_action)
         toolbar.addSeparator()
         self.auto_layout_action = toolbar.addAction("Auto Layout", self.auto_layout)
+        self.zoom_to_fit_action = toolbar.addAction("Zoom to Fit", self.zoom_to_fit)
         self.minimize_action = toolbar.addAction("Minimize Selected", self.minimize_selected)
         self.restore_action = toolbar.addAction("Restore Selected", self.restore_selected)
-        for action in (self.auto_layout_action, self.minimize_action, self.restore_action):
+        for action in (
+            self.auto_layout_action,
+            self.zoom_to_fit_action,
+            self.minimize_action,
+            self.restore_action,
+        ):
             action.setEnabled(False)
 
     def _build_canvas(self) -> None:
-        canvas = QGraphicsView(self.scene, self)
-        canvas.setRenderHint(QPainter.RenderHint.Antialiasing)
-        canvas.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-        canvas.setBackgroundBrush(Qt.GlobalColor.black)
-        self.setCentralWidget(canvas)
+        self.canvas = QGraphicsView(self.scene, self)
+        self.canvas.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.canvas.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.canvas.setBackgroundBrush(Qt.GlobalColor.black)
+        self.setCentralWidget(self.canvas)
         self.scene.selectionChanged.connect(self._update_selected_element)
 
     def set_project(self, project: ArchitectureProject | None) -> None:
@@ -96,6 +103,7 @@ class MainWindow(QMainWindow):
         self.new_subsystem_action.setEnabled(project is not None)
         self.save_model_action.setEnabled(project is not None)
         self.auto_layout_action.setEnabled(project is not None)
+        self.zoom_to_fit_action.setEnabled(project is not None)
         self.minimize_action.setEnabled(project is not None)
         self.restore_action.setEnabled(project is not None)
         self.export_architecture_action.setEnabled(project is not None)
@@ -178,6 +186,11 @@ class MainWindow(QMainWindow):
         self.scene.render_project(self.project)
         self._mark_dirty("Auto-layout applied")
 
+    def zoom_to_fit(self) -> None:
+        """Fit the current design into the visible canvas without changing it."""
+        if self.project is not None and not self.scene.sceneRect().isEmpty():
+            self.canvas.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+
     def minimize_selected(self) -> None:
         if self.scene.set_selected_minimized(True):
             self._mark_dirty("Selected items minimized")
@@ -189,6 +202,9 @@ class MainWindow(QMainWindow):
     def _mark_dirty(self, message: str) -> None:
         self.is_dirty = True
         self.statusBar().showMessage(message)
+
+    def _layout_changed(self) -> None:
+        self._mark_dirty("Canvas layout updated")
 
     def _update_selected_element(self) -> None:
         if self.project is None:

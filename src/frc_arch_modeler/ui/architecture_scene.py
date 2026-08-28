@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QGraphicsPathItem,
@@ -56,6 +56,29 @@ class ArchitectureBlock(QGraphicsRectItem):
 
 class ArchitectureScene(QGraphicsScene):
     """Render design elements in semantic command and subsystem regions."""
+
+    layout_changed = Signal()
+
+    def __init__(self, parent: object | None = None) -> None:
+        super().__init__(parent)
+        self._drag_start_positions: dict[UUID, QPointF] = {}
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_positions = {
+                block.element_id: QPointF(block.pos()) for block in self.selected_blocks()
+            }
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        super().mouseReleaseEvent(event)
+        if any(
+            block.pos() != position
+            for block in self.selected_blocks()
+            if (position := self._drag_start_positions.get(block.element_id)) is not None
+        ):
+            self.layout_changed.emit()
+        self._drag_start_positions = {}
 
     def render_project(
         self, project: ArchitectureProject | None, layout: dict[str, dict[str, Any]] | None = None
