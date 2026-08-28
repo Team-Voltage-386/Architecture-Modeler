@@ -22,6 +22,7 @@ from frc_arch_modeler.domain.model import ArchitectureProject
 from frc_arch_modeler.importers.base import ScanResult
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.persistence.layout_store import LayoutStore
+from frc_arch_modeler.services.change_request_export import ChangeRequestExportService
 from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.services.reconcile_service import ReconciliationResult, ReconciliationService
@@ -46,6 +47,7 @@ class MainWindow(QMainWindow):
         self.is_dirty = False
         self.project_service = ProjectService()
         self.export_service = ArchitectureExportService()
+        self.change_request_export_service = ChangeRequestExportService()
         self.undo_stack = QUndoStack(self)
         self.scene = ArchitectureScene(self)
         self.scene.layout_changed.connect(self._layout_changed)
@@ -70,7 +72,9 @@ class MainWindow(QMainWindow):
         self.refresh_code_action.setEnabled(False)
         self.compare_action = toolbar.addAction("Compare Changes", self.compare_changes)
         self.compare_action.setEnabled(False)
-        self.export_change_request_action = toolbar.addAction("Export AI Change Request")
+        self.export_change_request_action = toolbar.addAction(
+            "Export AI Change Request", self._prompt_export_change_request
+        )
         self.export_change_request_action.setEnabled(False)
         self.export_architecture_action = toolbar.addAction(
             "Export Architecture", self._prompt_export_architecture
@@ -122,6 +126,9 @@ class MainWindow(QMainWindow):
         self.restore_action.setEnabled(project is not None)
         self.export_architecture_action.setEnabled(project is not None)
         self.compare_action.setEnabled(project is not None and self.last_scan is not None)
+        self.export_change_request_action.setEnabled(
+            project is not None and self.last_scan is not None
+        )
         if project is None:
             self.is_dirty = False
             self.statusBar().showMessage("No robot project connected")
@@ -172,6 +179,24 @@ class MainWindow(QMainWindow):
             raise RuntimeError("Choose a folder for the architecture export.")
         destination = self.export_service.export(export_root, self.project)
         self.statusBar().showMessage(f"Exported architecture: {destination}")
+        return destination
+
+    def export_change_request(self, root: Path | None = None) -> Path:
+        """Export the current design/code delta as an implementation-ready Markdown brief."""
+        if self.project is None or self.last_scan is None:
+            raise RuntimeError(
+                "Create a model and connect a robot project before exporting changes."
+            )
+        export_root = Path(root) if root is not None else self.model_root
+        if export_root is None:
+            raise RuntimeError("Choose a folder for the change-request export.")
+        comparison = self.reconciliation or ReconciliationService().reconcile(
+            self.project, self.last_scan
+        )
+        destination = self.change_request_export_service.export(
+            export_root, self.project, self.last_scan, comparison
+        )
+        self.statusBar().showMessage(f"Exported AI change request: {destination}")
         return destination
 
     def connect_robot_project(self, root: Path) -> ScanResult:
@@ -405,6 +430,15 @@ class MainWindow(QMainWindow):
                 return
             root = Path(selected_root)
         self.export_architecture(root)
+
+    def _prompt_export_change_request(self) -> None:
+        root = self.model_root
+        if root is None:
+            selected_root = QFileDialog.getExistingDirectory(self, "Export AI change request")
+            if not selected_root:
+                return
+            root = Path(selected_root)
+        self.export_change_request(root)
 
     def _prompt_connect_robot_project(self) -> None:
         root = QFileDialog.getExistingDirectory(self, "Connect Java/WPILib robot project")
