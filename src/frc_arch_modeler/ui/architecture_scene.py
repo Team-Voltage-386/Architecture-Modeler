@@ -177,7 +177,9 @@ class ArchitectureScene(QGraphicsScene):
             for subsystem_id in command.requirement_ids:
                 subsystem_block = blocks.get(subsystem_id)
                 if subsystem_block:
-                    self._add_requirement_edge(command_block, subsystem_block)
+                    self._add_requirement_edge(
+                        command_block, subsystem_block, evidence="Designed requirement"
+                    )
         if scan is not None:
             self._add_imported_code(
                 scan, len(project.commands), len(project.subsystems), code_only_symbols
@@ -285,7 +287,12 @@ class ArchitectureScene(QGraphicsScene):
             target = relationship.target_expression.rsplit(".", maxsplit=1)[-1].casefold()
             subsystem = imported_subsystems.get(target)
             if command is not None and subsystem is not None:
-                self._add_requirement_edge(command, subsystem, imported=True)
+                self._add_requirement_edge(
+                    command,
+                    subsystem,
+                    imported=True,
+                    evidence=f"addRequirements({relationship.target_expression})",
+                )
 
     def _add_imported_block(
         self,
@@ -402,7 +409,11 @@ class ArchitectureScene(QGraphicsScene):
                 edge.setPen(active_pen)
 
     def _add_requirement_edge(
-        self, command: ArchitectureBlock, subsystem: ArchitectureBlock, imported: bool = False
+        self,
+        command: ArchitectureBlock,
+        subsystem: ArchitectureBlock,
+        imported: bool = False,
+        evidence: str = "Requirement relationship",
     ) -> None:
         start = command.sceneBoundingRect().bottomLeft() + QPointF(BLOCK_WIDTH / 2, 0)
         end = subsystem.sceneBoundingRect().topLeft() + QPointF(BLOCK_WIDTH / 2, 0)
@@ -415,6 +426,7 @@ class ArchitectureScene(QGraphicsScene):
         edge.setPen(default_pen)
         edge.setData(0, {command.element_id, subsystem.element_id})
         edge.setData(1, default_pen)
+        edge.setToolTip(evidence)
         edge.setZValue(-1)
         self.addItem(edge)
         self._edges.append(edge)

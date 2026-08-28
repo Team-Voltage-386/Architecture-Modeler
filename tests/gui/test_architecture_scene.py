@@ -29,7 +29,9 @@ def test_scene_places_commands_and_subsystems_and_draws_requirements(qapp) -> No
     assert subsystem_block.pos().y() == SUBSYSTEM_Y
     assert subsystem_block.pen().color().name() == VOLTAGE_BLUE.lower()
     assert command_block.pen().color().name() == VOLTAGE_YELLOW.lower()
-    assert len([item for item in scene.items() if isinstance(item, QGraphicsPathItem)]) == 1
+    edges = [item for item in scene.items() if isinstance(item, QGraphicsPathItem)]
+    assert len(edges) == 1
+    assert edges[0].toolTip() == "Designed requirement"
 
 
 def test_scene_round_trips_block_layout_and_minimized_state(qapp) -> None:
@@ -79,7 +81,9 @@ def test_scene_renders_code_import_as_separate_architecture_layer(qapp) -> None:
     assert imported_subsystem.caption.toPlainText() == "Imported SUBSYSTEM"
     assert "driver.a() · onTrue" in imported_command.summary.toPlainText()
     assert "SparkMax: 4, MotorType.kBrushless" in imported_subsystem.summary.toPlainText()
-    assert len([item for item in scene.items() if isinstance(item, QGraphicsPathItem)]) == 1
+    edges = [item for item in scene.items() if isinstance(item, QGraphicsPathItem)]
+    assert len(edges) == 1
+    assert edges[0].toolTip() == "addRequirements(drive)"
 
 
 def test_selection_emphasizes_only_connected_requirement_edges(qapp) -> None:
