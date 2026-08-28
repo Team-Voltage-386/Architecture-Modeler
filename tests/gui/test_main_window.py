@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtGui import QCloseEvent, QPalette
+from PySide6.QtGui import QCloseEvent, QKeySequence, QPalette
 from PySide6.QtWidgets import QDockWidget, QMessageBox
 
 from frc_arch_modeler.app import create_application
@@ -24,6 +24,10 @@ def test_main_window_has_planned_regions(qtbot) -> None:
     input_selector = "QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QComboBox {"
     assert input_selector in app.styleSheet()
     assert app.palette().color(QPalette.ColorRole.PlaceholderText).name() == MUTED_TEXT.lower()
+    assert window.search_field.accessibleName() == "Search architecture evidence"
+    assert window.canvas.accessibleName() == "Architecture canvas"
+    assert window.find_shortcut.key() == QKeySequence.StandardKey.Find
+    assert window.save_model_action.shortcut() == QKeySequence.StandardKey.Save
 
 
 def test_new_model_and_design_elements_update_the_canvas(qtbot) -> None:

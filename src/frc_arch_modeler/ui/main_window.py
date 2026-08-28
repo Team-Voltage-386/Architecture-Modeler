@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread
-from PySide6.QtGui import QCloseEvent, QPainter, QUndoStack
+from PySide6.QtGui import QCloseEvent, QKeySequence, QPainter, QShortcut, QUndoStack
 from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
@@ -81,8 +81,11 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
         self.new_model_action = toolbar.addAction("New Model", self._prompt_new_project)
+        self.new_model_action.setShortcut(QKeySequence.StandardKey.New)
         self.open_model_action = toolbar.addAction("Open Model", self._prompt_open_project)
+        self.open_model_action.setShortcut(QKeySequence.StandardKey.Open)
         self.save_model_action = toolbar.addAction("Save Model", self._prompt_save_project)
+        self.save_model_action.setShortcut(QKeySequence.StandardKey.Save)
         self.save_model_action.setEnabled(False)
         self.connect_robot_action = toolbar.addAction(
             "Connect Robot Project", self._prompt_connect_robot_project
@@ -90,6 +93,7 @@ class MainWindow(QMainWindow):
         self.refresh_code_action = toolbar.addAction(
             "Refresh Code", self._refresh_robot_project_async
         )
+        self.refresh_code_action.setShortcut(QKeySequence(Qt.Key.Key_F5))
         self.refresh_code_action.setEnabled(False)
         self.cancel_scan_action = toolbar.addAction("Cancel Scan", self.cancel_scan)
         self.cancel_scan_action.setEnabled(False)
@@ -106,6 +110,7 @@ class MainWindow(QMainWindow):
         self.export_architecture_action = toolbar.addAction(
             "Export Architecture", self._prompt_export_architecture
         )
+        self.export_architecture_action.setShortcut(QKeySequence("Ctrl+E"))
         self.export_architecture_action.setEnabled(False)
         self.new_command_action = toolbar.addAction("New Command", self._prompt_new_command)
         self.new_command_action.setEnabled(False)
@@ -113,10 +118,13 @@ class MainWindow(QMainWindow):
         self.new_subsystem_action.setEnabled(False)
         self.search_field = QLineEdit(self)
         self.search_field.setObjectName("architectureSearch")
+        self.search_field.setAccessibleName("Search architecture evidence")
         self.search_field.setPlaceholderText("Search architecture")
         self.search_field.setClearButtonEnabled(True)
         self.search_field.textChanged.connect(self.scene.filter_blocks)
         toolbar.addWidget(self.search_field)
+        self.find_shortcut = QShortcut(QKeySequence.StandardKey.Find, self)
+        self.find_shortcut.activated.connect(self.search_field.setFocus)
         self._status_filter_actions = {}
         for state, label in (
             (ComparisonState.MATCHED, "Matched"),
@@ -177,6 +185,7 @@ class MainWindow(QMainWindow):
 
     def _build_canvas(self) -> None:
         self.canvas = QGraphicsView(self.scene, self)
+        self.canvas.setAccessibleName("Architecture canvas")
         self.canvas.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.canvas.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.canvas.setBackgroundBrush(Qt.GlobalColor.black)
