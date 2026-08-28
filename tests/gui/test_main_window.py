@@ -449,3 +449,14 @@ def test_close_ignores_dirty_model_when_user_cancels(qtbot, monkeypatch) -> None
 
     assert not event.isAccepted()
     window.is_dirty = False
+
+
+def test_close_without_a_worker_accepts_immediately(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert event.isAccepted()

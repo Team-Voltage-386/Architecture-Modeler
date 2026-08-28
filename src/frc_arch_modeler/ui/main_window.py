@@ -164,7 +164,10 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Protect unsaved design and canvas edits when the main window closes."""
         if not self.is_dirty or not self.isVisible():
-            event.accept()
+            if self._stop_background_scan_for_close():
+                event.accept()
+            else:
+                event.ignore()
             return
         choice = QMessageBox.warning(
             self,
@@ -176,7 +179,10 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Save,
         )
         if choice == QMessageBox.StandardButton.Discard:
-            event.accept()
+            if self._stop_background_scan_for_close():
+                event.accept()
+            else:
+                event.ignore()
             return
         if choice == QMessageBox.StandardButton.Save:
             try:
@@ -184,9 +190,25 @@ class MainWindow(QMainWindow):
             except OSError as error:
                 QMessageBox.critical(self, "Could not save model", str(error))
             if not self.is_dirty:
-                event.accept()
+                if self._stop_background_scan_for_close():
+                    event.accept()
+                else:
+                    event.ignore()
                 return
         event.ignore()
+
+    def _stop_background_scan_for_close(self) -> bool:
+        """Cancel a live worker before destroying its Qt owner during window shutdown."""
+        if self._scan_thread is None:
+            return True
+        self.cancel_scan()
+        if not self._scan_thread.wait(1500):
+            self.statusBar().showMessage("Waiting for the code scan to cancel before closing.")
+            return False
+        self._scan_thread = None
+        self._scan_worker = None
+        self._pending_scan_root = None
+        return True
 
     def _build_canvas(self) -> None:
         self.canvas = QGraphicsView(self.scene, self)
