@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread
-from PySide6.QtGui import QCloseEvent, QKeySequence, QPainter, QShortcut, QUndoStack
+from PySide6.QtGui import QCloseEvent, QKeySequence, QPainter, QShortcut, QUndoCommand, QUndoStack
 from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
@@ -43,6 +43,28 @@ from frc_arch_modeler.ui.scan_worker import JavaScanWorker
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
 
 DETAILS_DOCK_BREAKPOINT = 1280
+
+
+class AddDesignEntityCommand(QUndoCommand):
+    """Undoable insertion of one user-authored architecture entity."""
+
+    def __init__(
+        self, collection: list, entity: object, label: str, on_change: Callable[[], None]
+    ) -> None:
+        super().__init__(f"Add {label}")
+        self.collection = collection
+        self.entity = entity
+        self.on_change = on_change
+
+    def redo(self) -> None:
+        if self.entity not in self.collection:
+            self.collection.append(self.entity)
+        self.on_change()
+
+    def undo(self) -> None:
+        if self.entity in self.collection:
+            self.collection.remove(self.entity)
+        self.on_change()
 
 
 class MainWindow(QMainWindow):
@@ -613,15 +635,25 @@ class MainWindow(QMainWindow):
         """Add a command and refresh its deterministic initial canvas position."""
         if self.project is None:
             raise RuntimeError("Create or open a model before adding a command.")
-        self.project_service.add_command(self.project, name)
-        self._refresh_after_edit()
+        command = self.project_service.add_command(self.project, name)
+        self.project.commands.remove(command)
+        self.undo_stack.push(
+            AddDesignEntityCommand(
+                self.project.commands, command, "command", self._refresh_after_edit
+            )
+        )
 
     def add_subsystem(self, name: str) -> None:
         """Add a subsystem and refresh its deterministic initial canvas position."""
         if self.project is None:
             raise RuntimeError("Create or open a model before adding a subsystem.")
-        self.project_service.add_subsystem(self.project, name)
-        self._refresh_after_edit()
+        subsystem = self.project_service.add_subsystem(self.project, name)
+        self.project.subsystems.remove(subsystem)
+        self.undo_stack.push(
+            AddDesignEntityCommand(
+                self.project.subsystems, subsystem, "subsystem", self._refresh_after_edit
+            )
+        )
 
     def add_device(
         self, owner_subsystem_id, name: str, device_type: str, mode: str | None = None
@@ -629,8 +661,13 @@ class MainWindow(QMainWindow):
         """Add a proposed hardware device and surface it on its subsystem block."""
         if self.project is None:
             raise RuntimeError("Create or open a model before adding a device.")
-        self.project_service.add_device(self.project, owner_subsystem_id, name, device_type, mode)
-        self._refresh_after_edit()
+        device = self.project_service.add_device(
+            self.project, owner_subsystem_id, name, device_type, mode
+        )
+        self.project.devices.remove(device)
+        self.undo_stack.push(
+            AddDesignEntityCommand(self.project.devices, device, "device", self._refresh_after_edit)
+        )
 
     def add_trigger(
         self, command_id, expression: str, activation: str
@@ -638,8 +675,13 @@ class MainWindow(QMainWindow):
         """Add a proposed trigger binding and surface it on its command block."""
         if self.project is None:
             raise RuntimeError("Create or open a model before adding a trigger.")
-        self.project_service.add_trigger(self.project, command_id, expression, activation)
-        self._refresh_after_edit()
+        trigger = self.project_service.add_trigger(self.project, command_id, expression, activation)
+        self.project.triggers.remove(trigger)
+        self.undo_stack.push(
+            AddDesignEntityCommand(
+                self.project.triggers, trigger, "trigger", self._refresh_after_edit
+            )
+        )
 
     def add_relationship(
         self, relationship_type: str, source_id, target_id
@@ -647,8 +689,15 @@ class MainWindow(QMainWindow):
         """Add an authored relationship between visible command/subsystem blocks."""
         if self.project is None:
             raise RuntimeError("Create or open a model before adding a relationship.")
-        self.project_service.add_relationship(self.project, relationship_type, source_id, target_id)
-        self._refresh_after_edit()
+        relationship = self.project_service.add_relationship(
+            self.project, relationship_type, source_id, target_id
+        )
+        self.project.relationships.remove(relationship)
+        self.undo_stack.push(
+            AddDesignEntityCommand(
+                self.project.relationships, relationship, "relationship", self._refresh_after_edit
+            )
+        )
 
     def _refresh_after_edit(self) -> None:
         assert self.project is not None

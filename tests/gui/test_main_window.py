@@ -48,6 +48,20 @@ def test_new_model_and_design_elements_update_the_canvas(qtbot) -> None:
     assert len([item for item in window.scene.items() if isinstance(item, ArchitectureBlock)]) == 2
 
 
+def test_creation_actions_are_undoable(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+
+    window.undo_stack.undo()
+    assert window.project is not None
+    assert not window.project.subsystems
+    window.undo_stack.redo()
+    assert [subsystem.name.effective for subsystem in window.project.subsystems] == ["Drive"]
+
+
 def test_design_devices_and_triggers_appear_on_their_canvas_blocks(qtbot) -> None:
     create_application([])
     window = MainWindow()
