@@ -226,6 +226,20 @@ class MainWindow(QMainWindow):
                 item.setData(0, Qt.ItemDataRole.UserRole, symbol.anchor.qualified_symbol)
                 self._inventory_symbols[symbol.anchor.qualified_symbol] = symbol
                 group.addChild(item)
+        if self.last_scan.triggers:
+            trigger_group = QTreeWidgetItem(["Trigger bindings", ""])
+            self.inventory_tree.addTopLevelItem(trigger_group)
+            for index, trigger in enumerate(self.last_scan.triggers):
+                key = f"trigger:{index}"
+                item = QTreeWidgetItem(
+                    [
+                        f"{trigger.controller_expression} · {trigger.activation}",
+                        f"{trigger.anchor.relative_path}:{trigger.anchor.start_line}",
+                    ]
+                )
+                item.setData(0, Qt.ItemDataRole.UserRole, key)
+                self._inventory_symbols[key] = trigger
+                trigger_group.addChild(item)
         self.inventory_tree.expandAll()
 
     def _render_with_current_scan(self) -> None:
