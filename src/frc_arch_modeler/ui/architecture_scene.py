@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from PySide6.QtCore import QPointF, Qt
@@ -30,6 +31,7 @@ class ArchitectureBlock(QGraphicsRectItem):
         super().__init__(0, 0, BLOCK_WIDTH, BLOCK_HEIGHT)
         self.element_id = element_id
         self.kind = kind
+        self.minimized = False
         accent = VOLTAGE_YELLOW if kind == "command" else VOLTAGE_BLUE
         self.setBrush(QColor(PANEL_BLACK))
         self.setPen(QPen(QColor(accent), 2))
@@ -37,30 +39,39 @@ class ArchitectureBlock(QGraphicsRectItem):
             QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable
             | QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable
         )
-        title = QGraphicsTextItem(label, self)
-        title.setDefaultTextColor(QColor("#F4F6FA"))
-        title.setTextWidth(BLOCK_WIDTH - 24)
-        title.setPos(12, 12)
-        caption = QGraphicsTextItem(kind.capitalize(), self)
-        caption.setDefaultTextColor(QColor(MUTED_TEXT))
-        caption.setPos(12, 58)
+        self.title = QGraphicsTextItem(label, self)
+        self.title.setDefaultTextColor(QColor("#F4F6FA"))
+        self.title.setTextWidth(BLOCK_WIDTH - 24)
+        self.title.setPos(12, 12)
+        self.caption = QGraphicsTextItem(kind.capitalize(), self)
+        self.caption.setDefaultTextColor(QColor(MUTED_TEXT))
+        self.caption.setPos(12, 58)
+
+    def set_minimized(self, minimized: bool) -> None:
+        """Collapse optional detail while retaining an identifiable canvas block."""
+        self.minimized = minimized
+        self.setRect(0, 0, BLOCK_WIDTH, 42 if minimized else BLOCK_HEIGHT)
+        self.caption.setVisible(not minimized)
 
 
 class ArchitectureScene(QGraphicsScene):
     """Render design elements in semantic command and subsystem regions."""
 
-    def render_project(self, project: ArchitectureProject | None) -> None:
+    def render_project(
+        self, project: ArchitectureProject | None, layout: dict[str, dict[str, Any]] | None = None
+    ) -> None:
         """Replace scene contents with a deterministic initial model layout."""
         self.clear()
         if project is None:
             return
 
+        layout = layout or {}
         blocks: dict[UUID, ArchitectureBlock] = {}
         for index, command in enumerate(project.commands):
-            block = self._add_block(command, "command", index, COMMAND_Y)
+            block = self._add_block(command, "command", index, COMMAND_Y, layout)
             blocks[command.id] = block
         for index, subsystem in enumerate(project.subsystems):
-            block = self._add_block(subsystem, "subsystem", index, SUBSYSTEM_Y)
+            block = self._add_block(subsystem, "subsystem", index, SUBSYSTEM_Y, layout)
             blocks[subsystem.id] = block
         for command in project.commands:
             command_block = blocks[command.id]
@@ -71,12 +82,46 @@ class ArchitectureScene(QGraphicsScene):
         self.setSceneRect(self.itemsBoundingRect().adjusted(-80, -80, 80, 80))
 
     def _add_block(
-        self, element: Command | Subsystem, kind: str, index: int, y_position: int
+        self,
+        element: Command | Subsystem,
+        kind: str,
+        index: int,
+        y_position: int,
+        layout: dict[str, dict[str, Any]],
     ) -> ArchitectureBlock:
         block = ArchitectureBlock(element.id, element.name.effective or "Unnamed", kind)
-        block.setPos(index * (BLOCK_WIDTH + HORIZONTAL_GAP), y_position)
+        item_layout = layout.get(str(element.id), {})
+        block.setPos(
+            float(item_layout.get("x", index * (BLOCK_WIDTH + HORIZONTAL_GAP))),
+            float(item_layout.get("y", y_position)),
+        )
+        block.set_minimized(bool(item_layout.get("minimized", False)))
         self.addItem(block)
         return block
+
+    def layout_state(self) -> dict[str, dict[str, Any]]:
+        """Return independently persistable presentation state for all blocks."""
+        return {
+            str(item.element_id): {
+                "x": item.pos().x(),
+                "y": item.pos().y(),
+                "minimized": item.minimized,
+            }
+            for item in self.items()
+            if isinstance(item, ArchitectureBlock)
+        }
+
+    def selected_blocks(self) -> list[ArchitectureBlock]:
+        return [item for item in self.selectedItems() if isinstance(item, ArchitectureBlock)]
+
+    def set_selected_minimized(self, minimized: bool) -> bool:
+        """Minimize or restore selected blocks, returning whether anything changed."""
+        blocks = self.selected_blocks()
+        for block in blocks:
+            block.set_minimized(minimized)
+        if blocks:
+            self.setSceneRect(self.itemsBoundingRect().adjusted(-80, -80, 80, 80))
+        return bool(blocks)
 
     def _add_requirement_edge(
         self, command: ArchitectureBlock, subsystem: ArchitectureBlock

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from frc_arch_modeler.domain.model import ArchitectureProject
+from frc_arch_modeler.persistence.layout_store import LayoutStore
 from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
 
@@ -60,6 +61,12 @@ class MainWindow(QMainWindow):
         self.new_command_action.setEnabled(False)
         self.new_subsystem_action = toolbar.addAction("New Subsystem", self._prompt_new_subsystem)
         self.new_subsystem_action.setEnabled(False)
+        toolbar.addSeparator()
+        self.auto_layout_action = toolbar.addAction("Auto Layout", self.auto_layout)
+        self.minimize_action = toolbar.addAction("Minimize Selected", self.minimize_selected)
+        self.restore_action = toolbar.addAction("Restore Selected", self.restore_selected)
+        for action in (self.auto_layout_action, self.minimize_action, self.restore_action):
+            action.setEnabled(False)
 
     def _build_canvas(self) -> None:
         canvas = QGraphicsView(self.scene, self)
@@ -75,6 +82,9 @@ class MainWindow(QMainWindow):
         self.new_command_action.setEnabled(project is not None)
         self.new_subsystem_action.setEnabled(project is not None)
         self.save_model_action.setEnabled(project is not None)
+        self.auto_layout_action.setEnabled(project is not None)
+        self.minimize_action.setEnabled(project is not None)
+        self.restore_action.setEnabled(project is not None)
         if project is None:
             self.is_dirty = False
             self.statusBar().showMessage("No robot project connected")
@@ -96,6 +106,7 @@ class MainWindow(QMainWindow):
         project = self.project_service.open(root)
         self.model_root = Path(root)
         self.set_project(project)
+        self.scene.render_project(project, LayoutStore(self.model_root).load())
         self.statusBar().showMessage(f"Opened design model: {project.name}")
         return project
 
@@ -108,6 +119,7 @@ class MainWindow(QMainWindow):
         if self.model_root is None:
             raise RuntimeError("Choose a folder for the model before saving.")
         saved_path = self.project_service.save(self.model_root, self.project)
+        LayoutStore(self.model_root).save(self.scene.layout_state())
         self.is_dirty = False
         self.statusBar().showMessage(f"Saved design model: {saved_path}")
         return saved_path
@@ -131,6 +143,25 @@ class MainWindow(QMainWindow):
         self.scene.render_project(self.project)
         self.is_dirty = True
         self.statusBar().showMessage(f"Unsaved design model: {self.project.name}")
+
+    def auto_layout(self) -> None:
+        """Restore the deterministic layout without changing design intent."""
+        if self.project is None:
+            return
+        self.scene.render_project(self.project)
+        self._mark_dirty("Auto-layout applied")
+
+    def minimize_selected(self) -> None:
+        if self.scene.set_selected_minimized(True):
+            self._mark_dirty("Selected items minimized")
+
+    def restore_selected(self) -> None:
+        if self.scene.set_selected_minimized(False):
+            self._mark_dirty("Selected items restored")
+
+    def _mark_dirty(self, message: str) -> None:
+        self.is_dirty = True
+        self.statusBar().showMessage(message)
 
     def _prompt_new_project(self) -> None:
         name, accepted = QInputDialog.getText(self, "New model", "Model name:")
