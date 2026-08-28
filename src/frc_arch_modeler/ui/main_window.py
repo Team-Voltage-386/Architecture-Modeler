@@ -650,7 +650,10 @@ class MainWindow(QMainWindow):
     def _prompt_open_project(self) -> None:
         root = QFileDialog.getExistingDirectory(self, "Open architecture model")
         if root:
-            self.open_project(Path(root))
+            try:
+                self.open_project(Path(root))
+            except ValueError as error:
+                QMessageBox.critical(self, "Could not open model", str(error))
 
     def _prompt_save_project(self) -> None:
         if self.model_root is None:

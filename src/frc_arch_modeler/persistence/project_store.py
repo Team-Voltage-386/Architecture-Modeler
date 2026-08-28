@@ -42,6 +42,12 @@ class ProjectStore:
         return destination
 
     def load(self) -> ArchitectureProject:
-        """Load and validate a saved model."""
-        with self.model_path.open(encoding="utf-8") as model_file:
-            return ArchitectureProject.from_dict(migrate_model_payload(json.load(model_file)))
+        """Load and validate a saved model with an actionable corruption error."""
+        try:
+            with self.model_path.open(encoding="utf-8") as model_file:
+                payload = json.load(model_file)
+            if not isinstance(payload, dict):
+                raise ValueError("Model JSON must contain an object at its root.")
+            return ArchitectureProject.from_dict(migrate_model_payload(payload))
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            raise ValueError(f"Could not load model '{self.model_path}': {error}") from error

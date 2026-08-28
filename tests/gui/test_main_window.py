@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from PySide6.QtGui import QCloseEvent, QPalette
 from PySide6.QtWidgets import QDockWidget, QMessageBox
 
@@ -87,6 +88,22 @@ def test_open_model_offers_to_restore_a_differing_draft(qtbot, tmp_path, monkeyp
     assert [command.name.effective for command in project.commands] == ["Recovered Command"]
     assert reopened.is_dirty
     assert "Recovered unsaved draft" in reopened.statusBar().currentMessage()
+
+
+def test_opening_corrupt_model_does_not_replace_current_project(qtbot, tmp_path) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Current Model")
+    destination = tmp_path / ".frc-architecture" / "model.json"
+    destination.parent.mkdir()
+    destination.write_text("not JSON", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Could not load model"):
+        window.open_project(tmp_path)
+
+    assert window.project is not None
+    assert window.project.name == "Current Model"
 
 
 def test_description_edit_undo_and_redo(qtbot) -> None:
