@@ -6,13 +6,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QPainter, QUndoStack
 from PySide6.QtWidgets import (
     QDockWidget,
     QFileDialog,
     QGraphicsView,
     QInputDialog,
-    QLabel,
     QMainWindow,
     QToolBar,
 )
@@ -21,6 +20,7 @@ from frc_arch_modeler.domain.model import ArchitectureProject
 from frc_arch_modeler.persistence.layout_store import LayoutStore
 from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
+from frc_arch_modeler.ui.details_panel import DetailsPanel, EditDescriptionCommand
 
 
 class MainWindow(QMainWindow):
@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
         self.model_root: Path | None = None
         self.is_dirty = False
         self.project_service = ProjectService()
+        self.undo_stack = QUndoStack(self)
         self.scene = ArchitectureScene(self)
         self._build_toolbar()
         self._build_canvas()
@@ -62,6 +63,11 @@ class MainWindow(QMainWindow):
         self.new_subsystem_action = toolbar.addAction("New Subsystem", self._prompt_new_subsystem)
         self.new_subsystem_action.setEnabled(False)
         toolbar.addSeparator()
+        self.undo_action = self.undo_stack.createUndoAction(self, "Undo")
+        self.redo_action = self.undo_stack.createRedoAction(self, "Redo")
+        toolbar.addAction(self.undo_action)
+        toolbar.addAction(self.redo_action)
+        toolbar.addSeparator()
         self.auto_layout_action = toolbar.addAction("Auto Layout", self.auto_layout)
         self.minimize_action = toolbar.addAction("Minimize Selected", self.minimize_selected)
         self.restore_action = toolbar.addAction("Restore Selected", self.restore_selected)
@@ -74,11 +80,13 @@ class MainWindow(QMainWindow):
         canvas.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         canvas.setBackgroundBrush(Qt.GlobalColor.black)
         self.setCentralWidget(canvas)
+        self.scene.selectionChanged.connect(self._update_selected_element)
 
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
         self.project = project
         self.scene.render_project(project)
+        self.details_panel.set_element(None)
         self.new_command_action.setEnabled(project is not None)
         self.new_subsystem_action.setEnabled(project is not None)
         self.save_model_action.setEnabled(project is not None)
@@ -90,6 +98,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("No robot project connected")
         else:
             self.is_dirty = False
+            self.undo_stack.clear()
             self.statusBar().showMessage(f"Design model: {project.name}")
 
     def new_project(self, name: str) -> ArchitectureProject:
@@ -121,6 +130,7 @@ class MainWindow(QMainWindow):
         saved_path = self.project_service.save(self.model_root, self.project)
         LayoutStore(self.model_root).save(self.scene.layout_state())
         self.is_dirty = False
+        self.undo_stack.setClean()
         self.statusBar().showMessage(f"Saved design model: {saved_path}")
         return saved_path
 
@@ -163,6 +173,49 @@ class MainWindow(QMainWindow):
         self.is_dirty = True
         self.statusBar().showMessage(message)
 
+    def _update_selected_element(self) -> None:
+        if self.project is None:
+            self.details_panel.set_element(None)
+            return
+        selected = self.scene.selected_blocks()
+        if len(selected) != 1:
+            self.details_panel.set_element(None)
+            return
+        element_id = selected[0].element_id
+        element = next(
+            (
+                item
+                for item in [*self.project.commands, *self.project.subsystems]
+                if item.id == element_id
+            ),
+            None,
+        )
+        self.details_panel.set_element(element)
+
+    def edit_selected_description(self, description: str | None) -> None:
+        """Apply a selected element's design description through the undo stack."""
+        selected = self.scene.selected_blocks()
+        if self.project is None or len(selected) != 1:
+            return
+        element_id = selected[0].element_id
+        element = next(
+            (
+                item
+                for item in [*self.project.commands, *self.project.subsystems]
+                if item.id == element_id
+            ),
+            None,
+        )
+        if element is None or element.description.design == description:
+            return
+        self.undo_stack.push(
+            EditDescriptionCommand(element, description, self._description_changed)
+        )
+
+    def _description_changed(self) -> None:
+        self._mark_dirty("Description updated")
+        self.details_panel.refresh()
+
     def _prompt_new_project(self) -> None:
         name, accepted = QInputDialog.getText(self, "New model", "Model name:")
         if accepted and name.strip():
@@ -196,5 +249,6 @@ class MainWindow(QMainWindow):
     def _build_details_dock(self) -> None:
         dock = QDockWidget("Details", self)
         dock.setObjectName("detailsDock")
-        dock.setWidget(QLabel("Select a command or subsystem to inspect its details.", dock))
+        self.details_panel = DetailsPanel(self.edit_selected_description)
+        dock.setWidget(self.details_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)

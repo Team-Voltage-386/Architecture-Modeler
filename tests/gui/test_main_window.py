@@ -55,3 +55,21 @@ def test_save_and_open_model_round_trip_from_window(qtbot, tmp_path) -> None:
         item for item in reopened_window.scene.items() if isinstance(item, ArchitectureBlock)
     ]
     assert len(reopened_blocks) == 2
+
+
+def test_description_edit_undo_and_redo(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_command("Teleop Drive")
+    block = next(item for item in window.scene.items() if isinstance(item, ArchitectureBlock))
+    block.setSelected(True)
+
+    window.edit_selected_description("Drive with joysticks")
+
+    assert window.project.commands[0].description.design == "Drive with joysticks"
+    window.undo_stack.undo()
+    assert window.project.commands[0].description.design is None
+    window.undo_stack.redo()
+    assert window.project.commands[0].description.design == "Drive with joysticks"
