@@ -24,6 +24,8 @@ HORIZONTAL_GAP = 42
 COMMAND_Y = 0
 SUBSYSTEM_Y = 250
 MATCHED_GREEN = "#35C759"
+MODIFIED_AMBER = "#FFAA33"
+UNRESOLVED_MAGENTA = "#E75BCB"
 
 
 class ArchitectureBlock(QGraphicsRectItem):
@@ -44,11 +46,23 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.imported = imported
         self.source_anchor = source_anchor
         self.minimized = False
-        accent = MATCHED_GREEN if comparison_state == ComparisonState.MATCHED else (
-            VOLTAGE_YELLOW if kind == "command" else VOLTAGE_BLUE
-        )
+        accents = {
+            ComparisonState.MATCHED: MATCHED_GREEN,
+            ComparisonState.MODIFIED: MODIFIED_AMBER,
+            ComparisonState.DESIGN_ONLY: VOLTAGE_YELLOW,
+            ComparisonState.UNRESOLVED: UNRESOLVED_MAGENTA,
+        }
+        default_accent = VOLTAGE_YELLOW if kind == "command" else VOLTAGE_BLUE
+        accent = accents.get(comparison_state, default_accent)
         self.setBrush(QColor(PANEL_BLACK))
-        style = Qt.PenStyle.DotLine if imported else Qt.PenStyle.SolidLine
+        if imported:
+            style = Qt.PenStyle.DotLine
+        elif comparison_state == ComparisonState.DESIGN_ONLY:
+            style = Qt.PenStyle.DashLine
+        elif comparison_state == ComparisonState.MODIFIED:
+            style = Qt.PenStyle.DashDotLine
+        else:
+            style = Qt.PenStyle.SolidLine
         self.setPen(QPen(QColor(accent), 3 if kind == "command" else 2, style))
         self.setFlags(
             QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable
@@ -58,9 +72,15 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.title.setDefaultTextColor(QColor("#F4F6FA"))
         self.title.setTextWidth(BLOCK_WIDTH - 24)
         self.title.setPos(12, 12)
-        source = "Imported " if imported else ""
-        source = "Matched " if comparison_state == ComparisonState.MATCHED else source
-        caption = f"{source}{kind.upper()}"
+        status_labels = {
+            ComparisonState.MATCHED: "✓ MATCHED",
+            ComparisonState.MODIFIED: "Δ MODIFIED",
+            ComparisonState.DESIGN_ONLY: "+ DESIGN ONLY",
+            ComparisonState.UNRESOLVED: "? UNRESOLVED",
+        }
+        caption = status_labels.get(
+            comparison_state, f"{'Imported ' if imported else ''}{kind.upper()}"
+        )
         self.caption = QGraphicsTextItem(caption, self)
         self.caption.setDefaultTextColor(QColor(accent))
         self.caption.setPos(12, 58)

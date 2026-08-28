@@ -35,10 +35,42 @@ class ReconciliationService:
                 result.statuses[element.id] = ComparisonState.DESIGN_ONLY
                 continue
             result.matches[element.id] = candidate
-            result.statuses[element.id] = ComparisonState.MATCHED
+            result.statuses[element.id] = self._status_for(element, candidate, project, scan)
             unmatched_symbols.pop(candidate.anchor.qualified_symbol)
         result.code_only = list(unmatched_symbols.values())
         return result
+
+    @staticmethod
+    def _status_for(
+        element: Command | Subsystem,
+        symbol: ScannedSymbol,
+        project: ArchitectureProject,
+        scan: ScanResult,
+    ) -> ComparisonState:
+        """Roll directly comparable extracted facts up into an element status."""
+        if element.name.design is not None and (
+            ReconciliationService._normalize(element.name.design)
+            != ReconciliationService._normalize(symbol.name)
+        ):
+            return ComparisonState.MODIFIED
+        if not isinstance(element, Command) or not element.requirement_ids:
+            return ComparisonState.MATCHED
+        designed_requirements = {
+            ReconciliationService._normalize(subsystem.name.effective or "")
+            for subsystem in project.subsystems
+            if subsystem.id in element.requirement_ids
+        }
+        code_requirements = {
+            ReconciliationService._normalize(relationship.target_expression.rsplit(".", 1)[-1])
+            for relationship in scan.relationships
+            if relationship.kind == "requires"
+            and relationship.source_symbol == symbol.anchor.qualified_symbol
+        }
+        return (
+            ComparisonState.MATCHED
+            if designed_requirements == code_requirements
+            else ComparisonState.MODIFIED
+        )
 
     @staticmethod
     def accept_matches(project: ArchitectureProject, result: ReconciliationResult) -> int:

@@ -40,6 +40,20 @@ def test_reconciliation_matches_exact_normalized_names_without_mutating_design(t
     assert drive.code_binding == result.matches[drive.id].anchor
 
 
+def test_reconciliation_marks_explicitly_bound_renamed_symbol_as_modified(tmp_path) -> None:
+    command = Command(name=FieldValue(design="Drive With Joysticks"))
+    bound = _symbol("command", "DriveCommand")
+    command.code_binding = bound.anchor
+    project = ArchitectureProject(name="Robot", commands=[command])
+
+    result = ReconciliationService().reconcile(
+        project, ScanResult(project_root=tmp_path, symbols=[bound])
+    )
+
+    assert result.matches == {command.id: bound}
+    assert result.statuses[command.id] == ComparisonState.MODIFIED
+
+
 def _symbol(kind: str, name: str) -> ScannedSymbol:
     return ScannedSymbol(
         kind=kind,

@@ -155,7 +155,7 @@ def test_compare_marks_exact_import_match_on_canvas(qtbot) -> None:
         for item in window.scene.items()
         if isinstance(item, ArchitectureBlock) and not item.imported and item.kind == "subsystem"
     )
-    assert matched_block.caption.toPlainText() == "Matched SUBSYSTEM"
+    assert matched_block.caption.toPlainText() == "✓ MATCHED"
 
     assert window.accept_matches() == 1
     assert window.project.subsystems[0].code_binding is not None

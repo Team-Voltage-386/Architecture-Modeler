@@ -3,7 +3,13 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGraphicsPathItem
 
-from frc_arch_modeler.domain.model import ArchitectureProject, Command, FieldValue, Subsystem
+from frc_arch_modeler.domain.model import (
+    ArchitectureProject,
+    Command,
+    ComparisonState,
+    FieldValue,
+    Subsystem,
+)
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.ui.architecture_scene import SUBSYSTEM_Y, ArchitectureBlock, ArchitectureScene
 from frc_arch_modeler.ui.theme import VOLTAGE_BLUE, VOLTAGE_YELLOW
@@ -119,3 +125,17 @@ def test_filter_hides_nonmatching_blocks_and_relationships(qapp) -> None:
         "Teleop Drive",
     }
     assert all(edge.isVisible() for edge in scene._edges)
+
+
+def test_modified_status_has_non_color_caption_and_border_style(qapp) -> None:
+    command = Command(name=FieldValue(design="Teleop Drive"))
+    scene = ArchitectureScene()
+    scene.render_project(
+        ArchitectureProject(name="Robot", commands=[command]),
+        statuses={command.id: ComparisonState.MODIFIED},
+    )
+
+    block = next(item for item in scene.items() if isinstance(item, ArchitectureBlock))
+
+    assert block.caption.toPlainText() == "Δ MODIFIED"
+    assert block.pen().style() == Qt.PenStyle.DashDotLine
