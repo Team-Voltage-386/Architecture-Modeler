@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QDockWidget,
+    QGraphicsView,
     QLabel,
     QMainWindow,
     QToolBar,
-    QVBoxLayout,
-    QWidget,
 )
+
+from frc_arch_modeler.domain.model import ArchitectureProject
+from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
 
 
 class MainWindow(QMainWindow):
@@ -20,8 +23,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("FRC Architecture Modeler")
         self.resize(1280, 800)
+        self.scene = ArchitectureScene(self)
         self._build_toolbar()
-        self._build_central_placeholder()
+        self._build_canvas()
         self._build_details_dock()
         self.statusBar().showMessage("No robot project connected")
 
@@ -42,20 +46,20 @@ class MainWindow(QMainWindow):
             action = toolbar.addAction(label)
             action.setEnabled(False)
 
-    def _build_central_placeholder(self) -> None:
-        central = QWidget(self)
-        layout = QVBoxLayout(central)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title = QLabel("Architecture canvas", central)
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 24px; font-weight: 600;")
-        subtitle = QLabel(
-            "Create or open a model to begin designing your robot architecture.", central
-        )
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
-        self.setCentralWidget(central)
+    def _build_canvas(self) -> None:
+        canvas = QGraphicsView(self.scene, self)
+        canvas.setRenderHint(QPainter.RenderHint.Antialiasing)
+        canvas.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        canvas.setBackgroundBrush(Qt.GlobalColor.black)
+        self.setCentralWidget(canvas)
+
+    def set_project(self, project: ArchitectureProject | None) -> None:
+        """Display a project with the deterministic initial canvas layout."""
+        self.scene.render_project(project)
+        if project is None:
+            self.statusBar().showMessage("No robot project connected")
+        else:
+            self.statusBar().showMessage(f"Design model: {project.name}")
 
     def _build_details_dock(self) -> None:
         dock = QDockWidget("Details", self)
