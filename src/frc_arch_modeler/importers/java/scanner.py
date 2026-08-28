@@ -34,6 +34,9 @@ COMMAND_COMPOSITION_PATTERN = re.compile(
     r"race|deadline)|new\s+(?P<group>SequentialCommandGroup|ParallelCommandGroup|"
     r"ParallelRaceGroup|ParallelDeadlineGroup))\s*\("
 )
+SUBSYSTEM_COMMAND_HELPER_PATTERN = re.compile(
+    r"\b(?P<subsystem>[a-z][A-Za-z0-9_]*)\.(?P<factory>runOnce|run)\s*\("
+)
 REQUIREMENT_PATTERN = re.compile(r"\baddRequirements\s*\((?P<arguments>[^)]*)\)")
 LIFECYCLE_PATTERN = re.compile(
     r"@Override\s+(?:public|protected)\s+(?:void|boolean)\s+"
@@ -209,6 +212,46 @@ class JavaProjectScanner:
                 )
             )
         self._scan_command_compositions(source, package, relative_path, source_hash, result)
+        self._scan_subsystem_command_helpers(source, package, relative_path, source_hash, result)
+
+    def _scan_subsystem_command_helpers(
+        self,
+        source: str,
+        package: str,
+        relative_path: str,
+        source_hash: str,
+        result: ScanResult,
+    ) -> None:
+        """Treat ``subsystem.run*`` helpers as commands with an implicit requirement."""
+        for match in SUBSYSTEM_COMMAND_HELPER_PATTERN.finditer(source):
+            line = source.count("\n", 0, match.start()) + 1
+            subsystem = match.group("subsystem")
+            factory = match.group("factory")
+            qualified_name = (
+                f"{package}.{subsystem}.{factory}@{line}"
+                if package
+                else f"{subsystem}.{factory}@{line}"
+            )
+            anchor = self._anchor_at_offset(
+                qualified_name, source, match.start(), relative_path, source_hash
+            )
+            result.symbols.append(
+                ScannedSymbol(
+                    kind="command_composition",
+                    name=f"{subsystem}.{factory} (line {line})",
+                    anchor=anchor,
+                    confidence="exact",
+                )
+            )
+            result.relationships.append(
+                ScannedRelationship(
+                    kind="requires",
+                    source_symbol=qualified_name,
+                    target_expression=subsystem,
+                    anchor=anchor,
+                    confidence="exact",
+                )
+            )
 
     def _scan_command_compositions(
         self,

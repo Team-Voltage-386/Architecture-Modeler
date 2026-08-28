@@ -119,6 +119,35 @@ class Autos {
     ]
 
 
+def test_scanner_records_implicit_requirement_of_subsystem_command_helpers(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "Drive.java").write_text(
+        """package frc.robot;
+class Drive extends SubsystemBase {
+  Command stop() { return drive.runOnce(() -> stopMotor()); }
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    helper = next(
+        symbol
+        for symbol in result.symbols_of_kind("command_composition")
+        if symbol.name == "drive.runOnce (line 3)"
+    )
+    assert (helper.anchor.qualified_symbol, helper.anchor.start_line) == (
+        "frc.robot.drive.runOnce@3",
+        3,
+    )
+    assert ("requires", "drive") in [
+        (relationship.kind, relationship.target_expression) for relationship in result.relationships
+    ]
+
+
 def test_scanner_extracts_attached_javadoc_for_types_and_lifecycle(tmp_path) -> None:
     (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
     source_root = tmp_path / "src" / "main" / "java"
