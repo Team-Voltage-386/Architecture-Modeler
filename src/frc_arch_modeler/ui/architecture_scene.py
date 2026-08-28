@@ -19,7 +19,7 @@ from frc_arch_modeler.importers.base import ScannedSymbol, ScanResult
 from frc_arch_modeler.ui.theme import MUTED_TEXT, PANEL_BLACK, VOLTAGE_BLUE, VOLTAGE_YELLOW
 
 BLOCK_WIDTH = 210
-BLOCK_HEIGHT = 92
+BLOCK_HEIGHT = 116
 HORIZONTAL_GAP = 42
 COMMAND_Y = 0
 SUBSYSTEM_Y = 250
@@ -41,6 +41,7 @@ class ArchitectureBlock(QGraphicsRectItem):
         source_anchor: object | None = None,
         code_summary: str | None = None,
         search_text: str = "",
+        detail_lines: list[str] | None = None,
     ) -> None:
         super().__init__(0, 0, BLOCK_WIDTH, BLOCK_HEIGHT)
         self.element_id = element_id
@@ -76,6 +77,12 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.title.setDefaultTextColor(QColor("#F4F6FA"))
         self.title.setTextWidth(BLOCK_WIDTH - 24)
         self.title.setPos(12, 12)
+        self.summary = QGraphicsTextItem(self)
+        self.summary.setDefaultTextColor(QColor(MUTED_TEXT))
+        self.summary.setTextWidth(BLOCK_WIDTH - 24)
+        compact_lines = [line for line in (detail_lines or []) if line][:2]
+        self.summary.setPlainText("\n".join(compact_lines))
+        self.summary.setPos(12, 36)
         status_labels = {
             ComparisonState.MATCHED: "✓ MATCHED",
             ComparisonState.MODIFIED: "Δ MODIFIED",
@@ -88,13 +95,14 @@ class ArchitectureBlock(QGraphicsRectItem):
         )
         self.caption = QGraphicsTextItem(caption, self)
         self.caption.setDefaultTextColor(QColor(accent))
-        self.caption.setPos(12, 58)
+        self.caption.setPos(12, 78 if compact_lines else 58)
 
     def set_minimized(self, minimized: bool) -> None:
         """Collapse optional detail while retaining an identifiable canvas block."""
         self.minimized = minimized
         self.setRect(0, 0, BLOCK_WIDTH, 42 if minimized else BLOCK_HEIGHT)
         self.caption.setVisible(not minimized)
+        self.summary.setVisible(not minimized)
 
 
 class ArchitectureScene(QGraphicsScene):
@@ -201,6 +209,7 @@ class ArchitectureScene(QGraphicsScene):
                     ],
                 )
             ),
+            detail_lines=[element.description.effective or ""],
         )
         item_layout = layout.get(str(element.id), {})
         block.setPos(
@@ -222,9 +231,14 @@ class ArchitectureScene(QGraphicsScene):
         imported_by_symbol: dict[str, ArchitectureBlock] = {}
         imported_subsystems: dict[str, ArchitectureBlock] = {}
         evidence_by_symbol: dict[str, list[str]] = {}
+        device_lines_by_symbol: dict[str, list[str]] = {}
         for device in scan.devices:
             evidence_by_symbol.setdefault(device.owner_symbol, []).extend(
                 [device.device_type, device.constructor_arguments, device.resolved_arguments or ""]
+            )
+            arguments = device.resolved_arguments or device.constructor_arguments
+            device_lines_by_symbol.setdefault(device.owner_symbol, []).append(
+                f"{device.device_type}: {arguments}"
             )
         for trigger in scan.triggers:
             evidence_by_symbol.setdefault(trigger.anchor.qualified_symbol, []).extend(
@@ -249,6 +263,9 @@ class ArchitectureScene(QGraphicsScene):
                     if symbol.anchor.qualified_symbol in code_only_symbols
                     else None,
                     evidence_by_symbol.get(symbol.anchor.qualified_symbol, []),
+                    device_lines_by_symbol.get(symbol.anchor.qualified_symbol, [])
+                    if kind == "subsystem"
+                    else [],
                 )
                 imported_by_symbol[symbol.anchor.qualified_symbol] = block
                 if kind == "subsystem":
@@ -270,6 +287,7 @@ class ArchitectureScene(QGraphicsScene):
         y_position: int,
         comparison_state: ComparisonState | None = None,
         evidence: list[str] | None = None,
+        detail_lines: list[str] | None = None,
     ) -> ArchitectureBlock:
         block = ArchitectureBlock(
             uuid5(NAMESPACE_URL, symbol.anchor.qualified_symbol),
@@ -285,6 +303,7 @@ class ArchitectureScene(QGraphicsScene):
                     [symbol.name, symbol.kind, symbol.documentation or "", *(evidence or [])],
                 )
             ),
+            detail_lines=detail_lines,
         )
         block.setPos(index * (BLOCK_WIDTH + HORIZONTAL_GAP), y_position)
         self.addItem(block)
