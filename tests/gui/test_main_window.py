@@ -329,6 +329,8 @@ def test_matched_design_details_can_show_and_adopt_code_name(qtbot) -> None:
     window.details_panel.adopt_name_button.click()
 
     assert window.project.subsystems[0].name.design == "Drive"
+    assert window.details_panel.code_name.text() == "Drive"
+    assert window.details_panel.open_source_button.isEnabled()
 
 
 def test_bind_selected_explicitly_links_renamed_design_to_code(qtbot) -> None:

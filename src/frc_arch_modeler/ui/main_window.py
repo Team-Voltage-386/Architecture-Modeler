@@ -699,11 +699,11 @@ class MainWindow(QMainWindow):
 
     def _name_changed(self) -> None:
         self._mark_dirty("Name updated")
-        self.details_panel.refresh()
+        self._update_selected_element()
 
     def _description_changed(self) -> None:
         self._mark_dirty("Description updated")
-        self.details_panel.refresh()
+        self._update_selected_element()
 
     def _prompt_new_project(self) -> None:
         name, accepted = QInputDialog.getText(self, "New model", "Model name:")
