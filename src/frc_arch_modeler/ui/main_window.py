@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QGraphicsView,
     QInputDialog,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QToolBar,
@@ -87,6 +88,12 @@ class MainWindow(QMainWindow):
         self.new_command_action.setEnabled(False)
         self.new_subsystem_action = toolbar.addAction("New Subsystem", self._prompt_new_subsystem)
         self.new_subsystem_action.setEnabled(False)
+        self.search_field = QLineEdit(self)
+        self.search_field.setObjectName("architectureSearch")
+        self.search_field.setPlaceholderText("Search architecture")
+        self.search_field.setClearButtonEnabled(True)
+        self.search_field.textChanged.connect(self.scene.filter_blocks)
+        toolbar.addWidget(self.search_field)
         toolbar.addSeparator()
         self.undo_action = self.undo_stack.createUndoAction(self, "Undo")
         self.redo_action = self.undo_stack.createRedoAction(self, "Redo")

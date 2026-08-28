@@ -218,6 +218,20 @@ class ArchitectureScene(QGraphicsScene):
             self.setSceneRect(self.itemsBoundingRect().adjusted(-80, -80, 80, 80))
         return bool(blocks)
 
+    def filter_blocks(self, query: str) -> None:
+        """Filter visual blocks by their displayed name without changing the model."""
+        normalized = query.casefold().strip()
+        visible_ids: set[UUID] = set()
+        for item in self.items():
+            if isinstance(item, ArchitectureBlock):
+                visible = not normalized or normalized in item.title.toPlainText().casefold()
+                item.setVisible(visible)
+                if visible:
+                    visible_ids.add(item.element_id)
+        for edge in self._edges:
+            endpoint_ids = edge.data(0)
+            edge.setVisible(endpoint_ids <= visible_ids)
+
     def _update_edge_visibility(self) -> None:
         selected_ids = {block.element_id for block in self.selected_blocks()}
         for edge in self._edges:

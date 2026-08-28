@@ -99,3 +99,23 @@ def test_selection_emphasizes_only_connected_requirement_edges(qapp) -> None:
     assert sorted(edge.opacity() for edge in edges) == [0.16, 1.0]
     selected_edge = next(edge for edge in edges if edge.opacity() == 1.0)
     assert selected_edge.pen().style() == Qt.PenStyle.SolidLine
+
+
+def test_filter_hides_nonmatching_blocks_and_relationships(qapp) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    intake = Subsystem(name=FieldValue(design="Intake"))
+    command = Command(name=FieldValue(design="Teleop Drive"), requirement_ids=[drive.id])
+    scene = ArchitectureScene()
+    project = ArchitectureProject(
+        name="Robot", commands=[command], subsystems=[drive, intake]
+    )
+    scene.render_project(project)
+
+    scene.filter_blocks("drive")
+
+    blocks = [item for item in scene.items() if isinstance(item, ArchitectureBlock)]
+    assert {block.title.toPlainText() for block in blocks if block.isVisible()} == {
+        "Drive",
+        "Teleop Drive",
+    }
+    assert all(edge.isVisible() for edge in scene._edges)
