@@ -1,6 +1,9 @@
+from pathlib import Path
+
 from PySide6.QtWidgets import QGraphicsPathItem
 
 from frc_arch_modeler.domain.model import ArchitectureProject, Command, FieldValue, Subsystem
+from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.ui.architecture_scene import SUBSYSTEM_Y, ArchitectureBlock, ArchitectureScene
 
 
@@ -35,3 +38,20 @@ def test_scene_round_trips_block_layout_and_minimized_state(qapp) -> None:
 
     assert restored_block.pos() == block.pos()
     assert restored_block.minimized
+
+
+def test_scene_renders_code_import_as_separate_architecture_layer(qapp) -> None:
+    fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+    scene = ArchitectureScene()
+
+    scan = JavaProjectScanner().scan(fixture_root)
+    scene.render_project(ArchitectureProject(name="Robot"), scan=scan)
+
+    imported = [
+        item for item in scene.items() if isinstance(item, ArchitectureBlock) and item.imported
+    ]
+    assert {(item.kind, item.title.toPlainText()) for item in imported} == {
+        ("subsystem", "Drive"),
+        ("command", "DriveCommand"),
+    }
+    assert len([item for item in scene.items() if isinstance(item, QGraphicsPathItem)]) == 1

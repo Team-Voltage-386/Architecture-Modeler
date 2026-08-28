@@ -104,7 +104,7 @@ class MainWindow(QMainWindow):
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
         self.project = project
-        self.scene.render_project(project)
+        self.scene.render_project(project, scan=self.last_scan)
         self.details_panel.set_element(None)
         self.new_command_action.setEnabled(project is not None)
         self.new_subsystem_action.setEnabled(project is not None)
@@ -136,7 +136,7 @@ class MainWindow(QMainWindow):
         project = self.project_service.open(root)
         self.model_root = Path(root)
         self.set_project(project)
-        self.scene.render_project(project, LayoutStore(self.model_root).load())
+        self.scene.render_project(project, LayoutStore(self.model_root).load(), self.last_scan)
         self.statusBar().showMessage(f"Opened design model: {project.name}")
         return project
 
@@ -171,6 +171,7 @@ class MainWindow(QMainWindow):
         self.robot_project_root = Path(root)
         self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
         self.refresh_code_action.setEnabled(True)
+        self._render_with_current_scan()
         self._show_scan_inventory()
         self._show_scan_status("Connected")
         return self.last_scan
@@ -180,6 +181,7 @@ class MainWindow(QMainWindow):
         if self.robot_project_root is None:
             return None
         self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
+        self._render_with_current_scan()
         self._show_scan_inventory()
         self._show_scan_status("Refreshed")
         return self.last_scan
@@ -222,6 +224,12 @@ class MainWindow(QMainWindow):
                 )
         self.inventory_tree.expandAll()
 
+    def _render_with_current_scan(self) -> None:
+        if self.project is not None:
+            self.scene.render_project(
+                self.project, layout=self.scene.layout_state(), scan=self.last_scan
+            )
+
     def add_command(self, name: str) -> None:
         """Add a command and refresh its deterministic initial canvas position."""
         if self.project is None:
@@ -238,7 +246,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_after_edit(self) -> None:
         assert self.project is not None
-        self.scene.render_project(self.project)
+        self.scene.render_project(self.project, scan=self.last_scan)
         self.is_dirty = True
         self.statusBar().showMessage(f"Unsaved design model: {self.project.name}")
 
@@ -246,7 +254,7 @@ class MainWindow(QMainWindow):
         """Restore the deterministic layout without changing design intent."""
         if self.project is None:
             return
-        self.scene.render_project(self.project)
+        self.scene.render_project(self.project, scan=self.last_scan)
         self._mark_dirty("Auto-layout applied")
 
     def zoom_to_fit(self) -> None:
