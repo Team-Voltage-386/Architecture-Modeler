@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QGraphicsView,
     QInputDialog,
+    QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
@@ -57,6 +58,7 @@ class MainWindow(QMainWindow):
         self._build_canvas()
         self._build_details_dock()
         self._build_inventory_dock()
+        self._build_legend_dock()
         self.statusBar().showMessage("No robot project connected")
 
     def _build_toolbar(self) -> None:
@@ -526,6 +528,18 @@ class MainWindow(QMainWindow):
         self.inventory_tree.setHeaderLabels(["Symbol", "Source"])
         self.inventory_tree.itemDoubleClicked.connect(self._open_inventory_source)
         dock.setWidget(self.inventory_tree)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+
+    def _build_legend_dock(self) -> None:
+        dock = QDockWidget("Legend", self)
+        dock.setObjectName("legendDock")
+        legend = QLabel(
+            "Command: yellow\nSubsystem: blue\n"
+            "Solid: design intent\nDotted: imported code\nGreen: matched design/code",
+            dock,
+        )
+        legend.setWordWrap(True)
+        dock.setWidget(legend)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
 
     def _open_inventory_source(self, item: QTreeWidgetItem, column: int) -> None:
