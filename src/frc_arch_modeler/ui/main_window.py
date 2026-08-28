@@ -200,9 +200,26 @@ class MainWindow(QMainWindow):
         """Load a saved model sidecar directory into the canvas."""
         project = self.project_service.open(root)
         self.model_root = Path(root)
+        draft = DraftStore(self.model_root).load()
+        recovered = False
+        if draft is not None and draft.to_dict() != project.to_dict():
+            choice = QMessageBox.question(
+                self,
+                "Recover unsaved draft",
+                "An autosaved draft differs from the saved model. Restore it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if choice == QMessageBox.StandardButton.Yes:
+                project = draft
+                recovered = True
         self.set_project(project)
         self.scene.render_project(project, LayoutStore(self.model_root).load(), self.last_scan)
-        self.statusBar().showMessage(f"Opened design model: {project.name}")
+        if recovered:
+            self.is_dirty = True
+            self.statusBar().showMessage(f"Recovered unsaved draft: {project.name}")
+        else:
+            self.statusBar().showMessage(f"Opened design model: {project.name}")
         return project
 
     def save_project(self, root: Path | None = None) -> Path:

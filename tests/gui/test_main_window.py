@@ -66,6 +66,28 @@ def test_save_and_open_model_round_trip_from_window(qtbot, tmp_path) -> None:
     assert len(reopened_blocks) == 2
 
 
+def test_open_model_offers_to_restore_a_differing_draft(qtbot, tmp_path, monkeypatch) -> None:
+    create_application([])
+    writer = MainWindow()
+    qtbot.addWidget(writer)
+    writer.new_project("Competition Robot")
+    writer.save_project(tmp_path)
+    writer.add_command("Recovered Command")
+
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args: QMessageBox.StandardButton.Yes,
+    )
+    reopened = MainWindow()
+    qtbot.addWidget(reopened)
+    project = reopened.open_project(tmp_path)
+
+    assert [command.name.effective for command in project.commands] == ["Recovered Command"]
+    assert reopened.is_dirty
+    assert "Recovered unsaved draft" in reopened.statusBar().currentMessage()
+
+
 def test_description_edit_undo_and_redo(qtbot) -> None:
     create_application([])
     window = MainWindow()
