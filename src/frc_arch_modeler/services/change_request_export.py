@@ -127,6 +127,30 @@ class ChangeRequestExportService:
             names = {subsystem.id: subsystem.name.effective for subsystem in project.subsystems}
             requirements = [names[item] for item in element.requirement_ids if item in names]
             lines.append(f"- Requirements: {', '.join(requirements) or 'None specified'}")
+            triggers = [trigger for trigger in project.triggers if trigger.command_id == element.id]
+            if triggers:
+                lines.append("- Requested triggers:")
+                for trigger in sorted(
+                    triggers, key=lambda item: (item.expression.effective or "").casefold()
+                ):
+                    lines.append(
+                        f"  - {trigger.expression.effective or 'Unspecified'} â€” "
+                        f"{trigger.activation.effective or 'Unspecified'}"
+                    )
+        else:
+            devices = [
+                device for device in project.devices if device.owner_subsystem_id == element.id
+            ]
+            if devices:
+                lines.append("- Requested devices:")
+                for device in sorted(
+                    devices, key=lambda item: (item.name.effective or "").casefold()
+                ):
+                    mode = f" ({device.mode.effective})" if device.mode.effective else ""
+                    lines.append(
+                        f"  - {device.name.effective or 'Unnamed'}: "
+                        f"{device.device_type.effective or 'Unspecified'}{mode}"
+                    )
         lines.append("")
         return lines
 
