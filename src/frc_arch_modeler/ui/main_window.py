@@ -610,7 +610,7 @@ class MainWindow(QMainWindow):
                 selected[0].title.toPlainText(),
                 selected[0].kind,
                 imported_anchor,
-                selected[0].code_summary,
+                self._imported_details(selected[0]),
             )
             self._update_compact_details()
             return
@@ -642,6 +642,23 @@ class MainWindow(QMainWindow):
         if symbol is None:
             return (None, None, None)
         return (symbol.name, symbol.documentation, symbol.anchor)
+
+    def _imported_details(self, block) -> str | None:  # type: ignore[no-untyped-def]
+        """Augment imported composition facts with their retained direct children."""
+        details = block.code_summary
+        if not isinstance(block.source_anchor, SourceAnchor) or self.last_scan is None:
+            return details
+        children = [
+            relationship.target_expression
+            for relationship in self.last_scan.relationships
+            if relationship.kind == "composition_child"
+            and relationship.source_symbol == block.source_anchor.qualified_symbol
+        ]
+        if not children:
+            return details
+        child_lines = "\n".join(f"- {child}" for child in children)
+        prefix = f"{details}\n\n" if details else ""
+        return f"{prefix}Composition children:\n{child_lines}"
 
     def edit_selected_description(self, description: str | None) -> None:
         """Apply a selected element's design description through the undo stack."""
@@ -812,7 +829,10 @@ class MainWindow(QMainWindow):
         block = selected[0]
         if isinstance(block.source_anchor, SourceAnchor):
             self.compact_details_panel.set_imported_fact(
-                block.title.toPlainText(), block.kind, block.source_anchor, block.code_summary
+                block.title.toPlainText(),
+                block.kind,
+                block.source_anchor,
+                self._imported_details(block),
             )
             return
         if self.project is None:

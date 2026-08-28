@@ -222,6 +222,34 @@ def test_imported_canvas_block_shows_read_only_evidence(qtbot) -> None:
     assert window.details_panel.open_source_button.isEnabled()
 
 
+def test_imported_composition_details_show_direct_children(qtbot, tmp_path) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "Autos.java").write_text(
+        """class Autos {
+  Command auto() { return Commands.sequence(one(), two()); }
+}
+""",
+        encoding="utf-8",
+    )
+    window.connect_robot_project(tmp_path)
+    composition = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock) and item.title.toPlainText().startswith("sequence")
+    )
+
+    composition.setSelected(True)
+
+    assert "Composition children:" in window.details_panel.code_description.text()
+    assert "- one()" in window.details_panel.code_description.text()
+    assert "- two()" in window.details_panel.code_description.text()
+
+
 def test_details_dock_switches_to_compact_sheet_on_laptop_width(qtbot) -> None:
     create_application([])
     window = MainWindow()
