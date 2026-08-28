@@ -267,6 +267,8 @@ def test_imported_canvas_block_shows_read_only_evidence(qtbot) -> None:
 
     assert "imported subsystem" in window.details_panel.title.text()
     assert "Drive.java" in window.details_panel.code_description.text()
+    assert "Devices:" in window.details_panel.code_description.text()
+    assert "SparkMax: 4, MotorType.kBrushless" in window.details_panel.code_description.text()
     assert not window.details_panel.design_description.isEnabled()
     assert window.details_panel.open_source_button.isEnabled()
 

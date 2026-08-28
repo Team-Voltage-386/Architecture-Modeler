@@ -665,21 +665,51 @@ class MainWindow(QMainWindow):
         return (symbol.name, symbol.documentation, symbol.anchor)
 
     def _imported_details(self, block) -> str | None:  # type: ignore[no-untyped-def]
-        """Augment imported composition facts with their retained direct children."""
+        """Augment imported facts with directly extracted architecture evidence."""
         details = block.code_summary
         if not isinstance(block.source_anchor, SourceAnchor) or self.last_scan is None:
             return details
+        lines: list[str] = [details] if details else []
+        qualified_symbol = block.source_anchor.qualified_symbol
+        if block.kind == "subsystem":
+            devices = [
+                f"- {device.device_type}: "
+                f"{device.resolved_arguments or device.constructor_arguments}"
+                for device in self.last_scan.devices
+                if device.owner_symbol == qualified_symbol
+            ]
+            if devices:
+                lines.extend(["Devices:", *devices])
+        if block.kind == "command":
+            normalized_block_name = self._normalized(block.title.toPlainText())
+            triggers = [
+                f"- {trigger.controller_expression} · {trigger.activation} → "
+                f"{trigger.command_expression}"
+                for trigger in self.last_scan.triggers
+                if normalized_block_name in self._normalized(trigger.command_expression)
+            ]
+            lifecycle = [
+                symbol.name
+                for symbol in self.last_scan.symbols_of_kind("lifecycle_method")
+                if symbol.anchor.qualified_symbol.startswith(f"{qualified_symbol}#")
+            ]
+            if triggers:
+                lines.extend(["Triggers:", *triggers])
+            if lifecycle:
+                lines.append(f"Lifecycle overrides: {', '.join(lifecycle)}")
         children = [
             relationship.target_expression
             for relationship in self.last_scan.relationships
             if relationship.kind == "composition_child"
-            and relationship.source_symbol == block.source_anchor.qualified_symbol
+            and relationship.source_symbol == qualified_symbol
         ]
-        if not children:
-            return details
-        child_lines = "\n".join(f"- {child}" for child in children)
-        prefix = f"{details}\n\n" if details else ""
-        return f"{prefix}Composition children:\n{child_lines}"
+        if children:
+            lines.extend(["Composition children:", *(f"- {child}" for child in children)])
+        return "\n\n".join(lines) or None
+
+    @staticmethod
+    def _normalized(value: str) -> str:
+        return "".join(character for character in value.casefold() if character.isalnum())
 
     def edit_selected_description(self, description: str | None) -> None:
         """Apply a selected element's design description through the undo stack."""
