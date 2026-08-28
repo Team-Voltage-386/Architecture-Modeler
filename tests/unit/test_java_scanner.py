@@ -42,3 +42,20 @@ def test_scanner_inventories_wpilib_symbols_with_source_evidence() -> None:
 def test_scanner_requires_a_gradle_project(tmp_path) -> None:
     with pytest.raises(ValueError, match="No Gradle build file"):
         JavaProjectScanner().scan(tmp_path)
+
+
+def test_scanner_reports_syntax_issues_without_aborting_other_files(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "Broken.java").write_text("class Broken { void run( {", encoding="utf-8")
+    (source_root / "Drive.java").write_text(
+        "class Drive extends SubsystemBase {}", encoding="utf-8"
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    assert result.files_scanned == 2
+    assert len(result.diagnostics) == 1
+    assert result.diagnostics[0].relative_path == "src/main/java/Broken.java"
+    assert [symbol.name for symbol in result.symbols_of_kind("subsystem")] == ["Drive"]

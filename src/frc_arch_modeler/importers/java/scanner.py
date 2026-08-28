@@ -15,6 +15,7 @@ from frc_arch_modeler.importers.base import (
     ScannedTrigger,
     ScanResult,
 )
+from frc_arch_modeler.importers.java.parser import JavaSyntaxParser
 
 PACKAGE_PATTERN = re.compile(r"^\s*package\s+([\w.]+)\s*;", re.MULTILINE)
 TYPE_PATTERN = re.compile(
@@ -74,6 +75,9 @@ class JavaProjectScanner:
             self._scan_file(source_path, root, result)
         return result
 
+    def __init__(self) -> None:
+        self._syntax_parser = JavaSyntaxParser()
+
     @staticmethod
     def is_gradle_project(root: Path) -> bool:
         return (root / "build.gradle").is_file() or (root / "build.gradle.kts").is_file()
@@ -88,6 +92,10 @@ class JavaProjectScanner:
             )
             return
         result.files_scanned += 1
+        for line in self._syntax_parser.error_lines(source):
+            result.diagnostics.append(
+                ScanDiagnostic("warning", f"Java syntax issue near line {line}.", relative_path)
+            )
         package_match = PACKAGE_PATTERN.search(source)
         package = package_match.group(1) if package_match else ""
         source_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
