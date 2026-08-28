@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QDockWidget,
+    QFileDialog,
     QGraphicsView,
     QInputDialog,
     QLabel,
@@ -28,6 +30,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("FRC Architecture Modeler")
         self.resize(1280, 800)
         self.project: ArchitectureProject | None = None
+        self.model_root: Path | None = None
         self.is_dirty = False
         self.project_service = ProjectService()
         self.scene = ArchitectureScene(self)
@@ -41,8 +44,9 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
         self.new_model_action = toolbar.addAction("New Model", self._prompt_new_project)
-        self.open_model_action = toolbar.addAction("Open Model")
-        self.open_model_action.setEnabled(False)
+        self.open_model_action = toolbar.addAction("Open Model", self._prompt_open_project)
+        self.save_model_action = toolbar.addAction("Save Model", self._prompt_save_project)
+        self.save_model_action.setEnabled(False)
         for label in (
             "Connect Robot Project",
             "Refresh Code",
@@ -70,6 +74,7 @@ class MainWindow(QMainWindow):
         self.scene.render_project(project)
         self.new_command_action.setEnabled(project is not None)
         self.new_subsystem_action.setEnabled(project is not None)
+        self.save_model_action.setEnabled(project is not None)
         if project is None:
             self.is_dirty = False
             self.statusBar().showMessage("No robot project connected")
@@ -80,10 +85,32 @@ class MainWindow(QMainWindow):
     def new_project(self, name: str) -> ArchitectureProject:
         """Create and display an unsaved design-only project."""
         project = self.project_service.create(name)
+        self.model_root = None
         self.set_project(project)
         self.is_dirty = True
         self.statusBar().showMessage(f"Unsaved design model: {project.name}")
         return project
+
+    def open_project(self, root: Path) -> ArchitectureProject:
+        """Load a saved model sidecar directory into the canvas."""
+        project = self.project_service.open(root)
+        self.model_root = Path(root)
+        self.set_project(project)
+        self.statusBar().showMessage(f"Opened design model: {project.name}")
+        return project
+
+    def save_project(self, root: Path | None = None) -> Path:
+        """Persist the current design model and clear its dirty state."""
+        if self.project is None:
+            raise RuntimeError("Create or open a model before saving.")
+        if root is not None:
+            self.model_root = Path(root)
+        if self.model_root is None:
+            raise RuntimeError("Choose a folder for the model before saving.")
+        saved_path = self.project_service.save(self.model_root, self.project)
+        self.is_dirty = False
+        self.statusBar().showMessage(f"Saved design model: {saved_path}")
+        return saved_path
 
     def add_command(self, name: str) -> None:
         """Add a command and refresh its deterministic initial canvas position."""
@@ -109,6 +136,20 @@ class MainWindow(QMainWindow):
         name, accepted = QInputDialog.getText(self, "New model", "Model name:")
         if accepted and name.strip():
             self.new_project(name.strip())
+
+    def _prompt_open_project(self) -> None:
+        root = QFileDialog.getExistingDirectory(self, "Open architecture model")
+        if root:
+            self.open_project(Path(root))
+
+    def _prompt_save_project(self) -> None:
+        if self.model_root is None:
+            root = QFileDialog.getExistingDirectory(self, "Save architecture model")
+            if not root:
+                return
+            self.save_project(Path(root))
+        else:
+            self.save_project()
 
     def _prompt_new_command(self) -> None:
         self._prompt_element("New command", self.add_command)
