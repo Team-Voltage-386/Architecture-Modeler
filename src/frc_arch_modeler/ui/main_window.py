@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from frc_arch_modeler.domain.model import ArchitectureProject, SourceAnchor
+from frc_arch_modeler.domain.model import ArchitectureProject, ComparisonState, SourceAnchor
 from frc_arch_modeler.importers.base import ScanResult
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.persistence.draft_store import DraftStore
@@ -106,6 +106,19 @@ class MainWindow(QMainWindow):
         self.search_field.setClearButtonEnabled(True)
         self.search_field.textChanged.connect(self.scene.filter_blocks)
         toolbar.addWidget(self.search_field)
+        self._status_filter_actions = {}
+        for state, label in (
+            (ComparisonState.MATCHED, "Matched"),
+            (ComparisonState.MODIFIED, "Modified"),
+            (ComparisonState.DESIGN_ONLY, "Design Only"),
+            (ComparisonState.CODE_ONLY, "Code Only"),
+            (ComparisonState.UNRESOLVED, "Unresolved"),
+        ):
+            action = toolbar.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(True)
+            action.toggled.connect(self._apply_status_filters)
+            self._status_filter_actions[state] = action
         toolbar.addSeparator()
         self.undo_action = self.undo_stack.createUndoAction(self, "Undo")
         self.redo_action = self.undo_stack.createRedoAction(self, "Redo")
@@ -375,6 +388,7 @@ class MainWindow(QMainWindow):
             layout=self.scene.layout_state(),
             scan=self.last_scan,
             statuses=self._comparison_statuses(),
+            code_only_symbols=self._code_only_symbols(),
         )
 
     def compare_changes(self) -> ReconciliationResult | None:
@@ -403,6 +417,16 @@ class MainWindow(QMainWindow):
 
     def _comparison_statuses(self) -> dict:
         return self.reconciliation.statuses if self.reconciliation is not None else {}
+
+    def _code_only_symbols(self) -> set[str]:
+        if self.reconciliation is None:
+            return set()
+        return {symbol.anchor.qualified_symbol for symbol in self.reconciliation.code_only}
+
+    def _apply_status_filters(self) -> None:
+        self.scene.set_status_filter(
+            {state for state, action in self._status_filter_actions.items() if action.isChecked()}
+        )
 
     def add_command(self, name: str) -> None:
         """Add a command and refresh its deterministic initial canvas position."""

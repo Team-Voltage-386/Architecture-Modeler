@@ -139,3 +139,24 @@ def test_modified_status_has_non_color_caption_and_border_style(qapp) -> None:
 
     assert block.caption.toPlainText() == "Δ MODIFIED"
     assert block.pen().style() == Qt.PenStyle.DashDotLine
+
+
+def test_status_filter_hides_blocks_outside_the_selected_state(qapp) -> None:
+    matched = Command(name=FieldValue(design="Matched"))
+    modified = Command(name=FieldValue(design="Modified"))
+    scene = ArchitectureScene()
+    scene.render_project(
+        ArchitectureProject(name="Robot", commands=[matched, modified]),
+        statuses={
+            matched.id: ComparisonState.MATCHED,
+            modified.id: ComparisonState.MODIFIED,
+        },
+    )
+
+    scene.set_status_filter({ComparisonState.MODIFIED})
+
+    assert [
+        block.title.toPlainText()
+        for block in scene.items()
+        if isinstance(block, ArchitectureBlock) and block.isVisible()
+    ] == ["Modified"]

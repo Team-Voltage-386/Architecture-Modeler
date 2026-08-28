@@ -77,6 +77,7 @@ class ArchitectureBlock(QGraphicsRectItem):
             ComparisonState.MODIFIED: "Δ MODIFIED",
             ComparisonState.DESIGN_ONLY: "+ DESIGN ONLY",
             ComparisonState.UNRESOLVED: "? UNRESOLVED",
+            ComparisonState.CODE_ONLY: "↓ CODE ONLY",
         }
         caption = status_labels.get(
             comparison_state, f"{'Imported ' if imported else ''}{kind.upper()}"
@@ -102,6 +103,8 @@ class ArchitectureScene(QGraphicsScene):
         super().__init__(parent)
         self._drag_start_positions: dict[UUID, QPointF] = {}
         self._edges: list[QGraphicsPathItem] = []
+        self._search_query = ""
+        self._visible_states = set(ComparisonState)
         self.selectionChanged.connect(self._update_edge_visibility)
 
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]
@@ -136,6 +139,7 @@ class ArchitectureScene(QGraphicsScene):
         layout: dict[str, dict[str, Any]] | None = None,
         scan: ScanResult | None = None,
         statuses: dict[UUID, ComparisonState] | None = None,
+        code_only_symbols: set[str] | None = None,
     ) -> None:
         """Replace scene contents with a deterministic initial model layout."""
         self.clear()
@@ -148,6 +152,7 @@ class ArchitectureScene(QGraphicsScene):
 
         layout = layout or {}
         statuses = statuses or {}
+        code_only_symbols = code_only_symbols or set()
         blocks: dict[UUID, ArchitectureBlock] = {}
         for index, command in enumerate(project.commands):
             block = self._add_block(command, "command", index, COMMAND_Y, layout, statuses)
@@ -162,8 +167,11 @@ class ArchitectureScene(QGraphicsScene):
                 if subsystem_block:
                     self._add_requirement_edge(command_block, subsystem_block)
         if scan is not None:
-            self._add_imported_code(scan, len(project.commands), len(project.subsystems))
+            self._add_imported_code(
+                scan, len(project.commands), len(project.subsystems), code_only_symbols
+            )
         self.setSceneRect(self.itemsBoundingRect().adjusted(-80, -80, 80, 80))
+        self._apply_filters()
 
     def _add_block(
         self,
@@ -190,8 +198,13 @@ class ArchitectureScene(QGraphicsScene):
         return block
 
     def _add_imported_code(
-        self, scan: ScanResult, command_offset: int, subsystem_offset: int
+        self,
+        scan: ScanResult,
+        command_offset: int,
+        subsystem_offset: int,
+        code_only_symbols: set[str] | None = None,
     ) -> None:
+        code_only_symbols = code_only_symbols or set()
         imported_by_symbol: dict[str, ArchitectureBlock] = {}
         imported_subsystems: dict[str, ArchitectureBlock] = {}
         imported_commands = [
@@ -204,7 +217,15 @@ class ArchitectureScene(QGraphicsScene):
             ("subsystem", scan.symbols_of_kind("subsystem"), subsystem_offset, SUBSYSTEM_Y),
         ):
             for index, symbol in enumerate(symbols):
-                block = self._add_imported_block(symbol, kind, index + offset, y_position)
+                block = self._add_imported_block(
+                    symbol,
+                    kind,
+                    index + offset,
+                    y_position,
+                    ComparisonState.CODE_ONLY
+                    if symbol.anchor.qualified_symbol in code_only_symbols
+                    else None,
+                )
                 imported_by_symbol[symbol.anchor.qualified_symbol] = block
                 if kind == "subsystem":
                     imported_subsystems[symbol.name.casefold()] = block
@@ -218,13 +239,19 @@ class ArchitectureScene(QGraphicsScene):
                 self._add_requirement_edge(command, subsystem, imported=True)
 
     def _add_imported_block(
-        self, symbol: ScannedSymbol, kind: str, index: int, y_position: int
+        self,
+        symbol: ScannedSymbol,
+        kind: str,
+        index: int,
+        y_position: int,
+        comparison_state: ComparisonState | None = None,
     ) -> ArchitectureBlock:
         block = ArchitectureBlock(
             uuid5(NAMESPACE_URL, symbol.anchor.qualified_symbol),
             symbol.name,
             kind,
             imported=True,
+            comparison_state=comparison_state,
             source_anchor=symbol.anchor,
         )
         block.setPos(index * (BLOCK_WIDTH + HORIZONTAL_GAP), y_position)
@@ -257,17 +284,45 @@ class ArchitectureScene(QGraphicsScene):
 
     def filter_blocks(self, query: str) -> None:
         """Filter visual blocks by their displayed name without changing the model."""
-        normalized = query.casefold().strip()
+        self._search_query = query.casefold().strip()
+        self._apply_filters()
+
+    def set_status_filter(self, visible_states: set[ComparisonState]) -> None:
+        """Show only requested comparison states while retaining the current search."""
+        self._visible_states = set(visible_states)
+        self._apply_filters()
+
+    def _apply_filters(self) -> None:
         visible_ids: set[UUID] = set()
         for item in self.items():
             if isinstance(item, ArchitectureBlock):
-                visible = not normalized or normalized in item.title.toPlainText().casefold()
+                caption = item.caption.toPlainText().casefold()
+                name = item.title.toPlainText().casefold()
+                matches_search = (
+                    not self._search_query
+                    or self._search_query in name
+                    or self._search_query in caption
+                )
+                visible = (
+                    matches_search and self._block_state(item) in self._visible_states
+                )
                 item.setVisible(visible)
                 if visible:
                     visible_ids.add(item.element_id)
         for edge in self._edges:
             endpoint_ids = edge.data(0)
             edge.setVisible(endpoint_ids <= visible_ids)
+
+    @staticmethod
+    def _block_state(block: ArchitectureBlock) -> ComparisonState:
+        labels = {
+            "✓ MATCHED": ComparisonState.MATCHED,
+            "Δ MODIFIED": ComparisonState.MODIFIED,
+            "+ DESIGN ONLY": ComparisonState.DESIGN_ONLY,
+            "? UNRESOLVED": ComparisonState.UNRESOLVED,
+            "↓ CODE ONLY": ComparisonState.CODE_ONLY,
+        }
+        return labels.get(block.caption.toPlainText(), ComparisonState.UNRESOLVED)
 
     def _update_edge_visibility(self) -> None:
         selected_ids = {block.element_id for block in self.selected_blocks()}
