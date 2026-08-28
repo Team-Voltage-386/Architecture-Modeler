@@ -68,3 +68,17 @@ $env:QT_QPA_PLATFORM = 'offscreen'
 & .\.runtime-env\python.exe -m pytest --basetemp .pytest-tmp
 & .\.runtime-env\python.exe -m ruff check .
 ```
+
+## Build a Windows distribution
+
+Install the project build extra into the isolated runtime, then run
+`build_windows.bat`. It produces a folder-based PyInstaller build at
+`dist\FRC Architecture Modeler\`, including this project's MIT license.
+
+```powershell
+& .\.runtime-env\python.exe -m pip install -e ".[build]"
+.\build_windows.bat
+```
+
+The build bundles Qt and the Tree-sitter Java grammar. Review their respective
+distribution licenses before publishing a release.

@@ -22,6 +22,9 @@ dev = [
     "pytest-qt>=4.4",
     "ruff>=0.6",
 ]
+build = [
+    "pyinstaller>=6.0,<7",
+]
 
 [project.scripts]
 frc-architecture-modeler = "frc_arch_modeler.app:main"
