@@ -41,6 +41,7 @@ class ArchitectureExportService:
         subsystem_names = {
             subsystem.id: subsystem.name.effective or "Unnamed" for subsystem in subsystems
         }
+        command_names = {command.id: command.name.effective or "Unnamed" for command in commands}
         lines = [
             f"# Architecture: {project.name}",
             "",
@@ -61,13 +62,32 @@ class ArchitectureExportService:
         ]
         if subsystems:
             for subsystem in subsystems:
-                lines.extend(self._subsystem_lines(subsystem))
+                lines.extend(
+                    self._subsystem_lines(
+                        subsystem,
+                        [
+                            device
+                            for device in project.devices
+                            if device.owner_subsystem_id == subsystem.id
+                        ],
+                    )
+                )
         else:
             lines.append("_No subsystems defined._")
         lines.extend(["", "## Commands", ""])
         if commands:
             for command in commands:
-                lines.extend(self._command_lines(command, subsystem_names))
+                lines.extend(
+                    self._command_lines(
+                        command,
+                        subsystem_names,
+                        [
+                            trigger
+                            for trigger in project.triggers
+                            if trigger.command_id == command.id
+                        ],
+                    )
+                )
         else:
             lines.append("_No commands defined._")
         lines.extend(
@@ -85,6 +105,37 @@ class ArchitectureExportService:
                 lines.append(f"| {command_name} | {requirement_text} |")
         else:
             lines.append("| _No commands_ | None |")
+        lines.extend(
+            [
+                "",
+                "## Design Relationships",
+                "",
+                "| Type | Source | Target |",
+                "| --- | --- | --- |",
+            ]
+        )
+        if project.relationships:
+            names = {**subsystem_names, **command_names}
+            names.update(
+                {device.id: device.name.effective or "Unnamed" for device in project.devices}
+            )
+            names.update(
+                {
+                    trigger.id: trigger.expression.effective or "Unnamed trigger"
+                    for trigger in project.triggers
+                }
+            )
+            for relationship in sorted(
+                project.relationships,
+                key=lambda item: (item.relationship_type, str(item.source_id), str(item.target_id)),
+            ):
+                lines.append(
+                    f"| {relationship.relationship_type} | "
+                    f"{names.get(relationship.source_id, 'Unknown')} | "
+                    f"{names.get(relationship.target_id, 'Unknown')} |"
+                )
+        else:
+            lines.append("| _None_ | â€” | â€” |")
         if scan is not None:
             lines.extend(self._scan_lines(project, scan, comparison))
         return "\n".join(lines) + "\n"
@@ -199,23 +250,43 @@ class ArchitectureExportService:
     def _description(element: Command | Subsystem) -> str:
         return element.description.effective or "_Not specified._"
 
-    def _subsystem_lines(self, subsystem: Subsystem) -> list[str]:
-        return [
+    def _subsystem_lines(self, subsystem: Subsystem, devices) -> list:  # type: ignore[no-untyped-def]
+        lines = [
             f"### {subsystem.name.effective}",
             "",
             self._description(subsystem),
-            "",
         ]
+        if devices:
+            lines.extend(["", "- Devices:"])
+            for device in sorted(devices, key=lambda item: (item.name.effective or "").casefold()):
+                mode = f" ({device.mode.effective})" if device.mode.effective else ""
+                lines.append(
+                    f"  - {device.name.effective}: {device.device_type.effective}{mode}"
+                )
+        lines.append("")
+        return lines
 
-    def _command_lines(self, command: Command, subsystem_names: dict[object, str]) -> list[str]:
+    def _command_lines(
+        self, command: Command, subsystem_names: dict[object, str], triggers
+    ) -> list:  # type: ignore[no-untyped-def]
         requirements = [
             subsystem_names[item] for item in command.requirement_ids if item in subsystem_names
         ]
-        return [
+        lines = [
             f"### {command.name.effective}",
             "",
             self._description(command),
             "",
             f"- Requirements: {', '.join(requirements) or 'None'}",
-            "",
         ]
+        if triggers:
+            lines.append("- Triggers:")
+            for trigger in sorted(
+                triggers, key=lambda item: (item.expression.effective or "").casefold()
+            ):
+                lines.append(
+                    f"  - {trigger.expression.effective or 'Unspecified'} â€” "
+                    f"{trigger.activation.effective or 'Unspecified'}"
+                )
+        lines.append("")
+        return lines
