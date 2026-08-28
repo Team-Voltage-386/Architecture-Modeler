@@ -6,7 +6,13 @@ from frc_arch_modeler.domain.model import (
     SourceAnchor,
     Subsystem,
 )
-from frc_arch_modeler.importers.base import ScanDiagnostic, ScannedSymbol, ScanResult
+from frc_arch_modeler.importers.base import (
+    ScanDiagnostic,
+    ScannedDevice,
+    ScannedSymbol,
+    ScannedTrigger,
+    ScanResult,
+)
 from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.reconcile_service import ReconciliationResult
 
@@ -41,6 +47,24 @@ def test_architecture_export_includes_optional_code_scan_discrepancies(tmp_path)
     scan = ScanResult(
         project_root=tmp_path,
         symbols=[imported],
+        devices=[
+            ScannedDevice(
+                "SparkMax",
+                "DRIVE_ID, MotorType.kBrushless",
+                "robot.DriveIOReal",
+                SourceAnchor("src/DriveIOReal.java", "robot.DriveIOReal", 8, 8),
+                resolved_arguments="4, MotorType.kBrushless",
+                mode="REAL",
+            )
+        ],
+        triggers=[
+            ScannedTrigger(
+                "driver.a()",
+                "onTrue",
+                "new DriveCommand(drive)",
+                SourceAnchor("src/RobotContainer.java", "robot.RobotContainer", 22, 22),
+            )
+        ],
         files_scanned=1,
         diagnostics=[ScanDiagnostic("warning", "Example warning", "src/Broken.java")],
     )
@@ -55,4 +79,8 @@ def test_architecture_export_includes_optional_code_scan_discrepancies(tmp_path)
     assert "## Imported Code Summary" in content
     assert "## Design / Code Discrepancies" in content
     assert "| Drive | Subsystem | matched | `src/Drive.java:4` |" in content
+    assert "## Imported Hardware" in content
+    assert "| robot.DriveIOReal | SparkMax (REAL) | `4, MotorType.kBrushless` |" in content
+    assert "## Imported Trigger Bindings" in content
+    assert "| driver.a() | onTrue | `new DriveCommand(drive)` |" in content
     assert "Example warning (src/Broken.java)" in content

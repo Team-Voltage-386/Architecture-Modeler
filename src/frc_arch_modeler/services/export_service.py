@@ -132,6 +132,54 @@ class ArchitectureExportService:
                     f"| {symbol.name} | {symbol.kind.replace('_', ' ')} | code_only | "
                     f"`{symbol.anchor.relative_path}:{symbol.anchor.start_line}` |"
                 )
+        lines.extend(["", "## Imported Hardware", ""])
+        if scan.devices:
+            lines.extend(
+                [
+                    "| Logical owner | Device | Constructor evidence | Source |",
+                    "| --- | --- | --- | --- |",
+                ]
+            )
+            for device in sorted(
+                scan.devices,
+                key=lambda item: (
+                    item.owner_symbol.casefold(),
+                    item.device_type,
+                    item.anchor.start_line,
+                ),
+            ):
+                mode = f" ({device.mode})" if device.mode else ""
+                arguments = device.resolved_arguments or device.constructor_arguments
+                lines.append(
+                    f"| {device.owner_symbol} | {device.device_type}{mode} | `{arguments}` | "
+                    f"`{device.anchor.relative_path}:{device.anchor.start_line}` |"
+                )
+        else:
+            lines.append("_None discovered._")
+        lines.extend(["", "## Imported Trigger Bindings", ""])
+        if scan.triggers:
+            lines.extend(
+                [
+                    "| Trigger | Activation | Command expression | Source |",
+                    "| --- | --- | --- | --- |",
+                ]
+            )
+            for trigger in sorted(
+                scan.triggers,
+                key=lambda item: (
+                    item.controller_expression.casefold(),
+                    item.activation,
+                    item.anchor.relative_path,
+                    item.anchor.start_line,
+                ),
+            ):
+                lines.append(
+                    f"| {trigger.controller_expression} | {trigger.activation} | "
+                    f"`{trigger.command_expression}` | "
+                    f"`{trigger.anchor.relative_path}:{trigger.anchor.start_line}` |"
+                )
+        else:
+            lines.append("_None discovered._")
         lines.extend(["", "## Parser Diagnostics", ""])
         if scan.diagnostics:
             for diagnostic in scan.diagnostics:
