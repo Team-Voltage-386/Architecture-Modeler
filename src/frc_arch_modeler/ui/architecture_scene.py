@@ -234,13 +234,16 @@ class ArchitectureScene(QGraphicsScene):
         imported_subsystems: dict[str, ArchitectureBlock] = {}
         evidence_by_symbol: dict[str, list[str]] = {}
         device_lines_by_symbol: dict[str, list[str]] = {}
+        subsystem_symbols = scan.symbols_of_kind("subsystem")
         for device in scan.devices:
-            evidence_by_symbol.setdefault(device.owner_symbol, []).extend(
+            owner_symbol = self._logical_device_owner(device.owner_symbol, subsystem_symbols)
+            evidence_by_symbol.setdefault(owner_symbol, []).extend(
                 [device.device_type, device.constructor_arguments, device.resolved_arguments or ""]
             )
             arguments = device.resolved_arguments or device.constructor_arguments
-            device_lines_by_symbol.setdefault(device.owner_symbol, []).append(
-                f"{device.device_type}: {arguments}"
+            mode = f" [{device.mode}]" if device.mode else ""
+            device_lines_by_symbol.setdefault(owner_symbol, []).append(
+                f"{device.device_type}{mode}: {arguments}"
             )
         for trigger in scan.triggers:
             evidence_by_symbol.setdefault(trigger.anchor.qualified_symbol, []).extend(
@@ -261,7 +264,7 @@ class ArchitectureScene(QGraphicsScene):
         }
         for kind, symbols, offset, y_position in (
             ("command", imported_commands, command_offset, COMMAND_Y),
-            ("subsystem", scan.symbols_of_kind("subsystem"), subsystem_offset, SUBSYSTEM_Y),
+            ("subsystem", subsystem_symbols, subsystem_offset, SUBSYSTEM_Y),
         ):
             for index, symbol in enumerate(symbols):
                 block = self._add_imported_block(
@@ -327,6 +330,19 @@ class ArchitectureScene(QGraphicsScene):
     @staticmethod
     def _normalized(value: str) -> str:
         return "".join(character for character in value.casefold() if character.isalnum())
+
+    @classmethod
+    def _logical_device_owner(cls, owner_symbol: str, subsystems: list[ScannedSymbol]) -> str:
+        """Map an IO implementation back to its logical subsystem when unambiguous."""
+        owner_type = owner_symbol.rsplit(".", 1)[-1]
+        normalized_owner = cls._normalized(owner_type)
+        matches = [
+            symbol.anchor.qualified_symbol
+            for symbol in subsystems
+            if normalized_owner.startswith(cls._normalized(symbol.name))
+            and "io" in normalized_owner[len(cls._normalized(symbol.name)) :]
+        ]
+        return matches[0] if len(matches) == 1 else owner_symbol
 
     def layout_state(self) -> dict[str, dict[str, Any]]:
         """Return independently persistable presentation state for all blocks."""

@@ -8,8 +8,10 @@ from frc_arch_modeler.domain.model import (
     Command,
     ComparisonState,
     FieldValue,
+    SourceAnchor,
     Subsystem,
 )
+from frc_arch_modeler.importers.base import ScannedDevice, ScannedSymbol, ScanResult
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.ui.architecture_scene import SUBSYSTEM_Y, ArchitectureBlock, ArchitectureScene
 from frc_arch_modeler.ui.theme import VOLTAGE_BLUE, VOLTAGE_YELLOW
@@ -84,6 +86,33 @@ def test_scene_renders_code_import_as_separate_architecture_layer(qapp) -> None:
     edges = [item for item in scene.items() if isinstance(item, QGraphicsPathItem)]
     assert len(edges) == 1
     assert edges[0].toolTip() == "addRequirements(drive)"
+
+
+def test_scene_groups_io_variant_devices_under_logical_subsystem(qapp, tmp_path) -> None:
+    drive = ScannedSymbol(
+        kind="subsystem",
+        name="Drive",
+        anchor=SourceAnchor("src/Drive.java", "frc.robot.Drive", 1, 1),
+    )
+    io_device = ScannedDevice(
+        device_type="SparkMax",
+        constructor_arguments="4, MotorType.kBrushless",
+        owner_symbol="frc.robot.DriveIOSim",
+        anchor=SourceAnchor("src/DriveIOSim.java", "frc.robot.DriveIOSim", 3, 3),
+        mode="SIM",
+    )
+    scene = ArchitectureScene()
+
+    scene.render_project(
+        ArchitectureProject(name="Robot"), scan=ScanResult(tmp_path, [drive], devices=[io_device])
+    )
+
+    subsystem = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.title.toPlainText() == "Drive"
+    )
+    assert "SparkMax [SIM]: 4, MotorType.kBrushless" in subsystem.summary.toPlainText()
 
 
 def test_selection_emphasizes_only_connected_requirement_edges(qapp) -> None:

@@ -699,10 +699,10 @@ class MainWindow(QMainWindow):
         qualified_symbol = block.source_anchor.qualified_symbol
         if block.kind == "subsystem":
             devices = [
-                f"- {device.device_type}: "
+                f"- {device.device_type}{f' [{device.mode}]' if device.mode else ''}: "
                 f"{device.resolved_arguments or device.constructor_arguments}"
                 for device in self.last_scan.devices
-                if device.owner_symbol == qualified_symbol
+                if self._logical_device_owner(device.owner_symbol) == qualified_symbol
             ]
             if devices:
                 lines.extend(["Devices:", *devices])
@@ -736,6 +736,20 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _normalized(value: str) -> str:
         return "".join(character for character in value.casefold() if character.isalnum())
+
+    def _logical_device_owner(self, owner_symbol: str) -> str:
+        """Use the same conservative IO-to-subsystem presentation mapping as the canvas."""
+        if self.last_scan is None:
+            return owner_symbol
+        owner_type = owner_symbol.rsplit(".", 1)[-1]
+        normalized_owner = self._normalized(owner_type)
+        matches = [
+            symbol.anchor.qualified_symbol
+            for symbol in self.last_scan.symbols_of_kind("subsystem")
+            if normalized_owner.startswith(self._normalized(symbol.name))
+            and "io" in normalized_owner[len(self._normalized(symbol.name)) :]
+        ]
+        return matches[0] if len(matches) == 1 else owner_symbol
 
     def edit_selected_description(self, description: str | None) -> None:
         """Apply a selected element's design description through the undo stack."""
