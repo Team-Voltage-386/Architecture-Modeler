@@ -167,10 +167,36 @@ class ArchitectureScene(QGraphicsScene):
         code_only_symbols = code_only_symbols or set()
         blocks: dict[UUID, ArchitectureBlock] = {}
         for index, command in enumerate(project.commands):
-            block = self._add_block(command, "command", index, COMMAND_Y, layout, statuses)
+            block = self._add_block(
+                command,
+                "command",
+                index,
+                COMMAND_Y,
+                layout,
+                statuses,
+                [
+                    f"{trigger.expression.effective or 'Trigger'} · "
+                    f"{trigger.activation.effective or 'Unspecified'}"
+                    for trigger in project.triggers
+                    if trigger.command_id == command.id
+                ],
+            )
             blocks[command.id] = block
         for index, subsystem in enumerate(project.subsystems):
-            block = self._add_block(subsystem, "subsystem", index, SUBSYSTEM_Y, layout, statuses)
+            block = self._add_block(
+                subsystem,
+                "subsystem",
+                index,
+                SUBSYSTEM_Y,
+                layout,
+                statuses,
+                [
+                    f"{device.device_type.effective or 'Device'}: "
+                    f"{device.name.effective or 'Unnamed'}"
+                    for device in project.devices
+                    if device.owner_subsystem_id == subsystem.id
+                ],
+            )
             blocks[subsystem.id] = block
         for command in project.commands:
             command_block = blocks[command.id]
@@ -195,6 +221,7 @@ class ArchitectureScene(QGraphicsScene):
         y_position: int,
         layout: dict[str, dict[str, Any]],
         statuses: dict[UUID, ComparisonState],
+        design_detail_lines: list[str] | None = None,
     ) -> ArchitectureBlock:
         block = ArchitectureBlock(
             element.id,
@@ -211,7 +238,7 @@ class ArchitectureScene(QGraphicsScene):
                     ],
                 )
             ),
-            detail_lines=[element.description.effective or ""],
+            detail_lines=[element.description.effective or "", *(design_detail_lines or [])],
         )
         item_layout = layout.get(str(element.id), {})
         block.setPos(

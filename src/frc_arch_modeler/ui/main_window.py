@@ -121,6 +121,10 @@ class MainWindow(QMainWindow):
         self.new_command_action.setEnabled(False)
         self.new_subsystem_action = toolbar.addAction("New Subsystem", self._prompt_new_subsystem)
         self.new_subsystem_action.setEnabled(False)
+        self.new_device_action = toolbar.addAction("New Device", self._prompt_new_device)
+        self.new_device_action.setEnabled(False)
+        self.new_trigger_action = toolbar.addAction("New Trigger", self._prompt_new_trigger)
+        self.new_trigger_action.setEnabled(False)
         self.search_field = QLineEdit(self)
         self.search_field.setObjectName("architectureSearch")
         self.search_field.setAccessibleName("Search architecture evidence")
@@ -230,6 +234,8 @@ class MainWindow(QMainWindow):
         self._update_compact_details()
         self.new_command_action.setEnabled(project is not None)
         self.new_subsystem_action.setEnabled(project is not None)
+        self.new_device_action.setEnabled(project is not None and bool(project.subsystems))
+        self.new_trigger_action.setEnabled(project is not None and bool(project.commands))
         self.save_model_action.setEnabled(project is not None)
         self.auto_layout_action.setEnabled(project is not None)
         self.zoom_to_fit_action.setEnabled(project is not None)
@@ -610,9 +616,29 @@ class MainWindow(QMainWindow):
         self.project_service.add_subsystem(self.project, name)
         self._refresh_after_edit()
 
+    def add_device(
+        self, owner_subsystem_id, name: str, device_type: str, mode: str | None = None
+    ) -> None:  # type: ignore[no-untyped-def]
+        """Add a proposed hardware device and surface it on its subsystem block."""
+        if self.project is None:
+            raise RuntimeError("Create or open a model before adding a device.")
+        self.project_service.add_device(self.project, owner_subsystem_id, name, device_type, mode)
+        self._refresh_after_edit()
+
+    def add_trigger(
+        self, command_id, expression: str, activation: str
+    ) -> None:  # type: ignore[no-untyped-def]
+        """Add a proposed trigger binding and surface it on its command block."""
+        if self.project is None:
+            raise RuntimeError("Create or open a model before adding a trigger.")
+        self.project_service.add_trigger(self.project, command_id, expression, activation)
+        self._refresh_after_edit()
+
     def _refresh_after_edit(self) -> None:
         assert self.project is not None
         self.scene.render_project(self.project, scan=self.last_scan)
+        self.new_device_action.setEnabled(bool(self.project.subsystems))
+        self.new_trigger_action.setEnabled(bool(self.project.commands))
         self._mark_dirty(f"Unsaved design model: {self.project.name}")
 
     def auto_layout(self) -> None:
@@ -869,6 +895,67 @@ class MainWindow(QMainWindow):
 
     def _prompt_new_subsystem(self) -> None:
         self._prompt_element("New subsystem", self.add_subsystem)
+
+    def _prompt_new_device(self) -> None:
+        if self.project is None or not self.project.subsystems:
+            return
+        names = [subsystem.name.effective or "Unnamed" for subsystem in self.project.subsystems]
+        owner_name, accepted = QInputDialog.getItem(
+            self, "New device", "Subsystem:", names, 0, False
+        )
+        if not accepted:
+            return
+        owner = next(
+            subsystem
+            for subsystem in self.project.subsystems
+            if subsystem.name.effective == owner_name
+        )
+        name, accepted = QInputDialog.getText(self, "New device", "Device name:")
+        if not accepted or not name.strip():
+            return
+        device_type, accepted = QInputDialog.getText(self, "New device", "Device type:")
+        if not accepted or not device_type.strip():
+            return
+        mode, accepted = QInputDialog.getItem(
+            self, "New device", "Mode:", ["Unspecified", "REAL", "SIM", "REPLAY"], 0, False
+        )
+        if accepted:
+            self.add_device(
+                owner.id,
+                name.strip(),
+                device_type.strip(),
+                None if mode == "Unspecified" else mode,
+            )
+
+    def _prompt_new_trigger(self) -> None:
+        if self.project is None or not self.project.commands:
+            return
+        names = [command.name.effective or "Unnamed" for command in self.project.commands]
+        command_name, accepted = QInputDialog.getItem(
+            self, "New trigger", "Command:", names, 0, False
+        )
+        if not accepted:
+            return
+        command = next(
+            command
+            for command in self.project.commands
+            if command.name.effective == command_name
+        )
+        expression, accepted = QInputDialog.getText(
+            self, "New trigger", "Controller / trigger expression:"
+        )
+        if not accepted or not expression.strip():
+            return
+        activation, accepted = QInputDialog.getItem(
+            self,
+            "New trigger",
+            "Activation:",
+            ["onTrue", "onFalse", "whileTrue", "whileFalse", "toggleOnTrue", "toggleOnFalse"],
+            0,
+            False,
+        )
+        if accepted:
+            self.add_trigger(command.id, expression.strip(), activation)
 
     def _prompt_element(self, title: str, create_element: Callable[[str], None]) -> None:
         name, accepted = QInputDialog.getText(self, title, "Name:")

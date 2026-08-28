@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import UUID
 
-from frc_arch_modeler.domain.model import ArchitectureProject, Command, FieldValue, Subsystem
+from frc_arch_modeler.domain.model import (
+    ArchitectureProject,
+    Command,
+    Device,
+    FieldValue,
+    Subsystem,
+    TriggerBinding,
+)
 from frc_arch_modeler.persistence.binding_store import BindingStore
 from frc_arch_modeler.persistence.project_store import ProjectStore
 
@@ -39,3 +47,37 @@ class ProjectService:
         subsystem = Subsystem(name=FieldValue(design=name))
         project.subsystems.append(subsystem)
         return subsystem
+
+    def add_device(
+        self,
+        project: ArchitectureProject,
+        owner_subsystem_id: UUID,
+        name: str,
+        device_type: str,
+        mode: str | None = None,
+    ) -> Device:
+        """Add portable, user-authored hardware to its logical subsystem."""
+        device = Device(
+            name=FieldValue(design=name),
+            device_type=FieldValue(design=device_type),
+            owner_subsystem_id=owner_subsystem_id,
+            mode=FieldValue(design=mode) if mode else FieldValue(),
+        )
+        project.devices.append(device)
+        return device
+
+    def add_trigger(
+        self,
+        project: ArchitectureProject,
+        command_id: UUID,
+        expression: str,
+        activation: str,
+    ) -> TriggerBinding:
+        """Add a user-authored controller binding to a command."""
+        trigger = TriggerBinding(
+            expression=FieldValue(design=expression),
+            activation=FieldValue(design=activation),
+            command_id=command_id,
+        )
+        project.triggers.append(trigger)
+        return trigger

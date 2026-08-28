@@ -48,6 +48,27 @@ def test_new_model_and_design_elements_update_the_canvas(qtbot) -> None:
     assert len([item for item in window.scene.items() if isinstance(item, ArchitectureBlock)]) == 2
 
 
+def test_design_devices_and_triggers_appear_on_their_canvas_blocks(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    window.add_command("Teleop Drive")
+    assert window.project is not None
+
+    window.add_device(window.project.subsystems[0].id, "Left motor", "SparkMax", "REAL")
+    window.add_trigger(window.project.commands[0].id, "Driver A", "onTrue")
+
+    blocks = [item for item in window.scene.items() if isinstance(item, ArchitectureBlock)]
+    drive = next(block for block in blocks if block.title.toPlainText() == "Drive")
+    command = next(block for block in blocks if block.title.toPlainText() == "Teleop Drive")
+    assert "SparkMax: Left motor" in drive.summary.toPlainText()
+    assert "Driver A · onTrue" in command.summary.toPlainText()
+    assert window.new_device_action.isEnabled()
+    assert window.new_trigger_action.isEnabled()
+
+
 def test_save_and_open_model_round_trip_from_window(qtbot, tmp_path) -> None:
     create_application([])
     window = MainWindow()

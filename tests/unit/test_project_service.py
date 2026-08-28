@@ -28,6 +28,21 @@ def test_add_design_elements() -> None:
     assert subsystem.name.effective == "Elevator"
 
 
+def test_add_design_device_and_trigger() -> None:
+    service = ProjectService()
+    project = service.create("Competition Robot")
+    subsystem = service.add_subsystem(project, "Elevator")
+    command = service.add_command(project, "Score Coral")
+
+    device = service.add_device(project, subsystem.id, "Lift motor", "TalonFX", "REAL")
+    trigger = service.add_trigger(project, command.id, "Operator A", "onTrue")
+
+    assert device.owner_subsystem_id == subsystem.id
+    assert device.mode.effective == "REAL"
+    assert trigger.command_id == command.id
+    assert trigger.expression.effective == "Operator A"
+
+
 def test_open_reports_corrupt_model_with_its_location(tmp_path) -> None:
     destination = tmp_path / ".frc-architecture" / "model.json"
     destination.parent.mkdir()
