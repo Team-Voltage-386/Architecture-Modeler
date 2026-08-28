@@ -324,6 +324,13 @@ class MainWindow(QMainWindow):
                 item.setData(0, Qt.ItemDataRole.UserRole, key)
                 self._inventory_symbols[key] = device
                 device_group.addChild(item)
+        if self.last_scan.diagnostics:
+            diagnostic_group = QTreeWidgetItem(["Scan diagnostics", ""])
+            self.inventory_tree.addTopLevelItem(diagnostic_group)
+            for diagnostic in self.last_scan.diagnostics:
+                diagnostic_group.addChild(
+                    QTreeWidgetItem([diagnostic.message, diagnostic.relative_path or ""])
+                )
         self.inventory_tree.expandAll()
 
     def _render_with_current_scan(self) -> None:
