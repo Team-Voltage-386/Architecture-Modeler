@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import QDockWidget
+from PySide6.QtGui import QCloseEvent, QPalette
+from PySide6.QtWidgets import QDockWidget, QMessageBox
 
 from frc_arch_modeler.app import create_application
 from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock
@@ -145,3 +145,22 @@ def test_export_change_request_from_window(qtbot, tmp_path) -> None:
 
     assert destination.exists()
     assert "### Command: Score Coral" in destination.read_text(encoding="utf-8")
+
+
+def test_close_ignores_dirty_model_when_user_cancels(qtbot, monkeypatch) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    window.new_project("Competition Robot")
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *args: QMessageBox.StandardButton.Cancel,
+    )
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert not event.isAccepted()
+    window.is_dirty = False

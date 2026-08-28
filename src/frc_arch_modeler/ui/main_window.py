@@ -6,13 +6,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPainter, QUndoStack
+from PySide6.QtGui import QCloseEvent, QPainter, QUndoStack
 from PySide6.QtWidgets import (
     QDockWidget,
     QFileDialog,
     QGraphicsView,
     QInputDialog,
     QMainWindow,
+    QMessageBox,
     QToolBar,
     QTreeWidget,
     QTreeWidgetItem,
@@ -101,6 +102,33 @@ class MainWindow(QMainWindow):
             self.restore_action,
         ):
             action.setEnabled(False)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Protect unsaved design and canvas edits when the main window closes."""
+        if not self.is_dirty or not self.isVisible():
+            event.accept()
+            return
+        choice = QMessageBox.warning(
+            self,
+            "Unsaved architecture model",
+            "Save changes before closing?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        if choice == QMessageBox.StandardButton.Discard:
+            event.accept()
+            return
+        if choice == QMessageBox.StandardButton.Save:
+            try:
+                self._prompt_save_project()
+            except OSError as error:
+                QMessageBox.critical(self, "Could not save model", str(error))
+            if not self.is_dirty:
+                event.accept()
+                return
+        event.ignore()
 
     def _build_canvas(self) -> None:
         self.canvas = QGraphicsView(self.scene, self)
