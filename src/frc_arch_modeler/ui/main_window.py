@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
 )
 
 from frc_arch_modeler.domain.model import ArchitectureProject
+from frc_arch_modeler.importers.base import ScanResult
+from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.persistence.layout_store import LayoutStore
 from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.project_service import ProjectService
@@ -33,6 +35,8 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.project: ArchitectureProject | None = None
         self.model_root: Path | None = None
+        self.robot_project_root: Path | None = None
+        self.last_scan: ScanResult | None = None
         self.is_dirty = False
         self.project_service = ProjectService()
         self.export_service = ArchitectureExportService()
@@ -52,12 +56,12 @@ class MainWindow(QMainWindow):
         self.open_model_action = toolbar.addAction("Open Model", self._prompt_open_project)
         self.save_model_action = toolbar.addAction("Save Model", self._prompt_save_project)
         self.save_model_action.setEnabled(False)
-        for label in (
-            "Connect Robot Project",
-            "Refresh Code",
-            "Compare Changes",
-            "Export AI Change Request",
-        ):
+        self.connect_robot_action = toolbar.addAction(
+            "Connect Robot Project", self._prompt_connect_robot_project
+        )
+        self.refresh_code_action = toolbar.addAction("Refresh Code", self.refresh_robot_project)
+        self.refresh_code_action.setEnabled(False)
+        for label in ("Compare Changes", "Export AI Change Request"):
             action = toolbar.addAction(label)
             action.setEnabled(False)
         self.export_architecture_action = toolbar.addAction(
@@ -158,6 +162,34 @@ class MainWindow(QMainWindow):
         destination = self.export_service.export(export_root, self.project)
         self.statusBar().showMessage(f"Exported architecture: {destination}")
         return destination
+
+    def connect_robot_project(self, root: Path) -> ScanResult:
+        """Scan a Java/WPILib project without altering the user-authored design."""
+        self.robot_project_root = Path(root)
+        self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
+        self.refresh_code_action.setEnabled(True)
+        self._show_scan_status("Connected")
+        return self.last_scan
+
+    def refresh_robot_project(self) -> ScanResult | None:
+        """Refresh the current code-derived inventory while retaining design edits."""
+        if self.robot_project_root is None:
+            return None
+        self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
+        self._show_scan_status("Refreshed")
+        return self.last_scan
+
+    def _show_scan_status(self, action: str) -> None:
+        assert self.robot_project_root is not None
+        assert self.last_scan is not None
+        subsystem_count = len(self.last_scan.symbols_of_kind("subsystem"))
+        command_count = len(self.last_scan.symbols_of_kind("command"))
+        factory_count = len(self.last_scan.symbols_of_kind("command_factory"))
+        diagnostic_count = len(self.last_scan.diagnostics)
+        self.statusBar().showMessage(
+            f"{action} {self.robot_project_root.name}: {subsystem_count} subsystems, "
+            f"{command_count} commands, {factory_count} factories, {diagnostic_count} warnings"
+        )
 
     def add_command(self, name: str) -> None:
         """Add a command and refresh its deterministic initial canvas position."""
@@ -276,6 +308,11 @@ class MainWindow(QMainWindow):
                 return
             root = Path(selected_root)
         self.export_architecture(root)
+
+    def _prompt_connect_robot_project(self) -> None:
+        root = QFileDialog.getExistingDirectory(self, "Connect Java/WPILib robot project")
+        if root:
+            self.connect_robot_project(Path(root))
 
     def _prompt_new_command(self) -> None:
         self._prompt_element("New command", self.add_command)
