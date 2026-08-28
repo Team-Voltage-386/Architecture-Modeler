@@ -60,6 +60,7 @@ class ScannedDevice:
     anchor: SourceAnchor
     confidence: str = "exact"
     resolved_arguments: str | None = None
+    mode: str | None = None
 
 
 @dataclass(slots=True)

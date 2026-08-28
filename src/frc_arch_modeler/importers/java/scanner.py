@@ -102,6 +102,12 @@ class JavaProjectScanner:
             for path in sorted(source_root.rglob("*.java"))
             if not any(part in EXCLUDED_DIRECTORY_NAMES for part in path.relative_to(root).parts)
         ]
+        # Constants routinely live in a separate Constants.java file.  Build a
+        # deliberately small project-level index before extraction so a device
+        # can retain both the original expression and a useful resolved port.
+        # Bare names are only indexed when unique; guessing a duplicated name is
+        # worse than leaving the evidence unresolved.
+        self._project_constants = self._project_constant_values(source_paths)
         for index, source_path in enumerate(source_paths, start=1):
             if should_cancel is not None and should_cancel():
                 raise ScanCancelled()
@@ -159,7 +165,7 @@ class JavaProjectScanner:
                     relative_path,
                     source_hash,
                     result,
-                    constants,
+                    {**self._project_constants, **constants},
                 )
                 self._scan_command_registrations(
                     source,
@@ -310,8 +316,51 @@ class JavaProjectScanner:
                         source_hash,
                     ),
                     resolved_arguments=resolved if resolved != arguments else None,
+                    mode=self._implementation_mode(owner_symbol),
                 )
             )
+
+    @staticmethod
+    def _implementation_mode(owner_symbol: str) -> str | None:
+        """Return a truthful IO implementation mode when its type declares one."""
+        type_name = owner_symbol.rsplit(".", 1)[-1].upper()
+        for mode in ("REPLAY", "SIM", "REAL"):
+            if type_name.endswith(mode) or f"IO{mode}" in type_name:
+                return mode
+        return None
+
+    @staticmethod
+    def _project_constant_values(source_paths: list[Path]) -> dict[str, str]:
+        """Index qualified constants declared in other Java files.
+
+        This is intentionally not Java type resolution.  It only follows static
+        final literal-like declarations, which is enough for the common
+        ``Constants.Drive.LEFT_ID`` hardware pattern while remaining safe when a
+        project is incomplete.
+        """
+        values: dict[str, str] = {}
+        bare_values: dict[str, str | None] = {}
+        for source_path in source_paths:
+            try:
+                source = source_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            package_match = PACKAGE_PATTERN.search(source)
+            package = package_match.group(1) if package_match else ""
+            type_match = TYPE_PATTERN.search(source)
+            if type_match is None:
+                continue
+            type_name = type_match.group("name")
+            for name, value in JavaProjectScanner._constant_values(source).items():
+                values[f"{type_name}.{name}"] = value
+                if package:
+                    values[f"{package}.{type_name}.{name}"] = value
+                if name not in bare_values:
+                    bare_values[name] = value
+                elif bare_values[name] != value:
+                    bare_values[name] = None
+        values.update({name: value for name, value in bare_values.items() if value is not None})
+        return values
 
     @staticmethod
     def _constant_values(source: str) -> dict[str, str]:
@@ -326,7 +375,9 @@ class JavaProjectScanner:
         """Resolve uppercase constant references while retaining unknown expressions."""
         return re.sub(
             r"\b(?:[A-Za-z_]\w*\.)*(?P<name>[A-Z][A-Z0-9_]*)\b",
-            lambda match: constants.get(match.group("name"), match.group(0)),
+            lambda match: constants.get(
+                match.group(0), constants.get(match.group("name"), match.group(0))
+            ),
             arguments,
         )
 

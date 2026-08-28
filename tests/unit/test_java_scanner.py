@@ -188,3 +188,28 @@ def test_scanner_resolves_local_static_hardware_constants(tmp_path) -> None:
 
     assert result.devices[0].constructor_arguments == "LEFT_MOTOR_ID, MotorType.kBrushless"
     assert result.devices[0].resolved_arguments == "4, MotorType.kBrushless"
+
+
+def test_scanner_resolves_cross_file_constants_and_marks_io_mode(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "Constants.java").write_text(
+        """package frc.robot;
+class Constants { static final int LEFT_MOTOR_ID = 9; }
+""",
+        encoding="utf-8",
+    )
+    (source_root / "DriveIOSim.java").write_text(
+        """package frc.robot;
+class DriveIOSim {
+  private final SparkMax motor = new SparkMax(Constants.LEFT_MOTOR_ID, MotorType.kBrushless);
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    assert result.devices[0].resolved_arguments == "9, MotorType.kBrushless"
+    assert result.devices[0].mode == "SIM"
