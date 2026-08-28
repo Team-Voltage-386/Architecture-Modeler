@@ -406,10 +406,14 @@ class MainWindow(QMainWindow):
         subsystem_count = len(self.last_scan.symbols_of_kind("subsystem"))
         command_count = len(self.last_scan.symbols_of_kind("command"))
         factory_count = len(self.last_scan.symbols_of_kind("command_factory"))
+        form_count = len(self.last_scan.symbols_of_kind("command_composition"))
+        trigger_count = len(self.last_scan.triggers)
+        device_count = len(self.last_scan.devices)
         diagnostic_count = len(self.last_scan.diagnostics)
         self.statusBar().showMessage(
             f"{action} {self.robot_project_root.name}: {subsystem_count} subsystems, "
-            f"{command_count} commands, {factory_count} factories, {diagnostic_count} warnings"
+            f"{command_count} commands, {factory_count} factories, {form_count} forms, "
+            f"{trigger_count} triggers, {device_count} devices, {diagnostic_count} warnings"
         )
 
     def _show_scan_inventory(self) -> None:

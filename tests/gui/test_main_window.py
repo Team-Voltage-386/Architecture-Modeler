@@ -218,6 +218,8 @@ def test_connect_robot_project_scans_code_without_changing_design(qtbot) -> None
     assert window.refresh_code_action.isEnabled()
     assert len(scan.symbols_of_kind("subsystem")) == 1
     assert "1 subsystems" in window.statusBar().currentMessage()
+    assert "1 triggers" in window.statusBar().currentMessage()
+    assert "1 devices" in window.statusBar().currentMessage()
     assert window.inventory_tree.topLevelItemCount() == 6
     assert window.inventory_tree.topLevelItem(0).text(0) == "Subsystems"
     group_names = [
