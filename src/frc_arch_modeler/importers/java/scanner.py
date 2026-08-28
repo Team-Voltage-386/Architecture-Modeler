@@ -45,6 +45,15 @@ TRIGGER_PATTERN = re.compile(
     r"toggleOnTrue|toggleOnFalse)\s*\((?P<command>[^;]+?)\)\s*;",
     re.MULTILINE | re.DOTALL,
 )
+DEFAULT_COMMAND_PATTERN = re.compile(
+    r"(?P<subsystem>[\w.]+)\.setDefaultCommand\s*\((?P<command>[^;]+?)\)\s*;",
+    re.MULTILINE | re.DOTALL,
+)
+AUTONOMOUS_REGISTRATION_PATTERN = re.compile(
+    r"\b(?:NamedCommands\.registerCommand|[\w.]+\.(?:setDefaultOption|addOption))\s*\(\s*"
+    r"\"(?P<name>[^\"]+)\"\s*,\s*(?P<command>[^;]+?)\)\s*;",
+    re.MULTILINE | re.DOTALL,
+)
 DEVICE_PATTERN = re.compile(
     r"\bnew\s+(?P<type>SparkMax|SparkFlex|TalonFX|TalonSRX|VictorSPX|"
     r"CANSparkMax|CANSparkFlex|DigitalInput|AnalogInput|Encoder|DutyCycleEncoder|"
@@ -130,6 +139,15 @@ class JavaProjectScanner:
                     result,
                 )
                 self._scan_devices(
+                    source,
+                    match.end(),
+                    body_end,
+                    qualified_type,
+                    relative_path,
+                    source_hash,
+                    result,
+                )
+                self._scan_command_registrations(
                     source,
                     match.end(),
                     body_end,
@@ -274,6 +292,59 @@ class JavaProjectScanner:
                         relative_path,
                         source_hash,
                     ),
+                )
+            )
+
+    def _scan_command_registrations(
+        self,
+        source: str,
+        body_start: int,
+        body_end: int,
+        owner_symbol: str,
+        relative_path: str,
+        source_hash: str,
+        result: ScanResult,
+    ) -> None:
+        """Extract default scheduler bindings and named autonomous registrations."""
+        body = source[body_start:body_end]
+        for match in DEFAULT_COMMAND_PATTERN.finditer(body):
+            command = " ".join(match.group("command").split())
+            anchor = self._anchor_at_offset(
+                owner_symbol, source, body_start + match.start(), relative_path, source_hash
+            )
+            result.symbols.append(
+                ScannedSymbol(
+                    kind="command_registration",
+                    name=f"Default: {match.group('subsystem')} → {command}",
+                    anchor=anchor,
+                )
+            )
+            result.relationships.append(
+                ScannedRelationship(
+                    kind="default_command",
+                    source_symbol=owner_symbol,
+                    target_expression=command,
+                    anchor=anchor,
+                )
+            )
+        for match in AUTONOMOUS_REGISTRATION_PATTERN.finditer(body):
+            command = " ".join(match.group("command").split())
+            anchor = self._anchor_at_offset(
+                owner_symbol, source, body_start + match.start(), relative_path, source_hash
+            )
+            result.symbols.append(
+                ScannedSymbol(
+                    kind="command_registration",
+                    name=f"Auto: {match.group('name')}",
+                    anchor=anchor,
+                )
+            )
+            result.relationships.append(
+                ScannedRelationship(
+                    kind="autonomous_registration",
+                    source_symbol=owner_symbol,
+                    target_expression=command,
+                    anchor=anchor,
                 )
             )
 

@@ -137,3 +137,31 @@ class Documented extends CommandBase {
         result.symbols_of_kind("lifecycle_method")[0].documentation
         == "Stops motors when ending."
     )
+
+
+def test_scanner_extracts_default_and_autonomous_command_registrations(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "RobotContainer.java").write_text(
+        """package frc.robot;
+class RobotContainer {
+  void configure(Drive drive) {
+    drive.setDefaultCommand(new DriveCommand(drive));
+    NamedCommands.registerCommand("Score", new ScoreCommand());
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    assert [item.name for item in result.symbols_of_kind("command_registration")] == [
+        "Default: drive → new DriveCommand(drive)",
+        "Auto: Score",
+    ]
+    assert [(item.kind, item.target_expression) for item in result.relationships] == [
+        ("default_command", "new DriveCommand(drive)"),
+        ("autonomous_registration", "new ScoreCommand()"),
+    ]

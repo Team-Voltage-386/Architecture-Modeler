@@ -397,6 +397,7 @@ class MainWindow(QMainWindow):
             "command": "Commands",
             "command_factory": "Command factories",
             "command_composition": "Command forms and groups",
+            "command_registration": "Default and autonomous commands",
             "lifecycle_method": "Lifecycle methods",
         }
         groups: dict[str, QTreeWidgetItem] = {}
