@@ -242,3 +242,30 @@ class DriveIOSim {
 
     assert result.devices[0].resolved_arguments == "9, MotorType.kBrushless"
     assert result.devices[0].mode == "SIM"
+
+
+def test_scanner_resolves_camel_case_cross_file_constant_aliases(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "DriveConstants.java").write_text(
+        """package frc.robot.constants;
+class DriveConstants {
+  static final int physicalCanId = 7;
+  static final int driveCanId = physicalCanId;
+}
+""",
+        encoding="utf-8",
+    )
+    (source_root / "Drive.java").write_text(
+        """package frc.robot;
+class Drive extends SubsystemBase {
+  private final SparkMax motor = new SparkMax(DriveConstants.driveCanId, MotorType.kBrushless);
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    assert result.devices[0].resolved_arguments == "7, MotorType.kBrushless"

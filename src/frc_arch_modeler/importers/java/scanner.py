@@ -66,7 +66,7 @@ DEVICE_PATTERN = re.compile(
 )
 CONSTANT_PATTERN = re.compile(
     r"\b(?:public|protected|private)?\s*(?:static\s+final|final\s+static)\s+"
-    r"(?:int|long|double|boolean|String)\s+(?P<name>[A-Z][A-Z0-9_]*)\s*=\s*"
+    r"(?:int|long|double|boolean|String)\s+(?P<name>[A-Za-z_]\w*)\s*=\s*"
     r"(?P<value>[^;]+);"
 )
 EXCLUDED_DIRECTORY_NAMES = {".gradle", "build", "bin", "vendordeps"}
@@ -403,6 +403,16 @@ class JavaProjectScanner:
                 elif bare_values[name] != value:
                     bare_values[name] = None
         values.update({name: value for name, value in bare_values.items() if value is not None})
+        # Follow simple aliases such as ``simDriveId = realDriveId`` without
+        # attempting expression evaluation or general Java type resolution.
+        for _ in range(2):
+            resolved_values = {
+                name: JavaProjectScanner._resolve_constants(value, values)
+                for name, value in values.items()
+            }
+            if resolved_values == values:
+                break
+            values = resolved_values
         return values
 
     @staticmethod
@@ -417,7 +427,7 @@ class JavaProjectScanner:
     def _resolve_constants(arguments: str, constants: dict[str, str]) -> str:
         """Resolve uppercase constant references while retaining unknown expressions."""
         return re.sub(
-            r"\b(?:[A-Za-z_]\w*\.)*(?P<name>[A-Z][A-Z0-9_]*)\b",
+            r"\b(?:[A-Za-z_]\w*\.)*(?P<name>[A-Za-z_]\w*)\b",
             lambda match: constants.get(
                 match.group(0), constants.get(match.group("name"), match.group(0))
             ),
