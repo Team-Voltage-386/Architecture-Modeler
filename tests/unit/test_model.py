@@ -2,9 +2,12 @@ from frc_arch_modeler.domain.model import (
     ArchitectureProject,
     Command,
     ComparisonState,
+    Device,
     FieldValue,
+    Relationship,
     SourceAnchor,
     Subsystem,
+    TriggerBinding,
 )
 from frc_arch_modeler.persistence.migrations import migrate_model_payload
 from frc_arch_modeler.persistence.project_store import ProjectStore
@@ -55,3 +58,32 @@ def test_migration_adds_schema_version_to_legacy_payload() -> None:
 
     assert migrated["schemaVersion"] == 1
     assert migrated["futureField"] == {"value": 1}
+
+
+def test_project_round_trip_preserves_design_hardware_triggers_and_relationships(tmp_path) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    command = Command(name=FieldValue(design="Teleop Drive"), requirement_ids=[drive.id])
+    device = Device(
+        name=FieldValue(design="Left motor"),
+        device_type=FieldValue(design="SparkMax"),
+        owner_subsystem_id=drive.id,
+        mode=FieldValue(design="REAL"),
+    )
+    trigger = TriggerBinding(
+        expression=FieldValue(design="Driver A"),
+        activation=FieldValue(design="onTrue"),
+        command_id=command.id,
+    )
+    relationship = Relationship("owns_device", drive.id, device.id)
+    project = ArchitectureProject(
+        name="Robot",
+        commands=[command],
+        subsystems=[drive],
+        devices=[device],
+        triggers=[trigger],
+        relationships=[relationship],
+    )
+
+    ProjectStore(tmp_path).save(project)
+
+    assert ProjectStore(tmp_path).load().to_dict() == project.to_dict()

@@ -168,12 +168,121 @@ class Subsystem(_ArchitectureElement):
 
 
 @dataclass(slots=True)
+class Device:
+    """A portable, design-layer hardware fact owned by a logical subsystem."""
+
+    name: FieldValue
+    device_type: FieldValue
+    owner_subsystem_id: UUID
+    mode: FieldValue = field(default_factory=FieldValue)
+    id: UUID = field(default_factory=uuid4)
+    code_binding: SourceAnchor | None = None
+
+    def __post_init__(self) -> None:
+        if not (self.name.effective or "").strip() or not (
+            self.device_type.effective or ""
+        ).strip():
+            raise ValueError("Devices need an effective name and type.")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": str(self.id),
+            "name": self.name.to_dict(),
+            "deviceType": self.device_type.to_dict(),
+            "ownerSubsystemId": str(self.owner_subsystem_id),
+            "mode": self.mode.to_dict(),
+            "codeBinding": self.code_binding.to_dict() if self.code_binding else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Device:
+        binding = data.get("codeBinding")
+        return cls(
+            id=UUID(data["id"]),
+            name=FieldValue.from_dict(data["name"]),
+            device_type=FieldValue.from_dict(data["deviceType"]),
+            owner_subsystem_id=UUID(data["ownerSubsystemId"]),
+            mode=FieldValue.from_dict(data.get("mode", {})),
+            code_binding=SourceAnchor.from_dict(binding) if binding else None,
+        )
+
+
+@dataclass(slots=True)
+class TriggerBinding:
+    """A designed controller/trigger connection to a command."""
+
+    expression: FieldValue
+    activation: FieldValue
+    command_id: UUID
+    id: UUID = field(default_factory=uuid4)
+    code_binding: SourceAnchor | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": str(self.id),
+            "expression": self.expression.to_dict(),
+            "activation": self.activation.to_dict(),
+            "commandId": str(self.command_id),
+            "codeBinding": self.code_binding.to_dict() if self.code_binding else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TriggerBinding:
+        binding = data.get("codeBinding")
+        return cls(
+            id=UUID(data["id"]),
+            expression=FieldValue.from_dict(data["expression"]),
+            activation=FieldValue.from_dict(data["activation"]),
+            command_id=UUID(data["commandId"]),
+            code_binding=SourceAnchor.from_dict(binding) if binding else None,
+        )
+
+
+@dataclass(slots=True)
+class Relationship:
+    """A typed design relationship kept separately from inferred code evidence."""
+
+    relationship_type: str
+    source_id: UUID
+    target_id: UUID
+    id: UUID = field(default_factory=uuid4)
+    code_binding: SourceAnchor | None = None
+
+    def __post_init__(self) -> None:
+        if not self.relationship_type.strip():
+            raise ValueError("Relationships need a type.")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": str(self.id),
+            "relationshipType": self.relationship_type,
+            "sourceId": str(self.source_id),
+            "targetId": str(self.target_id),
+            "codeBinding": self.code_binding.to_dict() if self.code_binding else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Relationship:
+        binding = data.get("codeBinding")
+        return cls(
+            id=UUID(data["id"]),
+            relationship_type=str(data["relationshipType"]),
+            source_id=UUID(data["sourceId"]),
+            target_id=UUID(data["targetId"]),
+            code_binding=SourceAnchor.from_dict(binding) if binding else None,
+        )
+
+
+@dataclass(slots=True)
 class ArchitectureProject:
     """Persisted user-authored model, deliberately separate from scan snapshots."""
 
     name: str
     commands: list[Command] = field(default_factory=list)
     subsystems: list[Subsystem] = field(default_factory=list)
+    devices: list[Device] = field(default_factory=list)
+    triggers: list[TriggerBinding] = field(default_factory=list)
+    relationships: list[Relationship] = field(default_factory=list)
     id: UUID = field(default_factory=uuid4)
     schema_version: int = SCHEMA_VERSION
     unknown_fields: dict[str, Any] = field(default_factory=dict)
@@ -183,9 +292,30 @@ class ArchitectureProject:
             raise ValueError(f"Unsupported schema version: {self.schema_version}")
         if not self.name.strip():
             raise ValueError("Project name cannot be empty.")
-        element_ids = [item.id for item in [*self.commands, *self.subsystems]]
+        element_ids = [
+            item.id
+            for item in [
+                *self.commands,
+                *self.subsystems,
+                *self.devices,
+                *self.triggers,
+                *self.relationships,
+            ]
+        ]
         if len(element_ids) != len(set(element_ids)):
-            raise ValueError("Commands and subsystems must have globally unique IDs.")
+            raise ValueError("Architecture entities must have globally unique IDs.")
+        subsystem_ids = {item.id for item in self.subsystems}
+        command_ids = {item.id for item in self.commands}
+        if any(device.owner_subsystem_id not in subsystem_ids for device in self.devices):
+            raise ValueError("Devices must be owned by a subsystem in the project.")
+        if any(trigger.command_id not in command_ids for trigger in self.triggers):
+            raise ValueError("Triggers must target a command in the project.")
+        known_ids = set(element_ids)
+        if any(
+            relationship.source_id not in known_ids or relationship.target_id not in known_ids
+            for relationship in self.relationships
+        ):
+            raise ValueError("Relationships must connect entities in the project.")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -195,16 +325,31 @@ class ArchitectureProject:
             "name": self.name,
             "commands": [item.to_dict() for item in self.commands],
             "subsystems": [item.to_dict() for item in self.subsystems],
+            "devices": [item.to_dict() for item in self.devices],
+            "triggers": [item.to_dict() for item in self.triggers],
+            "relationships": [item.to_dict() for item in self.relationships],
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ArchitectureProject:
-        known_keys = {"schemaVersion", "id", "name", "commands", "subsystems"}
+        known_keys = {
+            "schemaVersion",
+            "id",
+            "name",
+            "commands",
+            "subsystems",
+            "devices",
+            "triggers",
+            "relationships",
+        }
         return cls(
             schema_version=int(data["schemaVersion"]),
             id=UUID(data["id"]),
             name=str(data["name"]),
             commands=[Command.from_dict(item) for item in data.get("commands", [])],
             subsystems=[Subsystem.from_dict(item) for item in data.get("subsystems", [])],
+            devices=[Device.from_dict(item) for item in data.get("devices", [])],
+            triggers=[TriggerBinding.from_dict(item) for item in data.get("triggers", [])],
+            relationships=[Relationship.from_dict(item) for item in data.get("relationships", [])],
             unknown_fields={key: value for key, value in data.items() if key not in known_keys},
         )
