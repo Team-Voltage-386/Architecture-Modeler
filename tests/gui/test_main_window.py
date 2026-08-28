@@ -4,6 +4,7 @@ from PySide6.QtGui import QCloseEvent, QPalette
 from PySide6.QtWidgets import QDockWidget, QMessageBox
 
 from frc_arch_modeler.app import create_application
+from frc_arch_modeler.domain.model import ComparisonState
 from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock
 from frc_arch_modeler.ui.main_window import MainWindow
 from frc_arch_modeler.ui.theme import MUTED_TEXT, OFF_WHITE
@@ -230,6 +231,37 @@ def test_compare_marks_exact_import_match_on_canvas(qtbot) -> None:
 
     assert window.accept_matches() == 1
     assert window.project.subsystems[0].code_binding is not None
+
+
+def test_bind_selected_explicitly_links_renamed_design_to_code(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive Design")
+    fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+    window.connect_robot_project(fixture_root)
+    design_block = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock) and not item.imported
+    )
+    code_block = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock) and item.imported and item.kind == "subsystem"
+    )
+    design_block.setSelected(True)
+    code_block.setSelected(True)
+
+    assert window.bind_selected_action.isEnabled()
+    assert window.bind_selected()
+    assert window.project.subsystems[0].code_binding == code_block.source_anchor
+    assert window.reconciliation is not None
+    assert (
+        window.reconciliation.statuses[window.project.subsystems[0].id]
+        == ComparisonState.MODIFIED
+    )
 
 
 def test_export_change_request_from_window(qtbot, tmp_path) -> None:

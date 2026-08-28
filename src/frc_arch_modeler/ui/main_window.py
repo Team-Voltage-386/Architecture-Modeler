@@ -97,6 +97,8 @@ class MainWindow(QMainWindow):
         self.compare_action.setEnabled(False)
         self.accept_matches_action = toolbar.addAction("Accept Matches", self.accept_matches)
         self.accept_matches_action.setEnabled(False)
+        self.bind_selected_action = toolbar.addAction("Bind Selected", self.bind_selected)
+        self.bind_selected_action.setEnabled(False)
         self.export_change_request_action = toolbar.addAction(
             "Export AI Change Request", self._prompt_export_change_request
         )
@@ -180,6 +182,7 @@ class MainWindow(QMainWindow):
         self.canvas.setBackgroundBrush(Qt.GlobalColor.black)
         self.setCentralWidget(self.canvas)
         self.scene.selectionChanged.connect(self._update_selected_element)
+        self.scene.selectionChanged.connect(self._update_bind_selected_action)
 
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
@@ -482,6 +485,36 @@ class MainWindow(QMainWindow):
         self.accept_matches_action.setEnabled(False)
         return accepted
 
+    def bind_selected(self) -> bool:
+        """Persist an explicit design-to-code binding selected by the user."""
+        if self.project is None or self.last_scan is None:
+            return False
+        blocks = self.scene.selected_blocks()
+        if len(blocks) != 2:
+            return False
+        design_block = next((block for block in blocks if not block.imported), None)
+        code_block = next((block for block in blocks if block.imported), None)
+        if design_block is None or code_block is None or design_block.kind != code_block.kind:
+            return False
+        if not isinstance(code_block.source_anchor, SourceAnchor):
+            return False
+        element = next(
+            (
+                item
+                for item in [*self.project.commands, *self.project.subsystems]
+                if item.id == design_block.element_id
+            ),
+            None,
+        )
+        if element is None:
+            return False
+        element.code_binding = code_block.source_anchor
+        code_name = code_block.title.toPlainText()
+        self.reconciliation = ReconciliationService().reconcile(self.project, self.last_scan)
+        self._render_with_current_scan()
+        self._mark_dirty(f"Bound {element.name.effective} to {code_name}")
+        return True
+
     def _comparison_statuses(self) -> dict:
         return self.reconciliation.statuses if self.reconciliation is not None else {}
 
@@ -493,6 +526,16 @@ class MainWindow(QMainWindow):
     def _apply_status_filters(self) -> None:
         self.scene.set_status_filter(
             {state for state, action in self._status_filter_actions.items() if action.isChecked()}
+        )
+
+    def _update_bind_selected_action(self) -> None:
+        blocks = self.scene.selected_blocks()
+        self.bind_selected_action.setEnabled(
+            len(blocks) == 2
+            and {block.imported for block in blocks} == {False, True}
+            and blocks[0].kind == blocks[1].kind
+            and self.project is not None
+            and self.last_scan is not None
         )
 
     def add_command(self, name: str) -> None:
