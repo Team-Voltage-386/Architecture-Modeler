@@ -96,6 +96,7 @@ class ArchitectureScene(QGraphicsScene):
     """Render design elements in semantic command and subsystem regions."""
 
     layout_changed = Signal()
+    block_double_clicked = Signal()
 
     def __init__(self, parent: object | None = None) -> None:
         super().__init__(parent)
@@ -119,6 +120,15 @@ class ArchitectureScene(QGraphicsScene):
         ):
             self.layout_changed.emit()
         self._drag_start_positions = {}
+
+    def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        """Expose a compact-details affordance without coupling blocks to a window."""
+        item = self.itemAt(event.scenePos(), self.views()[0].transform()) if self.views() else None
+        while item is not None and not isinstance(item, ArchitectureBlock):
+            item = item.parentItem()
+        if isinstance(item, ArchitectureBlock):
+            self.block_double_clicked.emit()
+        super().mouseDoubleClickEvent(event)
 
     def render_project(
         self,

@@ -8,6 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent, QPainter, QUndoStack
 from PySide6.QtWidgets import (
+    QDialog,
     QDockWidget,
     QFileDialog,
     QGraphicsView,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QToolBar,
     QTreeWidget,
     QTreeWidgetItem,
+    QVBoxLayout,
 )
 
 from frc_arch_modeler.domain.model import ArchitectureProject, SourceAnchor
@@ -32,6 +34,8 @@ from frc_arch_modeler.services.reconcile_service import ReconciliationResult, Re
 from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
 from frc_arch_modeler.ui.details_panel import DetailsPanel, EditDescriptionCommand
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
+
+DETAILS_DOCK_BREAKPOINT = 1280
 
 
 class MainWindow(QMainWindow):
@@ -54,12 +58,17 @@ class MainWindow(QMainWindow):
         self.undo_stack = QUndoStack(self)
         self.scene = ArchitectureScene(self)
         self.scene.layout_changed.connect(self._layout_changed)
+        self.scene.block_double_clicked.connect(self._open_compact_details)
         self._build_toolbar()
         self._build_canvas()
         self._build_details_dock()
         self._build_inventory_dock()
         self._build_legend_dock()
         self.statusBar().showMessage("No robot project connected")
+
+    def resizeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        super().resizeEvent(event)
+        self._update_details_presentation()
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Architecture actions", self)
@@ -156,6 +165,7 @@ class MainWindow(QMainWindow):
             project, scan=self.last_scan, statuses=self._comparison_statuses()
         )
         self.details_panel.set_element(None)
+        self._update_compact_details()
         self.new_command_action.setEnabled(project is not None)
         self.new_subsystem_action.setEnabled(project is not None)
         self.save_model_action.setEnabled(project is not None)
@@ -426,15 +436,18 @@ class MainWindow(QMainWindow):
         selected = self.scene.selected_blocks()
         if len(selected) != 1:
             self.details_panel.set_element(None)
+            self._update_compact_details()
             return
         imported_anchor = selected[0].source_anchor
         if isinstance(imported_anchor, SourceAnchor):
             self.details_panel.set_imported_fact(
                 selected[0].title.toPlainText(), selected[0].kind, imported_anchor
             )
+            self._update_compact_details()
             return
         if self.project is None:
             self.details_panel.set_element(None)
+            self._update_compact_details()
             return
         element_id = selected[0].element_id
         element = next(
@@ -446,6 +459,7 @@ class MainWindow(QMainWindow):
             None,
         )
         self.details_panel.set_element(element)
+        self._update_compact_details()
 
     def edit_selected_description(self, description: str | None) -> None:
         """Apply a selected element's design description through the undo stack."""
@@ -527,9 +541,61 @@ class MainWindow(QMainWindow):
     def _build_details_dock(self) -> None:
         dock = QDockWidget("Details", self)
         dock.setObjectName("detailsDock")
+        self.details_dock = dock
         self.details_panel = DetailsPanel(self.edit_selected_description, self._open_source_anchor)
         dock.setWidget(self.details_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        self.compact_details_dialog: QDialog | None = None
+        self.compact_details_panel: DetailsPanel | None = None
+
+    def _update_details_presentation(self) -> None:
+        """Use a dock on wide screens and reserve a sheet on laptop-width windows."""
+        self.details_dock.setVisible(self.width() >= DETAILS_DOCK_BREAKPOINT)
+
+    def _open_compact_details(self) -> None:
+        if self.width() >= DETAILS_DOCK_BREAKPOINT or len(self.scene.selected_blocks()) != 1:
+            return
+        if self.compact_details_dialog is None:
+            dialog = QDialog(self)
+            dialog.setObjectName("compactDetailsDialog")
+            dialog.setWindowTitle("Details")
+            dialog.setModal(False)
+            dialog.resize(440, 520)
+            panel = DetailsPanel(self.edit_selected_description, self._open_source_anchor)
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(panel)
+            self.compact_details_dialog = dialog
+            self.compact_details_panel = panel
+        self._update_compact_details()
+        self.compact_details_dialog.show()
+        self.compact_details_dialog.raise_()
+
+    def _update_compact_details(self) -> None:
+        """Mirror selection in a visible compact sheet without changing model state."""
+        if self.compact_details_panel is None:
+            return
+        selected = self.scene.selected_blocks()
+        if len(selected) != 1:
+            self.compact_details_panel.set_element(None)
+            return
+        block = selected[0]
+        if isinstance(block.source_anchor, SourceAnchor):
+            self.compact_details_panel.set_imported_fact(
+                block.title.toPlainText(), block.kind, block.source_anchor
+            )
+            return
+        if self.project is None:
+            self.compact_details_panel.set_element(None)
+            return
+        element = next(
+            (
+                item
+                for item in [*self.project.commands, *self.project.subsystems]
+                if item.id == block.element_id
+            ),
+            None,
+        )
+        self.compact_details_panel.set_element(element)
 
     def _build_inventory_dock(self) -> None:
         dock = QDockWidget("Code Inventory", self)

@@ -134,6 +134,25 @@ def test_imported_canvas_block_shows_read_only_evidence(qtbot) -> None:
     assert window.details_panel.open_source_button.isEnabled()
 
 
+def test_details_dock_switches_to_compact_sheet_on_laptop_width(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_command("Teleop Drive")
+    block = next(item for item in window.scene.items() if isinstance(item, ArchitectureBlock))
+    block.setSelected(True)
+
+    window.resize(1000, 800)
+    window._open_compact_details()
+
+    assert not window.details_dock.isVisible()
+    assert window.compact_details_dialog is not None
+    assert window.compact_details_dialog.isVisible()
+    assert window.compact_details_panel is not None
+    assert window.compact_details_panel.title.text() == "Teleop Drive (Command)"
+
+
 def test_compare_marks_exact_import_match_on_canvas(qtbot) -> None:
     create_application([])
     window = MainWindow()
