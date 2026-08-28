@@ -36,6 +36,18 @@ edit its description, then use **Save Model**. The selected folder receives:
   exports/architecture.md
 ```
 
+## Current import and comparison workflow
+
+1. Use **Connect Robot Project** to choose a Java/WPILib Gradle project.
+2. Inspect imported commands, subsystems, factories, lifecycle methods, triggers,
+   and devices in **Code Inventory**; double-click an entry to open its source.
+3. Use **Compare Changes** to show unambiguous exact matches in green on the canvas.
+4. Use **Accept Matches** only when you want those source bindings saved with the model.
+5. Use **Export AI Change Request** to write a focused Markdown implementation brief.
+
+Imported facts are dotted and regenerated on Refresh Code; design intent remains
+solid and is never overwritten by a scan.
+
 ## Verify
 
 ```powershell
