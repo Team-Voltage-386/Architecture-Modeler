@@ -14,9 +14,8 @@ if not exist "%PYTHON_EXE%" (
 "%PYTHON_EXE%" -m PyInstaller --noconfirm --clean --windowed ^
     --name "FRC Architecture Modeler" ^
     --paths src ^
-    --collect-all PySide6 ^
     --collect-all tree_sitter_java ^
-    --add-data "LICENSE;." ^
+    --add-data "%CD%\LICENSE;." ^
     --distpath dist ^
     --workpath build\pyinstaller ^
     --specpath build\pyinstaller ^
@@ -26,6 +25,8 @@ if errorlevel 1 (
     echo Build failed.
     exit /b %ERRORLEVEL%
 )
+
+copy /Y "%CD%\LICENSE" "dist\FRC Architecture Modeler\LICENSE" >nul
 
 echo.
 echo Build complete: dist\FRC Architecture Modeler\FRC Architecture Modeler.exe

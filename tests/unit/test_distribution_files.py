@@ -11,4 +11,7 @@ def test_windows_distribution_manifest_is_present() -> None:
     assert "pyinstaller" in " ".join(metadata["project"]["optional-dependencies"]["build"])
     assert "PyInstaller" in script
     assert "tree_sitter_java" in script
+    assert "--collect-all PySide6" not in script
     assert "--windowed" in script
+    assert "%CD%\\LICENSE;." in script
+    assert "copy /Y" in script
