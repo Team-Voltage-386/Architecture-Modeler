@@ -1,0 +1,27 @@
+# Python bytecode and tooling
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments and local tooling
+.venv/
+venv/
+.env
+
+# Qt and application-local state
+*.autosave
+
+# Build and packaging output
+build/
+dist/
+
+# Editor and OS files
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
