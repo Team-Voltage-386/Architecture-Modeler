@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from frc_arch_modeler.domain.model import ArchitectureProject, Command, Subsystem
+from frc_arch_modeler.importers.base import ScanResult
+from frc_arch_modeler.services.reconcile_service import ReconciliationResult
 
 
 class ArchitectureExportService:
@@ -13,15 +15,26 @@ class ArchitectureExportService:
     export_directory = "exports"
     architecture_filename = "architecture.md"
 
-    def export(self, root: Path, project: ArchitectureProject) -> Path:
+    def export(
+        self,
+        root: Path,
+        project: ArchitectureProject,
+        scan: ScanResult | None = None,
+        comparison: ReconciliationResult | None = None,
+    ) -> Path:
         destination = (
             root / ".frc-architecture" / self.export_directory / self.architecture_filename
         )
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(self.render(project), encoding="utf-8")
+        destination.write_text(self.render(project, scan, comparison), encoding="utf-8")
         return destination
 
-    def render(self, project: ArchitectureProject) -> str:
+    def render(
+        self,
+        project: ArchitectureProject,
+        scan: ScanResult | None = None,
+        comparison: ReconciliationResult | None = None,
+    ) -> str:
         """Render stable Markdown independent of canvas presentation state."""
         subsystems = self._sorted(project.subsystems)
         commands = self._sorted(project.commands)
@@ -37,7 +50,11 @@ class ArchitectureExportService:
             "",
             f"- Subsystems: {len(subsystems)}",
             f"- Commands: {len(commands)}",
-            "- Status: design-only (code has not been imported)",
+            (
+                "- Status: current code scan included"
+                if scan
+                else "- Status: design-only (code has not been imported)"
+            ),
             "",
             "## Subsystems",
             "",
@@ -68,7 +85,61 @@ class ArchitectureExportService:
                 lines.append(f"| {command_name} | {requirement_text} |")
         else:
             lines.append("| _No commands_ | None |")
+        if scan is not None:
+            lines.extend(self._scan_lines(project, scan, comparison))
         return "\n".join(lines) + "\n"
+
+    def _scan_lines(
+        self,
+        project: ArchitectureProject,
+        scan: ScanResult,
+        comparison: ReconciliationResult | None,
+    ) -> list[str]:
+        factory_count = len(scan.symbols_of_kind("command_factory"))
+        composition_count = len(scan.symbols_of_kind("command_composition"))
+        lines = [
+            "",
+            "## Imported Code Summary",
+            "",
+            f"- Files scanned: {scan.files_scanned}",
+            f"- Imported subsystems: {len(scan.symbols_of_kind('subsystem'))}",
+            f"- Imported commands: {len(scan.symbols_of_kind('command'))}",
+            f"- Command factories/forms: {factory_count + composition_count}",
+            f"- Diagnostics: {len(scan.diagnostics)}",
+            "",
+            "## Design / Code Discrepancies",
+            "",
+            "| Design element | Kind | Status | Code evidence |",
+            "| --- | --- | --- | --- |",
+        ]
+        if comparison is None:
+            lines.append("| _Comparison has not been run_ | — | unresolved | — |")
+        else:
+            for element in self._sorted([*project.subsystems, *project.commands]):
+                symbol = comparison.matches.get(element.id)
+                evidence = (
+                    f"`{symbol.anchor.relative_path}:{symbol.anchor.start_line}`"
+                    if symbol is not None
+                    else "—"
+                )
+                kind = "Subsystem" if isinstance(element, Subsystem) else "Command"
+                lines.append(
+                    f"| {element.name.effective} | {kind} | "
+                    f"{comparison.statuses.get(element.id, 'unresolved')} | {evidence} |"
+                )
+            for symbol in sorted(comparison.code_only, key=lambda item: (item.kind, item.name)):
+                lines.append(
+                    f"| {symbol.name} | {symbol.kind.replace('_', ' ')} | code_only | "
+                    f"`{symbol.anchor.relative_path}:{symbol.anchor.start_line}` |"
+                )
+        lines.extend(["", "## Parser Diagnostics", ""])
+        if scan.diagnostics:
+            for diagnostic in scan.diagnostics:
+                location = diagnostic.relative_path or "project"
+                lines.append(f"- {diagnostic.severity}: {diagnostic.message} ({location})")
+        else:
+            lines.append("_None._")
+        return lines
 
     @staticmethod
     def _sorted(elements: list[Command] | list[Subsystem]) -> list[Command] | list[Subsystem]:

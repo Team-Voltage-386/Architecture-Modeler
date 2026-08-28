@@ -270,7 +270,9 @@ class MainWindow(QMainWindow):
         export_root = Path(root) if root is not None else self.model_root
         if export_root is None:
             raise RuntimeError("Choose a folder for the architecture export.")
-        destination = self.export_service.export(export_root, self.project)
+        destination = self.export_service.export(
+            export_root, self.project, self.last_scan, self.reconciliation
+        )
         self.statusBar().showMessage(f"Exported architecture: {destination}")
         return destination
 
