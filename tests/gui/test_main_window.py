@@ -1,9 +1,10 @@
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QDockWidget
 
 from frc_arch_modeler.app import create_application
 from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock
 from frc_arch_modeler.ui.main_window import MainWindow
-from frc_arch_modeler.ui.theme import OFF_WHITE
+from frc_arch_modeler.ui.theme import MUTED_TEXT, OFF_WHITE
 
 
 def test_main_window_has_planned_regions(qtbot) -> None:
@@ -17,6 +18,7 @@ def test_main_window_has_planned_regions(qtbot) -> None:
     assert f"QToolBar QToolButton {{\n            color: {OFF_WHITE};" in app.styleSheet()
     input_selector = "QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QComboBox {"
     assert input_selector in app.styleSheet()
+    assert app.palette().color(QPalette.ColorRole.PlaceholderText).name() == MUTED_TEXT.lower()
 
 
 def test_new_model_and_design_elements_update_the_canvas(qtbot) -> None:

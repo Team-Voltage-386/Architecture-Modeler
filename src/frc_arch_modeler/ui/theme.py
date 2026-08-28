@@ -25,6 +25,11 @@ def apply_voltage_theme(app: QApplication) -> None:
     palette.setColor(QPalette.ColorRole.ButtonText, QColor(OFF_WHITE))
     palette.setColor(QPalette.ColorRole.Highlight, QColor(VOLTAGE_BLUE))
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor(OFF_WHITE))
+    palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(MUTED_TEXT))
+    disabled_group = QPalette.ColorGroup.Disabled
+    palette.setColor(disabled_group, QPalette.ColorRole.Text, QColor(MUTED_TEXT))
+    palette.setColor(disabled_group, QPalette.ColorRole.WindowText, QColor(MUTED_TEXT))
+    palette.setColor(disabled_group, QPalette.ColorRole.ButtonText, QColor(MUTED_TEXT))
     app.setPalette(palette)
     app.setStyleSheet(
         f"""
@@ -42,6 +47,8 @@ def apply_voltage_theme(app: QApplication) -> None:
             color: {VOLTAGE_YELLOW};
         }}
         QStatusBar {{ color: {MUTED_TEXT}; background: {PANEL_BLACK}; }}
+        QLabel {{ color: {OFF_WHITE}; }}
+        QLabel:disabled {{ color: {MUTED_TEXT}; }}
         QDialog {{ background: {NEAR_BLACK}; color: {OFF_WHITE}; }}
         QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QComboBox {{
             background: {PANEL_BLACK};
@@ -55,6 +62,7 @@ def apply_voltage_theme(app: QApplication) -> None:
         QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus {{
             border-color: {VOLTAGE_YELLOW};
         }}
+        QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {{ color: {MUTED_TEXT}; }}
         QComboBox QAbstractItemView {{ background: {PANEL_BLACK}; color: {OFF_WHITE}; }}
         QPushButton {{ border: 1px solid #4A5568; border-radius: 4px; padding: 6px 10px; }}
         QPushButton:hover {{ border-color: {VOLTAGE_YELLOW}; }}
