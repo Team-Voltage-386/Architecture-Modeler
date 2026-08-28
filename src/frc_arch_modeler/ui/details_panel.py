@@ -76,6 +76,7 @@ class DetailsPanel(QWidget):
         self._on_name_edit = on_name_edit
         self._element: ArchitectureElement | None = None
         self._source_anchor: SourceAnchor | None = None
+        self._code_name: str | None = None
         self._on_open_source = on_open_source
         layout = QVBoxLayout(self)
         self.title = QLabel("Select a command or subsystem to inspect its details.", self)
@@ -94,6 +95,7 @@ class DetailsPanel(QWidget):
         self.design_description.setPlaceholderText("Optional proposed description")
         self.save_button = QPushButton("Apply Proposed Fields", self)
         self.revert_button = QPushButton("Revert Design Override", self)
+        self.adopt_name_button = QPushButton("Adopt Code Name", self)
         self.open_source_button = QPushButton("Open Source", self)
         form = QFormLayout()
         form.addRow("Name from code", self.code_name)
@@ -104,16 +106,25 @@ class DetailsPanel(QWidget):
         layout.addLayout(form)
         layout.addWidget(self.save_button)
         layout.addWidget(self.revert_button)
+        layout.addWidget(self.adopt_name_button)
         layout.addWidget(self.open_source_button)
         layout.addStretch()
         self.save_button.clicked.connect(self._apply_description)
         self.revert_button.clicked.connect(self._revert_description)
+        self.adopt_name_button.clicked.connect(self._adopt_code_name)
         self.open_source_button.clicked.connect(self._open_source)
         self._set_editing_enabled(False)
 
-    def set_element(self, element: ArchitectureElement | None) -> None:
+    def set_element(
+        self,
+        element: ArchitectureElement | None,
+        code_name: str | None = None,
+        code_description: str | None = None,
+        code_anchor: SourceAnchor | None = None,
+    ) -> None:
         self._element = element
-        self._source_anchor = None
+        self._source_anchor = code_anchor
+        self._code_name = code_name
         if element is None:
             self.title.setText("Select a command or subsystem to inspect its details.")
             self.code_description.setText("No code-derived description available.")
@@ -122,16 +133,23 @@ class DetailsPanel(QWidget):
             self.design_description.clear()
             self._set_editing_enabled(False)
             self.open_source_button.setEnabled(False)
+            self.adopt_name_button.setEnabled(False)
             return
         self.title.setText(f"{element.name.effective} ({type(element).__name__})")
-        self.code_name.setText(element.name.scanned or "No code-derived name available.")
+        effective_code_name = code_name or element.name.scanned
+        self.code_name.setText(effective_code_name or "No code-derived name available.")
         self.design_name.setText(element.name.design or element.name.effective or "")
         self.code_description.setText(
-            element.description.scanned or "No code-derived description available."
+            code_description
+            or element.description.scanned
+            or "No code-derived description available."
         )
         self.design_description.setPlainText(element.description.design or "")
         self._set_editing_enabled(True)
-        self.open_source_button.setEnabled(False)
+        self.open_source_button.setEnabled(
+            code_anchor is not None and self._on_open_source is not None
+        )
+        self.adopt_name_button.setEnabled(effective_code_name is not None)
 
     def set_imported_fact(
         self, label: str, kind: str, anchor: SourceAnchor, documentation: str | None = None
@@ -139,6 +157,7 @@ class DetailsPanel(QWidget):
         """Present selected regenerated code evidence without enabling design edits."""
         self._element = None
         self._source_anchor = anchor
+        self._code_name = label
         self.title.setText(f"{label} (imported {kind})")
         self.code_name.setText(label)
         self.design_name.clear()
@@ -150,6 +169,7 @@ class DetailsPanel(QWidget):
         self.design_description.clear()
         self._set_editing_enabled(False)
         self.open_source_button.setEnabled(self._on_open_source is not None)
+        self.adopt_name_button.setEnabled(False)
 
     def refresh(self) -> None:
         self.set_element(self._element)
@@ -171,6 +191,10 @@ class DetailsPanel(QWidget):
     def _revert_description(self) -> None:
         if self._element is not None:
             self._on_description_edit(None)
+
+    def _adopt_code_name(self) -> None:
+        if self._element is not None and self._code_name is not None:
+            self._on_name_edit(self._code_name)
 
     def _open_source(self) -> None:
         if self._source_anchor is not None and self._on_open_source is not None:

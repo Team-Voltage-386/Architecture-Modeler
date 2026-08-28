@@ -627,8 +627,21 @@ class MainWindow(QMainWindow):
             ),
             None,
         )
-        self.details_panel.set_element(element)
+        self.details_panel.set_element(
+            element,
+            *self._matched_code_details(element.id) if element is not None else (),
+        )
         self._update_compact_details()
+
+    def _matched_code_details(
+        self, element_id
+    ) -> tuple[str | None, str | None, SourceAnchor | None]:  # type: ignore[no-untyped-def]
+        if self.reconciliation is None:
+            return (None, None, None)
+        symbol = self.reconciliation.matches.get(element_id)
+        if symbol is None:
+            return (None, None, None)
+        return (symbol.name, symbol.documentation, symbol.anchor)
 
     def edit_selected_description(self, description: str | None) -> None:
         """Apply a selected element's design description through the undo stack."""
@@ -813,7 +826,10 @@ class MainWindow(QMainWindow):
             ),
             None,
         )
-        self.compact_details_panel.set_element(element)
+        self.compact_details_panel.set_element(
+            element,
+            *self._matched_code_details(element.id) if element is not None else (),
+        )
 
     def _build_inventory_dock(self) -> None:
         dock = QDockWidget("Code Inventory", self)

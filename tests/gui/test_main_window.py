@@ -268,6 +268,41 @@ def test_compare_marks_exact_import_match_on_canvas(qtbot) -> None:
     assert window.project.subsystems[0].code_binding is not None
 
 
+def test_matched_design_details_can_show_and_adopt_code_name(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive Design")
+    fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+    window.connect_robot_project(fixture_root)
+    design_block = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock) and not item.imported
+    )
+    code_block = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock) and item.imported and item.kind == "subsystem"
+    )
+    design_block.setSelected(True)
+    code_block.setSelected(True)
+    assert window.bind_selected()
+    design_block = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock) and not item.imported
+    )
+    design_block.setSelected(True)
+
+    assert window.details_panel.code_name.text() == "Drive"
+    assert window.details_panel.open_source_button.isEnabled()
+    window.details_panel.adopt_name_button.click()
+
+    assert window.project.subsystems[0].name.design == "Drive"
+
+
 def test_bind_selected_explicitly_links_renamed_design_to_code(qtbot) -> None:
     create_application([])
     window = MainWindow()
