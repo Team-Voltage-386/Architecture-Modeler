@@ -84,6 +84,21 @@ def test_description_edit_undo_and_redo(qtbot) -> None:
     assert window.project.commands[0].description.design == "Drive with joysticks"
 
 
+def test_design_edit_creates_recoverable_draft_after_model_is_saved(qtbot, tmp_path) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.save_project(tmp_path)
+    window.add_command("Teleop Drive")
+
+    assert (tmp_path / ".frc-architecture" / "draft.json").is_file()
+
+    window.save_project()
+
+    assert not (tmp_path / ".frc-architecture" / "draft.json").exists()
+
+
 def test_connect_robot_project_scans_code_without_changing_design(qtbot) -> None:
     create_application([])
     window = MainWindow()

@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from frc_arch_modeler.domain.model import ArchitectureProject, SourceAnchor
 from frc_arch_modeler.importers.base import ScanResult
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
+from frc_arch_modeler.persistence.draft_store import DraftStore
 from frc_arch_modeler.persistence.layout_store import LayoutStore
 from frc_arch_modeler.services.change_request_export import ChangeRequestExportService
 from frc_arch_modeler.services.export_service import ArchitectureExportService
@@ -214,6 +215,7 @@ class MainWindow(QMainWindow):
             raise RuntimeError("Choose a folder for the model before saving.")
         saved_path = self.project_service.save(self.model_root, self.project)
         LayoutStore(self.model_root).save(self.scene.layout_state())
+        DraftStore(self.model_root).discard()
         self.is_dirty = False
         self.undo_stack.setClean()
         self.statusBar().showMessage(f"Saved design model: {saved_path}")
@@ -402,8 +404,7 @@ class MainWindow(QMainWindow):
     def _refresh_after_edit(self) -> None:
         assert self.project is not None
         self.scene.render_project(self.project, scan=self.last_scan)
-        self.is_dirty = True
-        self.statusBar().showMessage(f"Unsaved design model: {self.project.name}")
+        self._mark_dirty(f"Unsaved design model: {self.project.name}")
 
     def auto_layout(self) -> None:
         """Restore the deterministic layout without changing design intent."""
@@ -427,6 +428,8 @@ class MainWindow(QMainWindow):
 
     def _mark_dirty(self, message: str) -> None:
         self.is_dirty = True
+        if self.project is not None and self.model_root is not None:
+            DraftStore(self.model_root).save(self.project)
         self.statusBar().showMessage(message)
 
     def _layout_changed(self) -> None:
