@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from frc_arch_modeler.domain.model import SourceAnchor
@@ -54,6 +55,10 @@ DEVICE_PATTERN = re.compile(
 EXCLUDED_DIRECTORY_NAMES = {".gradle", "build", "bin", "vendordeps"}
 
 
+class ScanCancelled(Exception):
+    """Raised internally when an interactive scan has been cancelled."""
+
+
 class JavaProjectScanner:
     """Locate Java source and extract a stable initial WPILib symbol inventory.
 
@@ -62,7 +67,9 @@ class JavaProjectScanner:
     parser can replace the implementation behind this interface later.
     """
 
-    def scan(self, root: Path) -> ScanResult:
+    def scan(
+        self, root: Path, should_cancel: Callable[[], bool] | None = None
+    ) -> ScanResult:
         root = Path(root).resolve()
         if not self.is_gradle_project(root):
             raise ValueError(f"No Gradle build file found in robot project: {root}")
@@ -74,6 +81,8 @@ class JavaProjectScanner:
             )
             return result
         for source_path in sorted(source_root.rglob("*.java")):
+            if should_cancel is not None and should_cancel():
+                raise ScanCancelled()
             relative_path = source_path.relative_to(root)
             if any(part in EXCLUDED_DIRECTORY_NAMES for part in relative_path.parts):
                 continue

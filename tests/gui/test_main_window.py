@@ -149,6 +149,21 @@ def test_connect_robot_project_scans_code_without_changing_design(qtbot) -> None
     assert len(imported_blocks) == 3
 
 
+def test_background_scan_updates_the_window_without_blocking(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+
+    window._start_scan(fixture_root, "Connected")
+
+    qtbot.waitUntil(lambda: window._scan_thread is None, timeout=5000)
+    assert window.last_scan is not None
+    assert window.last_scan.files_scanned == 4
+    assert window.robot_project_root == fixture_root
+    assert window.connect_robot_action.isEnabled()
+
+
 def test_imported_canvas_block_shows_read_only_evidence(qtbot) -> None:
     create_application([])
     window = MainWindow()

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
+from frc_arch_modeler.importers.java.scanner import JavaProjectScanner, ScanCancelled
 
 
 def test_scanner_inventories_wpilib_symbols_with_source_evidence() -> None:
@@ -42,6 +42,13 @@ def test_scanner_inventories_wpilib_symbols_with_source_evidence() -> None:
 def test_scanner_requires_a_gradle_project(tmp_path) -> None:
     with pytest.raises(ValueError, match="No Gradle build file"):
         JavaProjectScanner().scan(tmp_path)
+
+
+def test_scanner_stops_between_files_when_cancelled() -> None:
+    root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+
+    with pytest.raises(ScanCancelled):
+        JavaProjectScanner().scan(root, should_cancel=lambda: True)
 
 
 def test_scanner_reports_syntax_issues_without_aborting_other_files(tmp_path) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread
 from PySide6.QtGui import QCloseEvent, QPainter, QUndoStack
 from PySide6.QtWidgets import (
     QDialog,
@@ -34,6 +34,7 @@ from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.services.reconcile_service import ReconciliationResult, ReconciliationService
 from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
 from frc_arch_modeler.ui.details_panel import DetailsPanel, EditDescriptionCommand
+from frc_arch_modeler.ui.scan_worker import JavaScanWorker
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
 
 DETAILS_DOCK_BREAKPOINT = 1280
@@ -51,6 +52,10 @@ class MainWindow(QMainWindow):
         self.robot_project_root: Path | None = None
         self.last_scan: ScanResult | None = None
         self.reconciliation: ReconciliationResult | None = None
+        self._scan_thread: QThread | None = None
+        self._scan_worker: JavaScanWorker | None = None
+        self._pending_scan_root: Path | None = None
+        self._pending_scan_action = "Connected"
         self._inventory_symbols: dict[str, object] = {}
         self.is_dirty = False
         self.project_service = ProjectService()
@@ -82,8 +87,12 @@ class MainWindow(QMainWindow):
         self.connect_robot_action = toolbar.addAction(
             "Connect Robot Project", self._prompt_connect_robot_project
         )
-        self.refresh_code_action = toolbar.addAction("Refresh Code", self.refresh_robot_project)
+        self.refresh_code_action = toolbar.addAction(
+            "Refresh Code", self._refresh_robot_project_async
+        )
         self.refresh_code_action.setEnabled(False)
+        self.cancel_scan_action = toolbar.addAction("Cancel Scan", self.cancel_scan)
+        self.cancel_scan_action.setEnabled(False)
         self.compare_action = toolbar.addAction("Compare Changes", self.compare_changes)
         self.compare_action.setEnabled(False)
         self.accept_matches_action = toolbar.addAction("Accept Matches", self.accept_matches)
@@ -282,29 +291,87 @@ class MainWindow(QMainWindow):
 
     def connect_robot_project(self, root: Path) -> ScanResult:
         """Scan a Java/WPILib project without altering the user-authored design."""
-        self.robot_project_root = Path(root)
-        self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
+        root = Path(root)
+        scan = JavaProjectScanner().scan(root)
+        self._apply_scan(root, scan, "Connected")
+        return scan
+
+    def _apply_scan(self, root: Path, scan: ScanResult, action: str) -> None:
+        """Apply a completed scan atomically to the visible, regenerable code layer."""
+        self.robot_project_root = root
+        self.last_scan = scan
         self.reconciliation = None
         self.refresh_code_action.setEnabled(True)
         self.compare_action.setEnabled(self.project is not None)
         self.export_change_request_action.setEnabled(self.project is not None)
         self._render_with_current_scan()
         self._show_scan_inventory()
-        self._show_scan_status("Connected")
-        return self.last_scan
+        self._show_scan_status(action)
 
     def refresh_robot_project(self) -> ScanResult | None:
         """Refresh the current code-derived inventory while retaining design edits."""
         if self.robot_project_root is None:
             return None
-        self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
-        self.reconciliation = None
-        self.compare_action.setEnabled(self.project is not None)
-        self.export_change_request_action.setEnabled(self.project is not None)
-        self._render_with_current_scan()
-        self._show_scan_inventory()
-        self._show_scan_status("Refreshed")
-        return self.last_scan
+        scan = JavaProjectScanner().scan(self.robot_project_root)
+        self._apply_scan(self.robot_project_root, scan, "Refreshed")
+        return scan
+
+    def _refresh_robot_project_async(self) -> None:
+        if self.robot_project_root is not None:
+            self._start_scan(self.robot_project_root, "Refreshed")
+
+    def _start_scan(self, root: Path, action: str) -> None:
+        """Run a toolbar-initiated scan off the UI thread, preserving the old view on failure."""
+        if self._scan_thread is not None:
+            return
+        self._pending_scan_root = Path(root)
+        self._pending_scan_action = action
+        thread = QThread(self)
+        worker = JavaScanWorker(self._pending_scan_root)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.completed.connect(self._scan_completed)
+        worker.failed.connect(self._scan_failed)
+        worker.cancelled.connect(self._scan_cancelled)
+        self._scan_thread = thread
+        self._scan_worker = worker
+        self.connect_robot_action.setEnabled(False)
+        self.refresh_code_action.setEnabled(False)
+        self.cancel_scan_action.setEnabled(True)
+        self.statusBar().showMessage(f"{action} Java project in background…")
+        thread.start()
+
+    def cancel_scan(self) -> None:
+        if self._scan_worker is not None:
+            self._scan_worker.request_cancel()
+            self.statusBar().showMessage("Cancelling Java project scan…")
+
+    def _scan_completed(self, scan: ScanResult) -> None:
+        assert self._pending_scan_root is not None
+        self._apply_scan(self._pending_scan_root, scan, self._pending_scan_action)
+        self._finish_background_scan()
+
+    def _scan_failed(self, message: str) -> None:
+        self.statusBar().showMessage(f"Code scan failed: {message}")
+        self._finish_background_scan()
+
+    def _scan_cancelled(self) -> None:
+        self.statusBar().showMessage("Code scan cancelled; prior code view was retained.")
+        self._finish_background_scan()
+
+    def _finish_background_scan(self) -> None:
+        if self._scan_thread is not None:
+            self._scan_thread.quit()
+            self._scan_thread.wait()
+            self._scan_thread.deleteLater()
+        if self._scan_worker is not None:
+            self._scan_worker.deleteLater()
+        self._scan_thread = None
+        self._scan_worker = None
+        self._pending_scan_root = None
+        self.connect_robot_action.setEnabled(True)
+        self.refresh_code_action.setEnabled(self.robot_project_root is not None)
+        self.cancel_scan_action.setEnabled(False)
 
     def _show_scan_status(self, action: str) -> None:
         assert self.robot_project_root is not None
@@ -569,7 +636,7 @@ class MainWindow(QMainWindow):
     def _prompt_connect_robot_project(self) -> None:
         root = QFileDialog.getExistingDirectory(self, "Connect Java/WPILib robot project")
         if root:
-            self.connect_robot_project(Path(root))
+            self._start_scan(Path(root), "Connected")
 
     def _prompt_new_command(self) -> None:
         self._prompt_element("New command", self.add_command)
