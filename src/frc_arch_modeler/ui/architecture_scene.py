@@ -67,6 +67,8 @@ class ArchitectureScene(QGraphicsScene):
     def __init__(self, parent: object | None = None) -> None:
         super().__init__(parent)
         self._drag_start_positions: dict[UUID, QPointF] = {}
+        self._edges: list[QGraphicsPathItem] = []
+        self.selectionChanged.connect(self._update_edge_visibility)
 
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if event.button() == Qt.MouseButton.LeftButton:
@@ -93,6 +95,7 @@ class ArchitectureScene(QGraphicsScene):
     ) -> None:
         """Replace scene contents with a deterministic initial model layout."""
         self.clear()
+        self._edges = []
         if project is None:
             if scan is not None:
                 self._add_imported_code(scan, 0, 0)
@@ -192,6 +195,19 @@ class ArchitectureScene(QGraphicsScene):
             self.setSceneRect(self.itemsBoundingRect().adjusted(-80, -80, 80, 80))
         return bool(blocks)
 
+    def _update_edge_visibility(self) -> None:
+        selected_ids = {block.element_id for block in self.selected_blocks()}
+        for edge in self._edges:
+            endpoint_ids = edge.data(0)
+            is_connected = bool(selected_ids & endpoint_ids)
+            edge.setOpacity(1.0 if not selected_ids or is_connected else 0.16)
+            edge.setPen(edge.data(1))
+            if selected_ids and is_connected:
+                active_pen = QPen(edge.data(1))
+                active_pen.setStyle(Qt.PenStyle.SolidLine)
+                active_pen.setWidthF(2.5)
+                edge.setPen(active_pen)
+
     def _add_requirement_edge(
         self, command: ArchitectureBlock, subsystem: ArchitectureBlock, imported: bool = False
     ) -> None:
@@ -202,6 +218,10 @@ class ArchitectureScene(QGraphicsScene):
         path.cubicTo(QPointF(start.x(), midpoint), QPointF(end.x(), midpoint), end)
         edge = QGraphicsPathItem(path)
         color = VOLTAGE_BLUE if imported else MUTED_TEXT
-        edge.setPen(QPen(QColor(color), 1.5, Qt.PenStyle.DashLine))
+        default_pen = QPen(QColor(color), 1.5, Qt.PenStyle.DashLine)
+        edge.setPen(default_pen)
+        edge.setData(0, {command.element_id, subsystem.element_id})
+        edge.setData(1, default_pen)
         edge.setZValue(-1)
         self.addItem(edge)
+        self._edges.append(edge)

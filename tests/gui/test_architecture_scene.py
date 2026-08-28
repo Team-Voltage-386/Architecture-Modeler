@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGraphicsPathItem
 
 from frc_arch_modeler.domain.model import ArchitectureProject, Command, FieldValue, Subsystem
@@ -66,3 +67,30 @@ def test_scene_renders_code_import_as_separate_architecture_layer(qapp) -> None:
     assert imported_command.caption.toPlainText() == "Imported COMMAND"
     assert imported_subsystem.caption.toPlainText() == "Imported SUBSYSTEM"
     assert len([item for item in scene.items() if isinstance(item, QGraphicsPathItem)]) == 1
+
+
+def test_selection_emphasizes_only_connected_requirement_edges(qapp) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    intake = Subsystem(name=FieldValue(design="Intake"))
+    drive_command = Command(name=FieldValue(design="Drive Command"), requirement_ids=[drive.id])
+    intake_command = Command(name=FieldValue(design="Intake Command"), requirement_ids=[intake.id])
+    scene = ArchitectureScene()
+    scene.render_project(
+        ArchitectureProject(
+            name="Robot",
+            commands=[drive_command, intake_command],
+            subsystems=[drive, intake],
+        )
+    )
+
+    drive_block = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.element_id == drive_command.id
+    )
+    drive_block.setSelected(True)
+    edges = [item for item in scene.items() if isinstance(item, QGraphicsPathItem)]
+
+    assert sorted(edge.opacity() for edge in edges) == [0.16, 1.0]
+    selected_edge = next(edge for edge in edges if edge.opacity() == 1.0)
+    assert selected_edge.pen().style() == Qt.PenStyle.SolidLine
