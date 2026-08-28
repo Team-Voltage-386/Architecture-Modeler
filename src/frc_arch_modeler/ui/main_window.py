@@ -244,6 +244,8 @@ class MainWindow(QMainWindow):
         self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
         self.reconciliation = None
         self.refresh_code_action.setEnabled(True)
+        self.compare_action.setEnabled(self.project is not None)
+        self.export_change_request_action.setEnabled(self.project is not None)
         self._render_with_current_scan()
         self._show_scan_inventory()
         self._show_scan_status("Connected")
@@ -255,6 +257,8 @@ class MainWindow(QMainWindow):
             return None
         self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
         self.reconciliation = None
+        self.compare_action.setEnabled(self.project is not None)
+        self.export_change_request_action.setEnabled(self.project is not None)
         self._render_with_current_scan()
         self._show_scan_inventory()
         self._show_scan_status("Refreshed")

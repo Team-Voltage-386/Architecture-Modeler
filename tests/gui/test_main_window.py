@@ -121,6 +121,8 @@ def test_compare_marks_exact_import_match_on_canvas(qtbot) -> None:
     fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
     window.connect_robot_project(fixture_root)
 
+    assert window.compare_action.isEnabled()
+    assert window.export_change_request_action.isEnabled()
     comparison = window.compare_changes()
 
     assert comparison is not None
