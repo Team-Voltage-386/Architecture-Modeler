@@ -191,16 +191,37 @@ class JavaProjectScanner:
             assert form is not None
             line = source.count("\n", 0, match.start()) + 1
             qualified_name = f"{package}.{form}@{line}" if package else f"{form}@{line}"
+            anchor = self._anchor_at_offset(
+                qualified_name, source, match.start(), relative_path, source_hash
+            )
             result.symbols.append(
                 ScannedSymbol(
                     kind="command_composition",
                     name=f"{form} (line {line})",
-                    anchor=self._anchor_at_offset(
-                        qualified_name, source, match.start(), relative_path, source_hash
-                    ),
+                    anchor=anchor,
                     confidence="exact",
                 )
             )
+            closing_parenthesis = self._matching_parenthesis(source, match.end() - 1)
+            if closing_parenthesis is None:
+                result.diagnostics.append(
+                    ScanDiagnostic(
+                        "warning",
+                        f"Unclosed command composition {form} near line {line}.",
+                        relative_path,
+                    )
+                )
+                continue
+            arguments = source[match.end() : closing_parenthesis]
+            for child_expression in self._split_top_level_arguments(arguments):
+                result.relationships.append(
+                    ScannedRelationship(
+                        kind="composition_child",
+                        source_symbol=qualified_name,
+                        target_expression=child_expression,
+                        anchor=anchor,
+                    )
+                )
 
     def _scan_trigger_bindings(
         self,
@@ -322,6 +343,59 @@ class JavaProjectScanner:
                 if depth == 0:
                     return index
         return None
+
+    @staticmethod
+    def _matching_parenthesis(source: str, opening_parenthesis: int) -> int | None:
+        depth = 0
+        for index in range(opening_parenthesis, len(source)):
+            if source[index] == "(":
+                depth += 1
+            elif source[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    return index
+        return None
+
+    @staticmethod
+    def _split_top_level_arguments(arguments: str) -> list[str]:
+        """Split composition arguments while preserving nested calls and lambdas."""
+        values: list[str] = []
+        start = 0
+        parentheses = brackets = braces = 0
+        quote: str | None = None
+        escaped = False
+        for index, character in enumerate(arguments):
+            if quote is not None:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == quote:
+                    quote = None
+                continue
+            if character in {"'", '"'}:
+                quote = character
+            elif character == "(":
+                parentheses += 1
+            elif character == ")":
+                parentheses -= 1
+            elif character == "[":
+                brackets += 1
+            elif character == "]":
+                brackets -= 1
+            elif character == "{":
+                braces += 1
+            elif character == "}":
+                braces -= 1
+            elif character == "," and not (parentheses or brackets or braces):
+                value = " ".join(arguments[start:index].split())
+                if value:
+                    values.append(value)
+                start = index + 1
+        value = " ".join(arguments[start:].split())
+        if value:
+            values.append(value)
+        return values
 
     @staticmethod
     def _type_kind(declaration: str) -> str | None:

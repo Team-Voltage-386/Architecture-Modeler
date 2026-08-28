@@ -63,8 +63,12 @@ def test_scanner_reports_syntax_issues_without_aborting_other_files(tmp_path) ->
     result = JavaProjectScanner().scan(tmp_path)
 
     assert result.files_scanned == 2
-    assert len(result.diagnostics) == 1
-    assert result.diagnostics[0].relative_path == "src/main/java/Broken.java"
+    assert [diagnostic.relative_path for diagnostic in result.diagnostics] == [
+        "src/main/java/Broken.java",
+        "src/main/java/Broken.java",
+    ]
+    assert result.diagnostics[0].message.startswith("Java syntax issue")
+    assert result.diagnostics[1].message.startswith("Unclosed command composition")
     assert [symbol.name for symbol in result.symbols_of_kind("subsystem")] == ["Drive"]
 
 
@@ -91,6 +95,23 @@ class Autos {
         "runOnce (line 4)",
         "ParallelCommandGroup (line 5)",
         "run (line 5)",
+    ]
+    assert [
+        (relationship.source_symbol, relationship.target_expression)
+        for relationship in result.relationships
+        if relationship.kind == "composition_child"
+    ] == [
+        (
+            "frc.robot.sequence@4",
+            "Commands.runOnce(() -> {})",
+        ),
+        (
+            "frc.robot.sequence@4",
+            "new ParallelCommandGroup(Commands.run(() -> {}))",
+        ),
+        ("frc.robot.runOnce@4", "() -> {}"),
+        ("frc.robot.ParallelCommandGroup@5", "Commands.run(() -> {})"),
+        ("frc.robot.run@5", "() -> {}"),
     ]
 
 
