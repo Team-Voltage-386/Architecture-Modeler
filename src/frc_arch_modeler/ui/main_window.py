@@ -33,7 +33,7 @@ from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.services.reconcile_service import ReconciliationResult, ReconciliationService
 from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
-from frc_arch_modeler.ui.details_panel import DetailsPanel, EditDescriptionCommand
+from frc_arch_modeler.ui.details_panel import DetailsPanel, EditDescriptionCommand, EditNameCommand
 from frc_arch_modeler.ui.scan_worker import JavaScanWorker
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
 
@@ -648,6 +648,27 @@ class MainWindow(QMainWindow):
             EditDescriptionCommand(element, description, self._description_changed)
         )
 
+    def edit_selected_name(self, name: str) -> None:
+        """Apply a selected element's proposed display name through the undo stack."""
+        selected = self.scene.selected_blocks()
+        if self.project is None or len(selected) != 1 or not name.strip():
+            return
+        element = next(
+            (
+                item
+                for item in [*self.project.commands, *self.project.subsystems]
+                if item.id == selected[0].element_id
+            ),
+            None,
+        )
+        if element is None or element.name.design == name:
+            return
+        self.undo_stack.push(EditNameCommand(element, name, self._name_changed))
+
+    def _name_changed(self) -> None:
+        self._mark_dirty("Name updated")
+        self.details_panel.refresh()
+
     def _description_changed(self) -> None:
         self._mark_dirty("Description updated")
         self.details_panel.refresh()
@@ -712,7 +733,9 @@ class MainWindow(QMainWindow):
         dock = QDockWidget("Details", self)
         dock.setObjectName("detailsDock")
         self.details_dock = dock
-        self.details_panel = DetailsPanel(self.edit_selected_description, self._open_source_anchor)
+        self.details_panel = DetailsPanel(
+            self.edit_selected_description, self.edit_selected_name, self._open_source_anchor
+        )
         dock.setWidget(self.details_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         self.compact_details_dialog: QDialog | None = None
@@ -731,7 +754,9 @@ class MainWindow(QMainWindow):
             dialog.setWindowTitle("Details")
             dialog.setModal(False)
             dialog.resize(440, 520)
-            panel = DetailsPanel(self.edit_selected_description, self._open_source_anchor)
+            panel = DetailsPanel(
+                self.edit_selected_description, self.edit_selected_name, self._open_source_anchor
+            )
             layout = QVBoxLayout(dialog)
             layout.addWidget(panel)
             self.compact_details_dialog = dialog

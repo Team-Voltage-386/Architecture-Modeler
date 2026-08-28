@@ -8,6 +8,7 @@ from PySide6.QtGui import QUndoCommand
 from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -40,16 +41,39 @@ class EditDescriptionCommand(QUndoCommand):
         self.on_change()
 
 
+class EditNameCommand(QUndoCommand):
+    """Undoable replacement of the user-authored display-name override."""
+
+    def __init__(
+        self, element: ArchitectureElement, name: str, on_change: Callable[[], None]
+    ) -> None:
+        super().__init__("Edit name")
+        self.element = element
+        self.previous = element.name.design
+        self.name = name
+        self.on_change = on_change
+
+    def redo(self) -> None:
+        self.element.name.design = self.name
+        self.on_change()
+
+    def undo(self) -> None:
+        self.element.name.design = self.previous
+        self.on_change()
+
+
 class DetailsPanel(QWidget):
     """Shows code evidence beside the editable user-authored description."""
 
     def __init__(
         self,
         on_description_edit: Callable[[str | None], None],
+        on_name_edit: Callable[[str], None],
         on_open_source: Callable[[SourceAnchor], None] | None = None,
     ) -> None:
         super().__init__()
         self._on_description_edit = on_description_edit
+        self._on_name_edit = on_name_edit
         self._element: ArchitectureElement | None = None
         self._source_anchor: SourceAnchor | None = None
         self._on_open_source = on_open_source
@@ -59,13 +83,21 @@ class DetailsPanel(QWidget):
         self.code_description = QLabel("No code-derived description available.", self)
         self.code_description.setObjectName("codeDescription")
         self.code_description.setWordWrap(True)
+        self.code_name = QLabel("No code-derived name available.", self)
+        self.code_name.setObjectName("codeName")
+        self.code_name.setWordWrap(True)
+        self.design_name = QLineEdit(self)
+        self.design_name.setObjectName("designName")
+        self.design_name.setPlaceholderText("Proposed display name")
         self.design_description = QTextEdit(self)
         self.design_description.setObjectName("designDescription")
         self.design_description.setPlaceholderText("Optional proposed description")
-        self.save_button = QPushButton("Apply Description", self)
+        self.save_button = QPushButton("Apply Proposed Fields", self)
         self.revert_button = QPushButton("Revert Design Override", self)
         self.open_source_button = QPushButton("Open Source", self)
         form = QFormLayout()
+        form.addRow("Name from code", self.code_name)
+        form.addRow("Design / proposed name", self.design_name)
         form.addRow("From code", self.code_description)
         form.addRow("Design / proposed", self.design_description)
         layout.addWidget(self.title)
@@ -85,11 +117,15 @@ class DetailsPanel(QWidget):
         if element is None:
             self.title.setText("Select a command or subsystem to inspect its details.")
             self.code_description.setText("No code-derived description available.")
+            self.code_name.setText("No code-derived name available.")
+            self.design_name.clear()
             self.design_description.clear()
             self._set_editing_enabled(False)
             self.open_source_button.setEnabled(False)
             return
         self.title.setText(f"{element.name.effective} ({type(element).__name__})")
+        self.code_name.setText(element.name.scanned or "No code-derived name available.")
+        self.design_name.setText(element.name.design or element.name.effective or "")
         self.code_description.setText(
             element.description.scanned or "No code-derived description available."
         )
@@ -104,6 +140,8 @@ class DetailsPanel(QWidget):
         self._element = None
         self._source_anchor = anchor
         self.title.setText(f"{label} (imported {kind})")
+        self.code_name.setText(label)
+        self.design_name.clear()
         summary = documentation or "No attached JavaDoc was extracted."
         self.code_description.setText(
             f"{summary}\n\nCode-derived {kind} at {anchor.relative_path}:{anchor.start_line}.\n"
@@ -117,12 +155,16 @@ class DetailsPanel(QWidget):
         self.set_element(self._element)
 
     def _set_editing_enabled(self, enabled: bool) -> None:
+        self.design_name.setEnabled(enabled)
         self.design_description.setEnabled(enabled)
         self.save_button.setEnabled(enabled)
         self.revert_button.setEnabled(enabled)
 
     def _apply_description(self) -> None:
         if self._element is not None:
+            name = self.design_name.text().strip()
+            if name:
+                self._on_name_edit(name)
             description = self.design_description.toPlainText().strip() or None
             self._on_description_edit(description)
 
