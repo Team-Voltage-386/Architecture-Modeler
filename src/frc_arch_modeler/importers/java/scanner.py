@@ -9,6 +9,7 @@ from pathlib import Path
 from frc_arch_modeler.domain.model import SourceAnchor
 from frc_arch_modeler.importers.base import (
     ScanDiagnostic,
+    ScannedDevice,
     ScannedRelationship,
     ScannedSymbol,
     ScannedTrigger,
@@ -36,6 +37,13 @@ TRIGGER_PATTERN = re.compile(
     r"(?P<controller>[\w.]+\([^)]*\))\.(?P<activation>onTrue|onFalse|whileTrue|whileFalse|"
     r"toggleOnTrue|toggleOnFalse)\s*\((?P<command>[^;]+?)\)\s*;",
     re.MULTILINE | re.DOTALL,
+)
+DEVICE_PATTERN = re.compile(
+    r"\bnew\s+(?P<type>SparkMax|SparkFlex|TalonFX|TalonSRX|VictorSPX|"
+    r"CANSparkMax|CANSparkFlex|DigitalInput|AnalogInput|Encoder|DutyCycleEncoder|"
+    r"ADIS16470_IMU|Pigeon2|AHRS|PhotonCamera|Compressor|Solenoid|DoubleSolenoid|"
+    r"AddressableLED)\s*\((?P<arguments>[^)]*)\)",
+    re.MULTILINE,
 )
 EXCLUDED_DIRECTORY_NAMES = {".gradle", "build", "bin", "vendordeps"}
 
@@ -99,6 +107,15 @@ class JavaProjectScanner:
                     source_hash,
                     result,
                 )
+                self._scan_devices(
+                    source,
+                    match.end(),
+                    body_end,
+                    qualified_type,
+                    relative_path,
+                    source_hash,
+                    result,
+                )
             if kind:
                 symbol = self._symbol(
                     kind,
@@ -151,6 +168,33 @@ class JavaProjectScanner:
                     command_expression=" ".join(match.group("command").split()),
                     anchor=self._anchor_at_offset(
                         source_symbol,
+                        source,
+                        body_start + match.start(),
+                        relative_path,
+                        source_hash,
+                    ),
+                )
+            )
+
+    def _scan_devices(
+        self,
+        source: str,
+        body_start: int,
+        body_end: int,
+        owner_symbol: str,
+        relative_path: str,
+        source_hash: str,
+        result: ScanResult,
+    ) -> None:
+        body = source[body_start:body_end]
+        for match in DEVICE_PATTERN.finditer(body):
+            result.devices.append(
+                ScannedDevice(
+                    device_type=match.group("type"),
+                    constructor_arguments=" ".join(match.group("arguments").split()),
+                    owner_symbol=owner_symbol,
+                    anchor=self._anchor_at_offset(
+                        owner_symbol,
                         source,
                         body_start + match.start(),
                         relative_path,

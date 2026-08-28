@@ -95,9 +95,14 @@ def test_connect_robot_project_scans_code_without_changing_design(qtbot) -> None
     assert window.refresh_code_action.isEnabled()
     assert len(scan.symbols_of_kind("subsystem")) == 1
     assert "1 subsystems" in window.statusBar().currentMessage()
-    assert window.inventory_tree.topLevelItemCount() == 5
+    assert window.inventory_tree.topLevelItemCount() == 6
     assert window.inventory_tree.topLevelItem(0).text(0) == "Subsystems"
-    assert window.inventory_tree.topLevelItem(4).text(0) == "Trigger bindings"
+    group_names = [
+        window.inventory_tree.topLevelItem(index).text(0)
+        for index in range(window.inventory_tree.topLevelItemCount())
+    ]
+    assert "Trigger bindings" in group_names
+    assert "Devices" in group_names
     imported_blocks = [
         item
         for item in window.scene.items()

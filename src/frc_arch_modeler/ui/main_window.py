@@ -240,6 +240,20 @@ class MainWindow(QMainWindow):
                 item.setData(0, Qt.ItemDataRole.UserRole, key)
                 self._inventory_symbols[key] = trigger
                 trigger_group.addChild(item)
+        if self.last_scan.devices:
+            device_group = QTreeWidgetItem(["Devices", ""])
+            self.inventory_tree.addTopLevelItem(device_group)
+            for index, device in enumerate(self.last_scan.devices):
+                key = f"device:{index}"
+                item = QTreeWidgetItem(
+                    [
+                        f"{device.device_type} ({device.constructor_arguments})",
+                        f"{device.anchor.relative_path}:{device.anchor.start_line}",
+                    ]
+                )
+                item.setData(0, Qt.ItemDataRole.UserRole, key)
+                self._inventory_symbols[key] = device
+                device_group.addChild(item)
         self.inventory_tree.expandAll()
 
     def _render_with_current_scan(self) -> None:

@@ -33,6 +33,10 @@ def test_scanner_inventories_wpilib_symbols_with_source_evidence() -> None:
         ("driver.a()", "onTrue")
     ]
     assert result.triggers[0].command_expression == "new DriveCommand(drive)"
+    assert [(device.device_type, device.constructor_arguments) for device in result.devices] == [
+        ("SparkMax", "4, MotorType.kBrushless")
+    ]
+    assert result.devices[0].owner_symbol == "frc.robot.Drive"
 
 
 def test_scanner_requires_a_gradle_project(tmp_path) -> None:

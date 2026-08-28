@@ -49,6 +49,17 @@ class ScannedTrigger:
     confidence: str = "exact"
 
 
+@dataclass(frozen=True, slots=True)
+class ScannedDevice:
+    """A hardware-device construction discovered in a subsystem or container."""
+
+    device_type: str
+    constructor_arguments: str
+    owner_symbol: str
+    anchor: SourceAnchor
+    confidence: str = "exact"
+
+
 @dataclass(slots=True)
 class ScanResult:
     """Current, regenerable code facts from one robot-project scan."""
@@ -57,6 +68,7 @@ class ScanResult:
     symbols: list[ScannedSymbol] = field(default_factory=list)
     relationships: list[ScannedRelationship] = field(default_factory=list)
     triggers: list[ScannedTrigger] = field(default_factory=list)
+    devices: list[ScannedDevice] = field(default_factory=list)
     diagnostics: list[ScanDiagnostic] = field(default_factory=list)
     files_scanned: int = 0
 
