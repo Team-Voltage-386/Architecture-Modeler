@@ -1,5 +1,6 @@
 import pytest
 
+from frc_arch_modeler.domain.model import SourceAnchor
 from frc_arch_modeler.services.project_service import ProjectService
 
 
@@ -36,3 +37,21 @@ def test_open_reports_corrupt_model_with_its_location(tmp_path) -> None:
         ProjectService().open(tmp_path)
 
     assert str(destination) in str(error.value)
+
+
+def test_save_writes_and_open_applies_binding_sidecar(tmp_path) -> None:
+    service = ProjectService()
+    project = service.create("Competition Robot")
+    command = service.add_command(project, "Score")
+    command.code_binding = SourceAnchor("src/Score.java", "robot.Score", 4, 4)
+
+    service.save(tmp_path, project)
+    bindings_path = tmp_path / ".frc-architecture" / "bindings.json"
+    payload = bindings_path.read_text(encoding="utf-8")
+    command.code_binding = None
+    reopened = service.open(tmp_path)
+
+    assert bindings_path.is_file()
+    assert '"schemaVersion": 1' in payload
+    assert reopened.commands[0].code_binding is not None
+    assert reopened.commands[0].code_binding.qualified_symbol == "robot.Score"

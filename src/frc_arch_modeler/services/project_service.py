@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from frc_arch_modeler.domain.model import ArchitectureProject, Command, FieldValue, Subsystem
+from frc_arch_modeler.persistence.binding_store import BindingStore
 from frc_arch_modeler.persistence.project_store import ProjectStore
 
 
@@ -17,11 +18,15 @@ class ProjectService:
 
     def open(self, root: Path) -> ArchitectureProject:
         """Open an existing sidecar model from its selected root."""
-        return ProjectStore(root).load()
+        project = ProjectStore(root).load()
+        BindingStore(root).apply(project)
+        return project
 
     def save(self, root: Path, project: ArchitectureProject) -> Path:
         """Persist a project in the standard sidecar directory."""
-        return ProjectStore(root).save(project)
+        destination = ProjectStore(root).save(project)
+        BindingStore(root).save(project)
+        return destination
 
     def add_command(self, project: ArchitectureProject, name: str) -> Command:
         """Add a design-only command to an existing model."""
