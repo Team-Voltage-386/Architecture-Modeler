@@ -34,10 +34,10 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.kind = kind
         self.imported = imported
         self.minimized = False
-        accent = VOLTAGE_BLUE if imported or kind == "subsystem" else VOLTAGE_YELLOW
+        accent = VOLTAGE_YELLOW if kind == "command" else VOLTAGE_BLUE
         self.setBrush(QColor(PANEL_BLACK))
         style = Qt.PenStyle.DotLine if imported else Qt.PenStyle.SolidLine
-        self.setPen(QPen(QColor(accent), 2, style))
+        self.setPen(QPen(QColor(accent), 3 if kind == "command" else 2, style))
         self.setFlags(
             QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable
             | QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable
@@ -46,9 +46,10 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.title.setDefaultTextColor(QColor("#F4F6FA"))
         self.title.setTextWidth(BLOCK_WIDTH - 24)
         self.title.setPos(12, 12)
-        caption = f"Imported {kind}" if imported else kind.capitalize()
+        source = "Imported " if imported else ""
+        caption = f"{source}{kind.upper()}"
         self.caption = QGraphicsTextItem(caption, self)
-        self.caption.setDefaultTextColor(QColor(MUTED_TEXT))
+        self.caption.setDefaultTextColor(QColor(accent))
         self.caption.setPos(12, 58)
 
     def set_minimized(self, minimized: bool) -> None:

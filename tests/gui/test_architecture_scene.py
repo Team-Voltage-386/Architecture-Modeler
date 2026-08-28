@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QGraphicsPathItem
 from frc_arch_modeler.domain.model import ArchitectureProject, Command, FieldValue, Subsystem
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.ui.architecture_scene import SUBSYSTEM_Y, ArchitectureBlock, ArchitectureScene
+from frc_arch_modeler.ui.theme import VOLTAGE_BLUE, VOLTAGE_YELLOW
 
 
 def test_scene_places_commands_and_subsystems_and_draws_requirements(qapp) -> None:
@@ -16,7 +17,11 @@ def test_scene_places_commands_and_subsystems_and_draws_requirements(qapp) -> No
 
     blocks = [item for item in scene.items() if isinstance(item, ArchitectureBlock)]
     assert len(blocks) == 2
-    assert next(block for block in blocks if block.kind == "subsystem").pos().y() == SUBSYSTEM_Y
+    subsystem_block = next(block for block in blocks if block.kind == "subsystem")
+    command_block = next(block for block in blocks if block.kind == "command")
+    assert subsystem_block.pos().y() == SUBSYSTEM_Y
+    assert subsystem_block.pen().color().name() == VOLTAGE_BLUE.lower()
+    assert command_block.pen().color().name() == VOLTAGE_YELLOW.lower()
     assert len([item for item in scene.items() if isinstance(item, QGraphicsPathItem)]) == 1
 
 
@@ -54,4 +59,10 @@ def test_scene_renders_code_import_as_separate_architecture_layer(qapp) -> None:
         ("subsystem", "Drive"),
         ("command", "DriveCommand"),
     }
+    imported_command = next(item for item in imported if item.kind == "command")
+    imported_subsystem = next(item for item in imported if item.kind == "subsystem")
+    assert imported_command.pen().color().name() == VOLTAGE_YELLOW.lower()
+    assert imported_subsystem.pen().color().name() == VOLTAGE_BLUE.lower()
+    assert imported_command.caption.toPlainText() == "Imported COMMAND"
+    assert imported_subsystem.caption.toPlainText() == "Imported SUBSYSTEM"
     assert len([item for item in scene.items() if isinstance(item, QGraphicsPathItem)]) == 1
