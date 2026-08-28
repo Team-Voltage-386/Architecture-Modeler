@@ -19,8 +19,11 @@ implemented.
 This workspace includes an isolated `.runtime-env` Conda environment, created to
 avoid a conflicting Qt DLL in the base Anaconda installation.
 
+For new users, double-click [run.bat](C:\Users\josep\Documents\ArchitectureModel\run.bat) in File Explorer. It launches from the correct folder, uses the isolated runtime,
+and leaves an error message visible if that runtime is unavailable.
+
 ```powershell
-& .\.runtime-env\python.exe -m frc_arch_modeler.app
+.\run.bat
 ```
 
 Create a model, add a command and subsystem, optionally select the command to
