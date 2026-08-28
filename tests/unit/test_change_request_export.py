@@ -31,3 +31,28 @@ def test_change_request_export_contains_only_design_deltas_and_source_anchors(tm
     assert "Score at the reef." in content
     assert "`src/Old.java:8`" in content
     assert ".\\gradlew.bat build" in content
+
+
+def test_change_request_export_includes_modified_bound_elements(tmp_path) -> None:
+    command = Command(
+        name=FieldValue(design="Driver Control"),
+        description=FieldValue(design="Use revised controls."),
+    )
+    symbol = ScannedSymbol(
+        kind="command",
+        name="DriveCommand",
+        anchor=SourceAnchor("src/DriveCommand.java", "robot.DriveCommand", 12, 12),
+    )
+    comparison = ReconciliationResult(
+        matches={command.id: symbol}, statuses={command.id: ComparisonState.MODIFIED}
+    )
+
+    content = ChangeRequestExportService().render(
+        ArchitectureProject(name="Robot", commands=[command]),
+        ScanResult(project_root=tmp_path),
+        comparison,
+    )
+
+    assert "## Required Modifications" in content
+    assert "### Modify Command: Driver Control" in content
+    assert "`src/DriveCommand.java:12`" in content

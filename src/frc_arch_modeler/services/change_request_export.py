@@ -34,13 +34,18 @@ class ChangeRequestExportService:
             for element in [*project.subsystems, *project.commands]
             if comparison.statuses.get(element.id) == ComparisonState.DESIGN_ONLY
         ]
+        modified = [
+            element
+            for element in [*project.subsystems, *project.commands]
+            if comparison.statuses.get(element.id) == ComparisonState.MODIFIED
+        ]
         lines = [
             f"# AI Change Request: {project.name}",
             "",
             "## Objective",
             "",
-            "Implement the user-authored architecture elements that are not present "
-            "in the current code scan.",
+            "Implement the user-authored architecture delta: add missing elements and "
+            "bring modified elements into agreement with the proposed design.",
             "",
             "## Robot Project",
             "",
@@ -54,7 +59,13 @@ class ChangeRequestExportService:
             for element in self._sorted(design_only):
                 lines.extend(self._design_element_lines(element, project))
         else:
-            lines.append("_No unmatched design elements. Review code-only facts below._")
+            lines.append("_No design-only elements._")
+        lines.extend(["", "## Required Modifications", ""])
+        if modified:
+            for element in self._sorted(modified):
+                lines.extend(self._modified_element_lines(element, comparison))
+        else:
+            lines.append("_No modified design elements._")
         lines.extend(["", "## Current Code-Only Facts", ""])
         if comparison.code_only:
             code_only = sorted(
@@ -78,8 +89,8 @@ class ChangeRequestExportService:
                 "",
             ]
         )
-        if design_only:
-            for element in self._sorted(design_only):
+        if design_only or modified:
+            for element in self._sorted([*design_only, *modified]):
                 name = element.name.effective
                 lines.append(f"- `{name}` is represented by a matching architecture symbol.")
         else:
@@ -116,6 +127,26 @@ class ChangeRequestExportService:
             names = {subsystem.id: subsystem.name.effective for subsystem in project.subsystems}
             requirements = [names[item] for item in element.requirement_ids if item in names]
             lines.append(f"- Requirements: {', '.join(requirements) or 'None specified'}")
+        lines.append("")
+        return lines
+
+    def _modified_element_lines(
+        self, element: Command | Subsystem, comparison: ReconciliationResult
+    ) -> list[str]:
+        kind = "Subsystem" if isinstance(element, Subsystem) else "Command"
+        lines = [f"### Modify {kind}: {element.name.effective}", ""]
+        lines.append(element.description.effective or "_No design description provided._")
+        symbol = comparison.matches.get(element.id)
+        if symbol is not None:
+            lines.append(
+                "- Current source evidence: "
+                f"`{symbol.anchor.relative_path}:{symbol.anchor.start_line}` "
+                f"({symbol.name})"
+            )
+        if isinstance(element, Command):
+            lines.append(
+                "- Reconcile command requirements with the proposed subsystem relationships."
+            )
         lines.append("")
         return lines
 
