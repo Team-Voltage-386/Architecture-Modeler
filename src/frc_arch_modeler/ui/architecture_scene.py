@@ -93,6 +93,9 @@ class ArchitectureScene(QGraphicsScene):
         """Replace scene contents with a deterministic initial model layout."""
         self.clear()
         if project is None:
+            if scan is not None:
+                self._add_imported_code(scan, 0, 0)
+                self.setSceneRect(self.itemsBoundingRect().adjusted(-80, -80, 80, 80))
             return
 
         layout = layout or {}

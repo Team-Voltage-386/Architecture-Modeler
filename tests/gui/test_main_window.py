@@ -97,3 +97,9 @@ def test_connect_robot_project_scans_code_without_changing_design(qtbot) -> None
     assert "1 subsystems" in window.statusBar().currentMessage()
     assert window.inventory_tree.topLevelItemCount() == 4
     assert window.inventory_tree.topLevelItem(0).text(0) == "Subsystems"
+    imported_blocks = [
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock) and item.imported
+    ]
+    assert len(imported_blocks) == 2

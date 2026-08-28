@@ -225,10 +225,9 @@ class MainWindow(QMainWindow):
         self.inventory_tree.expandAll()
 
     def _render_with_current_scan(self) -> None:
-        if self.project is not None:
-            self.scene.render_project(
-                self.project, layout=self.scene.layout_state(), scan=self.last_scan
-            )
+        self.scene.render_project(
+            self.project, layout=self.scene.layout_state(), scan=self.last_scan
+        )
 
     def add_command(self, name: str) -> None:
         """Add a command and refresh its deterministic initial canvas position."""
