@@ -69,6 +69,27 @@ def test_design_devices_and_triggers_appear_on_their_canvas_blocks(qtbot) -> Non
     assert window.new_trigger_action.isEnabled()
 
 
+def test_imported_command_details_show_lifecycle_with_inherited_phases(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+
+    window.connect_robot_project(fixture_root)
+    command = next(
+        block
+        for block in window.scene.items()
+        if isinstance(block, ArchitectureBlock)
+        and block.imported
+        and block.title.toPlainText() == "DriveCommand"
+    )
+    command.setSelected(True)
+
+    assert "Start → initialize → execute → isFinished → end(interrupted)" in (
+        window.details_panel.lifecycle_flow.text()
+    )
+
+
 def test_save_and_open_model_round_trip_from_window(qtbot, tmp_path) -> None:
     create_application([])
     window = MainWindow()

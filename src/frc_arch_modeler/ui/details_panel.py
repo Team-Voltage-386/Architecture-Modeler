@@ -114,6 +114,9 @@ class DetailsPanel(QWidget):
         self.code_name = QLabel("No code-derived name available.", self)
         self.code_name.setObjectName("codeName")
         self.code_name.setWordWrap(True)
+        self.lifecycle_flow = QLabel(self)
+        self.lifecycle_flow.setObjectName("lifecycleFlow")
+        self.lifecycle_flow.setWordWrap(True)
         self.design_name = QLineEdit(self)
         self.design_name.setObjectName("designName")
         self.design_name.setAccessibleName("Proposed architecture name")
@@ -133,6 +136,7 @@ class DetailsPanel(QWidget):
         form.addRow("Name from code", self.code_name)
         form.addRow("Design / proposed name", self.design_name)
         form.addRow("From code", self.code_description)
+        form.addRow("Lifecycle / flow", self.lifecycle_flow)
         form.addRow("Design / proposed", self.design_description)
         form.addRow("Required subsystems", self.requirements)
         layout.addWidget(self.title)
@@ -167,6 +171,8 @@ class DetailsPanel(QWidget):
             self.design_description.clear()
             self.requirements.clear()
             self.requirements.setVisible(False)
+            self.lifecycle_flow.clear()
+            self.lifecycle_flow.setVisible(False)
             self._set_editing_enabled(False)
             self.open_source_button.setEnabled(False)
             self.adopt_name_button.setEnabled(False)
@@ -181,6 +187,8 @@ class DetailsPanel(QWidget):
             or "No code-derived description available."
         )
         self.design_description.setPlainText(element.description.design or "")
+        self.lifecycle_flow.clear()
+        self.lifecycle_flow.setVisible(False)
         self._set_requirement_options(element, subsystem_options or [])
         self._set_editing_enabled(True)
         self.open_source_button.setEnabled(
@@ -189,7 +197,12 @@ class DetailsPanel(QWidget):
         self.adopt_name_button.setEnabled(effective_code_name is not None)
 
     def set_imported_fact(
-        self, label: str, kind: str, anchor: SourceAnchor, documentation: str | None = None
+        self,
+        label: str,
+        kind: str,
+        anchor: SourceAnchor,
+        documentation: str | None = None,
+        lifecycle_methods: list[str] | None = None,
     ) -> None:
         """Present selected regenerated code evidence without enabling design edits."""
         self._element = None
@@ -203,6 +216,25 @@ class DetailsPanel(QWidget):
             f"{summary}\n\nCode-derived {kind} at {anchor.relative_path}:{anchor.start_line}.\n"
             f"Symbol: {anchor.qualified_symbol}\nConfidence: exact"
         )
+        if kind == "command":
+            overridden = set(lifecycle_methods or [])
+            phases = [
+                "Start",
+                *[
+                    f"{display}{'' if method in overridden else ' (inherited)'}"
+                    for display, method in (
+                        ("initialize", "initialize"),
+                        ("execute", "execute"),
+                        ("isFinished", "isFinished"),
+                        ("end(interrupted)", "end"),
+                    )
+                ],
+            ]
+            self.lifecycle_flow.setText(" → ".join(phases))
+            self.lifecycle_flow.setVisible(True)
+        else:
+            self.lifecycle_flow.clear()
+            self.lifecycle_flow.setVisible(False)
         self.design_description.clear()
         self.requirements.clear()
         self.requirements.setVisible(False)

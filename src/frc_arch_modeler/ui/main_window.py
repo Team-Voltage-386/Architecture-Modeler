@@ -683,6 +683,7 @@ class MainWindow(QMainWindow):
                 selected[0].kind,
                 imported_anchor,
                 self._imported_details(selected[0]),
+                self._lifecycle_methods(imported_anchor) if selected[0].kind == "command" else None,
             )
             self._update_compact_details()
             return
@@ -758,6 +759,16 @@ class MainWindow(QMainWindow):
         if children:
             lines.extend(["Composition children:", *(f"- {child}" for child in children)])
         return "\n\n".join(lines) or None
+
+    def _lifecycle_methods(self, command_anchor: SourceAnchor) -> list[str]:
+        """Return overrides for an imported command without inventing absent phases."""
+        if self.last_scan is None:
+            return []
+        return [
+            symbol.name
+            for symbol in self.last_scan.symbols_of_kind("lifecycle_method")
+            if symbol.anchor.qualified_symbol.startswith(f"{command_anchor.qualified_symbol}#")
+        ]
 
     @staticmethod
     def _normalized(value: str) -> str:
