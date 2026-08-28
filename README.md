@@ -8,11 +8,13 @@ The implementation roadmap is in [PROJECT_PLAN.md](PROJECT_PLAN.md).
 
 ## Current status
 
-The Phase 1 design-only slice is ready to test. It supports creating commands and
-subsystems, requirements on the architecture canvas, description overrides with
-undo/redo, separate model/layout persistence, and deterministic Architecture
-Markdown export. Java/WPILib import and comparison are intentionally not yet
-implemented.
+The current MVP workbench supports both design and import workflows. Create
+commands/subsystems and requirements, edit proposed descriptions with undo/redo,
+save independent model/layout state, and generate deterministic Architecture
+Markdown. Java/WPILib Gradle projects can be scanned in the background, reviewed
+as imported facts, reconciled with the design, and exported as a focused AI change
+request. The importer is intentionally conservative: it retains source evidence
+and diagnostics instead of guessing at unresolved Java semantics.
 
 ## Run on Windows
 
@@ -33,17 +35,28 @@ edit its description, then use **Save Model**. The selected folder receives:
 .frc-architecture/
   model.json
   layout.json
+  draft.json              # recoverable only; cleared after an explicit Save
   exports/architecture.md
 ```
 
 ## Current import and comparison workflow
 
-1. Use **Connect Robot Project** to choose a Java/WPILib Gradle project.
+1. Use **Connect Robot Project** to choose a Java/WPILib Gradle project. The
+   toolbar scan runs in the background; use **Cancel Scan** if needed.
 2. Inspect imported commands, subsystems, factories, lifecycle methods, triggers,
-   and devices in **Code Inventory**; double-click an entry to open its source.
-3. Use **Compare Changes** to show unambiguous exact matches in green on the canvas.
-4. Use **Accept Matches** only when you want those source bindings saved with the model.
+   devices, and inline command forms/groups in **Code Inventory**; double-click an
+   entry or select an imported canvas block to inspect its read-only source evidence.
+3. Use **Compare Changes** to show matched, modified, design-only, code-only, and
+   unresolved states. Status labels and border styles supplement the colors; use
+   the toolbar state buttons to filter dense canvases.
+4. Select one design block and one same-kind imported block, then choose
+   **Bind Selected** to explicitly resolve a rename or ambiguous mapping. Use
+   **Accept Matches** only when you want suggested bindings saved with the model.
 5. Use **Export AI Change Request** to write a focused Markdown implementation brief.
+
+At narrower widths, double-click a selected canvas block to open the compact
+non-modal details sheet. A saved model receives an atomic `draft.json` after an
+edit; reopening offers to recover a differing draft, while explicit Save clears it.
 
 Imported facts are dotted and regenerated on Refresh Code; design intent remains
 solid and is never overwritten by a scan.
