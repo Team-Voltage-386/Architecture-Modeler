@@ -29,6 +29,18 @@ def apply_voltage_theme(app: QApplication) -> None:
     app.setStyleSheet(
         f"""
         QToolBar {{ background: {PANEL_BLACK}; border-bottom: 1px solid #303846; }}
+        QToolBar QToolButton {{
+            color: {OFF_WHITE};
+            background: transparent;
+            padding: 5px 8px;
+        }}
+        QToolBar QToolButton:hover {{ background: #303846; color: {VOLTAGE_YELLOW}; }}
+        QToolBar QToolButton:disabled {{ color: {MUTED_TEXT}; }}
+        QMenuBar, QMenu {{ background: {PANEL_BLACK}; color: {OFF_WHITE}; }}
+        QMenuBar::item:selected, QMenu::item:selected {{
+            background: #303846;
+            color: {VOLTAGE_YELLOW};
+        }}
         QStatusBar {{ color: {MUTED_TEXT}; background: {PANEL_BLACK}; }}
         QPushButton {{ border: 1px solid #4A5568; border-radius: 4px; padding: 6px 10px; }}
         QPushButton:hover {{ border-color: {VOLTAGE_YELLOW}; }}
