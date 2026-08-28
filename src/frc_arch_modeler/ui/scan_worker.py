@@ -15,6 +15,7 @@ class JavaScanWorker(QObject):
     completed = Signal(object)
     failed = Signal(str)
     cancelled = Signal()
+    progress = Signal(int, int)
 
     def __init__(self, root: Path) -> None:
         super().__init__()
@@ -27,7 +28,11 @@ class JavaScanWorker(QObject):
     @Slot()
     def run(self) -> None:
         try:
-            result = JavaProjectScanner().scan(self.root, lambda: self._cancel_requested)
+            result = JavaProjectScanner().scan(
+                self.root,
+                lambda: self._cancel_requested,
+                self.progress.emit,
+            )
         except ScanCancelled:
             self.cancelled.emit()
         except (OSError, ValueError) as error:

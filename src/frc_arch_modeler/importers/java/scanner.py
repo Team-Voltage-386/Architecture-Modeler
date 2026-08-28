@@ -82,7 +82,10 @@ class JavaProjectScanner:
     """
 
     def scan(
-        self, root: Path, should_cancel: Callable[[], bool] | None = None
+        self,
+        root: Path,
+        should_cancel: Callable[[], bool] | None = None,
+        on_file_scanned: Callable[[int, int], None] | None = None,
     ) -> ScanResult:
         root = Path(root).resolve()
         if not self.is_gradle_project(root):
@@ -94,13 +97,17 @@ class JavaProjectScanner:
                 ScanDiagnostic("warning", "No src/main/java source root was found.")
             )
             return result
-        for source_path in sorted(source_root.rglob("*.java")):
+        source_paths = [
+            path
+            for path in sorted(source_root.rglob("*.java"))
+            if not any(part in EXCLUDED_DIRECTORY_NAMES for part in path.relative_to(root).parts)
+        ]
+        for index, source_path in enumerate(source_paths, start=1):
             if should_cancel is not None and should_cancel():
                 raise ScanCancelled()
-            relative_path = source_path.relative_to(root)
-            if any(part in EXCLUDED_DIRECTORY_NAMES for part in relative_path.parts):
-                continue
             self._scan_file(source_path, root, result)
+            if on_file_scanned is not None:
+                on_file_scanned(index, len(source_paths))
         return result
 
     def __init__(self) -> None:

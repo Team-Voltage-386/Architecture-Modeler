@@ -349,6 +349,7 @@ class MainWindow(QMainWindow):
         worker.completed.connect(self._scan_completed)
         worker.failed.connect(self._scan_failed)
         worker.cancelled.connect(self._scan_cancelled)
+        worker.progress.connect(self._scan_progress)
         self._scan_thread = thread
         self._scan_worker = worker
         self.connect_robot_action.setEnabled(False)
@@ -361,6 +362,11 @@ class MainWindow(QMainWindow):
         if self._scan_worker is not None:
             self._scan_worker.request_cancel()
             self.statusBar().showMessage("Cancelling Java project scan…")
+
+    def _scan_progress(self, completed: int, total: int) -> None:
+        self.statusBar().showMessage(
+            f"{self._pending_scan_action} Java project in background… {completed}/{total} files"
+        )
 
     def _scan_completed(self, scan: ScanResult) -> None:
         assert self._pending_scan_root is not None

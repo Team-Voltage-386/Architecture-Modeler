@@ -7,10 +7,14 @@ from frc_arch_modeler.importers.java.scanner import JavaProjectScanner, ScanCanc
 
 def test_scanner_inventories_wpilib_symbols_with_source_evidence() -> None:
     root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+    progress: list[tuple[int, int]] = []
 
-    result = JavaProjectScanner().scan(root)
+    result = JavaProjectScanner().scan(
+        root, on_file_scanned=lambda completed, total: progress.append((completed, total))
+    )
 
     assert result.files_scanned == 4
+    assert progress == [(1, 4), (2, 4), (3, 4), (4, 4)]
     architecture_symbols = [
         (symbol.kind, symbol.name)
         for symbol in result.symbols
