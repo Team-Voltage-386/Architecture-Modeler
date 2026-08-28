@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QMainWindow,
     QToolBar,
+    QTreeWidget,
+    QTreeWidgetItem,
 )
 
 from frc_arch_modeler.domain.model import ArchitectureProject
@@ -46,6 +48,7 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_canvas()
         self._build_details_dock()
+        self._build_inventory_dock()
         self.statusBar().showMessage("No robot project connected")
 
     def _build_toolbar(self) -> None:
@@ -168,6 +171,7 @@ class MainWindow(QMainWindow):
         self.robot_project_root = Path(root)
         self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
         self.refresh_code_action.setEnabled(True)
+        self._show_scan_inventory()
         self._show_scan_status("Connected")
         return self.last_scan
 
@@ -176,6 +180,7 @@ class MainWindow(QMainWindow):
         if self.robot_project_root is None:
             return None
         self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
+        self._show_scan_inventory()
         self._show_scan_status("Refreshed")
         return self.last_scan
 
@@ -190,6 +195,32 @@ class MainWindow(QMainWindow):
             f"{action} {self.robot_project_root.name}: {subsystem_count} subsystems, "
             f"{command_count} commands, {factory_count} factories, {diagnostic_count} warnings"
         )
+
+    def _show_scan_inventory(self) -> None:
+        assert self.last_scan is not None
+        self.inventory_tree.clear()
+        labels = {
+            "subsystem": "Subsystems",
+            "command": "Commands",
+            "command_factory": "Command factories",
+            "lifecycle_method": "Lifecycle methods",
+        }
+        groups: dict[str, QTreeWidgetItem] = {}
+        for kind, label in labels.items():
+            symbols = self.last_scan.symbols_of_kind(kind)
+            if symbols:
+                group = QTreeWidgetItem([label, ""])
+                self.inventory_tree.addTopLevelItem(group)
+                groups[kind] = group
+        for symbol in self.last_scan.symbols:
+            group = groups.get(symbol.kind)
+            if group is not None:
+                group.addChild(
+                    QTreeWidgetItem(
+                        [symbol.name, f"{symbol.anchor.relative_path}:{symbol.anchor.start_line}"]
+                    )
+                )
+        self.inventory_tree.expandAll()
 
     def add_command(self, name: str) -> None:
         """Add a command and refresh its deterministic initial canvas position."""
@@ -331,3 +362,12 @@ class MainWindow(QMainWindow):
         self.details_panel = DetailsPanel(self.edit_selected_description)
         dock.setWidget(self.details_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+
+    def _build_inventory_dock(self) -> None:
+        dock = QDockWidget("Code Inventory", self)
+        dock.setObjectName("codeInventoryDock")
+        self.inventory_tree = QTreeWidget(dock)
+        self.inventory_tree.setObjectName("codeInventoryTree")
+        self.inventory_tree.setHeaderLabels(["Symbol", "Source"])
+        dock.setWidget(self.inventory_tree)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
