@@ -92,3 +92,27 @@ class Autos {
         "ParallelCommandGroup (line 5)",
         "run (line 5)",
     ]
+
+
+def test_scanner_extracts_attached_javadoc_for_types_and_lifecycle(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "Documented.java").write_text(
+        """package frc.robot;
+/** Runs the intake safely. */
+class Documented extends CommandBase {
+  /** Stops motors when ending. */
+  @Override public void end(boolean interrupted) {}
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    assert result.symbols_of_kind("command")[0].documentation == "Runs the intake safely."
+    assert (
+        result.symbols_of_kind("lifecycle_method")[0].documentation
+        == "Stops motors when ending."
+    )

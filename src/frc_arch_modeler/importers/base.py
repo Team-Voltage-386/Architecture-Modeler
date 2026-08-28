@@ -16,6 +16,7 @@ class ScannedSymbol:
     name: str
     anchor: SourceAnchor
     confidence: str = "exact"
+    documentation: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

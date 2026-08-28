@@ -97,13 +97,16 @@ class DetailsPanel(QWidget):
         self._set_editing_enabled(True)
         self.open_source_button.setEnabled(False)
 
-    def set_imported_fact(self, label: str, kind: str, anchor: SourceAnchor) -> None:
+    def set_imported_fact(
+        self, label: str, kind: str, anchor: SourceAnchor, documentation: str | None = None
+    ) -> None:
         """Present selected regenerated code evidence without enabling design edits."""
         self._element = None
         self._source_anchor = anchor
         self.title.setText(f"{label} (imported {kind})")
+        summary = documentation or "No attached JavaDoc was extracted."
         self.code_description.setText(
-            f"Code-derived {kind} at {anchor.relative_path}:{anchor.start_line}.\n"
+            f"{summary}\n\nCode-derived {kind} at {anchor.relative_path}:{anchor.start_line}.\n"
             f"Symbol: {anchor.qualified_symbol}\nConfidence: exact"
         )
         self.design_description.clear()

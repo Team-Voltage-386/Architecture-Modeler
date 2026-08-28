@@ -39,12 +39,14 @@ class ArchitectureBlock(QGraphicsRectItem):
         imported: bool = False,
         comparison_state: ComparisonState | None = None,
         source_anchor: object | None = None,
+        code_summary: str | None = None,
     ) -> None:
         super().__init__(0, 0, BLOCK_WIDTH, BLOCK_HEIGHT)
         self.element_id = element_id
         self.kind = kind
         self.imported = imported
         self.source_anchor = source_anchor
+        self.code_summary = code_summary
         self.minimized = False
         accents = {
             ComparisonState.MATCHED: MATCHED_GREEN,
@@ -253,6 +255,7 @@ class ArchitectureScene(QGraphicsScene):
             imported=True,
             comparison_state=comparison_state,
             source_anchor=symbol.anchor,
+            code_summary=symbol.documentation,
         )
         block.setPos(index * (BLOCK_WIDTH + HORIZONTAL_GAP), y_position)
         self.addItem(block)

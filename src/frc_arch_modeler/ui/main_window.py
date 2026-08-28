@@ -552,7 +552,10 @@ class MainWindow(QMainWindow):
         imported_anchor = selected[0].source_anchor
         if isinstance(imported_anchor, SourceAnchor):
             self.details_panel.set_imported_fact(
-                selected[0].title.toPlainText(), selected[0].kind, imported_anchor
+                selected[0].title.toPlainText(),
+                selected[0].kind,
+                imported_anchor,
+                selected[0].code_summary,
             )
             self._update_compact_details()
             return
@@ -692,7 +695,7 @@ class MainWindow(QMainWindow):
         block = selected[0]
         if isinstance(block.source_anchor, SourceAnchor):
             self.compact_details_panel.set_imported_fact(
-                block.title.toPlainText(), block.kind, block.source_anchor
+                block.title.toPlainText(), block.kind, block.source_anchor, block.code_summary
             )
             return
         if self.project is None:

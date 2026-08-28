@@ -307,6 +307,7 @@ class JavaProjectScanner:
                         relative_path,
                         source_hash,
                     ),
+                    documentation=self._attached_javadoc(source, body_offset + match.start()),
                 )
             )
 
@@ -350,7 +351,26 @@ class JavaProjectScanner:
             anchor=JavaProjectScanner._anchor_at_offset(
                 qualified_name, source, offset, relative_path, source_hash
             ),
+            documentation=JavaProjectScanner._attached_javadoc(source, offset),
         )
+
+    @staticmethod
+    def _attached_javadoc(source: str, declaration_offset: int) -> str | None:
+        """Return only JavaDoc immediately associated with a declaration."""
+        matches = list(
+            re.finditer(r"/\*\*(?P<content>.*?)\*/", source[:declaration_offset], re.DOTALL)
+        )
+        if not matches:
+            return None
+        match = matches[-1]
+        if source[match.end() : declaration_offset].strip():
+            return None
+        lines = []
+        for line in match.group("content").splitlines():
+            cleaned = re.sub(r"^\s*\*?\s?", "", line).strip()
+            if cleaned:
+                lines.append(cleaned)
+        return " ".join(lines) or None
 
     @staticmethod
     def _anchor_at_offset(
