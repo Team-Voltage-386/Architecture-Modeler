@@ -10,7 +10,7 @@ def test_scanner_inventories_wpilib_symbols_with_source_evidence() -> None:
 
     result = JavaProjectScanner().scan(root)
 
-    assert result.files_scanned == 3
+    assert result.files_scanned == 4
     architecture_symbols = [
         (symbol.kind, symbol.name)
         for symbol in result.symbols
@@ -29,6 +29,10 @@ def test_scanner_inventories_wpilib_symbols_with_source_evidence() -> None:
     assert relationships == [("requires", "drive")]
     lifecycle = [symbol.name for symbol in result.symbols_of_kind("lifecycle_method")]
     assert lifecycle == ["initialize", "execute", "isFinished", "end"]
+    assert [(trigger.controller_expression, trigger.activation) for trigger in result.triggers] == [
+        ("driver.a()", "onTrue")
+    ]
+    assert result.triggers[0].command_expression == "new DriveCommand(drive)"
 
 
 def test_scanner_requires_a_gradle_project(tmp_path) -> None:

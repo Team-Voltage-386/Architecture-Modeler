@@ -38,6 +38,17 @@ class ScannedRelationship:
     confidence: str = "exact"
 
 
+@dataclass(frozen=True, slots=True)
+class ScannedTrigger:
+    """A scheduler trigger binding extracted directly from robot-container code."""
+
+    controller_expression: str
+    activation: str
+    command_expression: str
+    anchor: SourceAnchor
+    confidence: str = "exact"
+
+
 @dataclass(slots=True)
 class ScanResult:
     """Current, regenerable code facts from one robot-project scan."""
@@ -45,6 +56,7 @@ class ScanResult:
     project_root: Path
     symbols: list[ScannedSymbol] = field(default_factory=list)
     relationships: list[ScannedRelationship] = field(default_factory=list)
+    triggers: list[ScannedTrigger] = field(default_factory=list)
     diagnostics: list[ScanDiagnostic] = field(default_factory=list)
     files_scanned: int = 0
 

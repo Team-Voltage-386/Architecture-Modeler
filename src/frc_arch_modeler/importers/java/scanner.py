@@ -11,6 +11,7 @@ from frc_arch_modeler.importers.base import (
     ScanDiagnostic,
     ScannedRelationship,
     ScannedSymbol,
+    ScannedTrigger,
     ScanResult,
 )
 
@@ -30,6 +31,11 @@ LIFECYCLE_PATTERN = re.compile(
     r"@Override\s+(?:public|protected)\s+(?:void|boolean)\s+"
     r"(?P<name>initialize|execute|isFinished|end)\s*\(",
     re.MULTILINE,
+)
+TRIGGER_PATTERN = re.compile(
+    r"(?P<controller>[\w.]+\([^)]*\))\.(?P<activation>onTrue|onFalse|whileTrue|whileFalse|"
+    r"toggleOnTrue|toggleOnFalse)\s*\((?P<command>[^;]+?)\)\s*;",
+    re.MULTILINE | re.DOTALL,
 )
 EXCLUDED_DIRECTORY_NAMES = {".gradle", "build", "bin", "vendordeps"}
 
@@ -80,10 +86,23 @@ class JavaProjectScanner:
         for match in TYPE_PATTERN.finditer(source):
             declaration = match.group("declaration")
             kind = self._type_kind(declaration)
+            type_name = match.group("name")
+            qualified_type = f"{package}.{type_name}" if package else type_name
+            body_end = self._matching_brace(source, match.end() - 1)
+            if body_end is not None:
+                self._scan_trigger_bindings(
+                    source,
+                    match.end(),
+                    body_end,
+                    qualified_type,
+                    relative_path,
+                    source_hash,
+                    result,
+                )
             if kind:
                 symbol = self._symbol(
                     kind,
-                    match.group("name"),
+                    type_name,
                     package,
                     source,
                     match.start(),
@@ -110,6 +129,33 @@ class JavaProjectScanner:
                     match.start(),
                     relative_path,
                     source_hash,
+                )
+            )
+
+    def _scan_trigger_bindings(
+        self,
+        source: str,
+        body_start: int,
+        body_end: int,
+        source_symbol: str,
+        relative_path: str,
+        source_hash: str,
+        result: ScanResult,
+    ) -> None:
+        body = source[body_start:body_end]
+        for match in TRIGGER_PATTERN.finditer(body):
+            result.triggers.append(
+                ScannedTrigger(
+                    controller_expression=match.group("controller"),
+                    activation=match.group("activation"),
+                    command_expression=" ".join(match.group("command").split()),
+                    anchor=self._anchor_at_offset(
+                        source_symbol,
+                        source,
+                        body_start + match.start(),
+                        relative_path,
+                        source_hash,
+                    ),
                 )
             )
 
