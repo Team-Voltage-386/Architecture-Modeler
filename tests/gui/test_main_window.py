@@ -108,7 +108,7 @@ def test_connect_robot_project_scans_code_without_changing_design(qtbot) -> None
         for item in window.scene.items()
         if isinstance(item, ArchitectureBlock) and item.imported
     ]
-    assert len(imported_blocks) == 2
+    assert len(imported_blocks) == 3
 
 
 def test_compare_marks_exact_import_match_on_canvas(qtbot) -> None:

@@ -162,11 +162,15 @@ class ArchitectureScene(QGraphicsScene):
     ) -> None:
         imported_by_symbol: dict[str, ArchitectureBlock] = {}
         imported_subsystems: dict[str, ArchitectureBlock] = {}
-        for kind, offset, y_position in (
-            ("command", command_offset, COMMAND_Y),
-            ("subsystem", subsystem_offset, SUBSYSTEM_Y),
+        imported_commands = [
+            *scan.symbols_of_kind("command"),
+            *scan.symbols_of_kind("command_factory"),
+        ]
+        for kind, symbols, offset, y_position in (
+            ("command", imported_commands, command_offset, COMMAND_Y),
+            ("subsystem", scan.symbols_of_kind("subsystem"), subsystem_offset, SUBSYSTEM_Y),
         ):
-            for index, symbol in enumerate(scan.symbols_of_kind(kind)):
+            for index, symbol in enumerate(symbols):
                 block = self._add_imported_block(symbol, kind, index + offset, y_position)
                 imported_by_symbol[symbol.anchor.qualified_symbol] = block
                 if kind == "subsystem":

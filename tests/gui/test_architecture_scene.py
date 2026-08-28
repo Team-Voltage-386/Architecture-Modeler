@@ -59,8 +59,13 @@ def test_scene_renders_code_import_as_separate_architecture_layer(qapp) -> None:
     assert {(item.kind, item.title.toPlainText()) for item in imported} == {
         ("subsystem", "Drive"),
         ("command", "DriveCommand"),
+        ("command", "stopDrive"),
     }
-    imported_command = next(item for item in imported if item.kind == "command")
+    imported_command = next(
+        item
+        for item in imported
+        if item.kind == "command" and item.title.toPlainText() == "DriveCommand"
+    )
     imported_subsystem = next(item for item in imported if item.kind == "subsystem")
     assert imported_command.pen().color().name() == VOLTAGE_YELLOW.lower()
     assert imported_subsystem.pen().color().name() == VOLTAGE_BLUE.lower()
