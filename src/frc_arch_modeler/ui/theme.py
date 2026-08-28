@@ -42,6 +42,20 @@ def apply_voltage_theme(app: QApplication) -> None:
             color: {VOLTAGE_YELLOW};
         }}
         QStatusBar {{ color: {MUTED_TEXT}; background: {PANEL_BLACK}; }}
+        QDialog {{ background: {NEAR_BLACK}; color: {OFF_WHITE}; }}
+        QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QComboBox {{
+            background: {PANEL_BLACK};
+            color: {OFF_WHITE};
+            border: 1px solid #4A5568;
+            border-radius: 4px;
+            padding: 5px;
+            selection-background-color: {VOLTAGE_BLUE};
+            selection-color: {OFF_WHITE};
+        }}
+        QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QComboBox:focus {{
+            border-color: {VOLTAGE_YELLOW};
+        }}
+        QComboBox QAbstractItemView {{ background: {PANEL_BLACK}; color: {OFF_WHITE}; }}
         QPushButton {{ border: 1px solid #4A5568; border-radius: 4px; padding: 6px 10px; }}
         QPushButton:hover {{ border-color: {VOLTAGE_YELLOW}; }}
         """

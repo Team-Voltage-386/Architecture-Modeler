@@ -15,6 +15,8 @@ def test_main_window_has_planned_regions(qtbot) -> None:
     assert window.findChild(QDockWidget, "detailsDock") is not None
     assert window.statusBar().currentMessage() == "No robot project connected"
     assert f"QToolBar QToolButton {{\n            color: {OFF_WHITE};" in app.styleSheet()
+    input_selector = "QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QComboBox {"
+    assert input_selector in app.styleSheet()
 
 
 def test_new_model_and_design_elements_update_the_canvas(qtbot) -> None:
