@@ -124,12 +124,16 @@ def test_compare_marks_exact_import_match_on_canvas(qtbot) -> None:
 
     assert comparison is not None
     assert len(comparison.matches) == 1
+    assert window.accept_matches_action.isEnabled()
     matched_block = next(
         item
         for item in window.scene.items()
         if isinstance(item, ArchitectureBlock) and not item.imported and item.kind == "subsystem"
     )
     assert matched_block.caption.toPlainText() == "Matched SUBSYSTEM"
+
+    assert window.accept_matches() == 1
+    assert window.project.subsystems[0].code_binding is not None
 
 
 def test_export_change_request_from_window(qtbot, tmp_path) -> None:

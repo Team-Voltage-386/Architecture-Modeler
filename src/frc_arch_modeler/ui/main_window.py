@@ -73,6 +73,8 @@ class MainWindow(QMainWindow):
         self.refresh_code_action.setEnabled(False)
         self.compare_action = toolbar.addAction("Compare Changes", self.compare_changes)
         self.compare_action.setEnabled(False)
+        self.accept_matches_action = toolbar.addAction("Accept Matches", self.accept_matches)
+        self.accept_matches_action.setEnabled(False)
         self.export_change_request_action = toolbar.addAction(
             "Export AI Change Request", self._prompt_export_change_request
         )
@@ -331,12 +333,23 @@ class MainWindow(QMainWindow):
             return None
         self.reconciliation = ReconciliationService().reconcile(self.project, self.last_scan)
         self._render_with_current_scan()
+        self.accept_matches_action.setEnabled(bool(self.reconciliation.matches))
         matched = len(self.reconciliation.matches)
         design_only = sum(
             state.value == "design_only" for state in self.reconciliation.statuses.values()
         )
         self.statusBar().showMessage(f"Comparison: {matched} matched, {design_only} design-only")
         return self.reconciliation
+
+    def accept_matches(self) -> int:
+        """Persist the currently suggested unambiguous bindings after user confirmation."""
+        if self.project is None or self.reconciliation is None:
+            return 0
+        accepted = ReconciliationService.accept_matches(self.project, self.reconciliation)
+        if accepted:
+            self._mark_dirty(f"Accepted {accepted} code binding(s)")
+        self.accept_matches_action.setEnabled(False)
+        return accepted
 
     def _comparison_statuses(self) -> dict:
         return self.reconciliation.statuses if self.reconciliation is not None else {}

@@ -33,6 +33,12 @@ def test_reconciliation_matches_exact_normalized_names_without_mutating_design(t
     assert [symbol.name for symbol in result.code_only] == ["UnmappedCommand"]
     assert command.code_binding is None
 
+    accepted = ReconciliationService.accept_matches(project, result)
+
+    assert accepted == 2
+    assert command.code_binding == result.matches[command.id].anchor
+    assert drive.code_binding == result.matches[drive.id].anchor
+
 
 def _symbol(kind: str, name: str) -> ScannedSymbol:
     return ScannedSymbol(

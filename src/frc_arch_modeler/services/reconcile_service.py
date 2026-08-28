@@ -41,6 +41,18 @@ class ReconciliationService:
         return result
 
     @staticmethod
+    def accept_matches(project: ArchitectureProject, result: ReconciliationResult) -> int:
+        """Persist only explicitly accepted, unambiguous code bindings."""
+        elements = {item.id: item for item in [*project.commands, *project.subsystems]}
+        accepted = 0
+        for element_id, symbol in result.matches.items():
+            element = elements[element_id]
+            if element.code_binding != symbol.anchor:
+                element.code_binding = symbol.anchor
+                accepted += 1
+        return accepted
+
+    @staticmethod
     def _match(
         element: Command | Subsystem, expected_kind: str, symbols: object
     ) -> ScannedSymbol | None:
