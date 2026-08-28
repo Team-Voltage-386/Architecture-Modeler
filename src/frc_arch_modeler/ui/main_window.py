@@ -24,6 +24,7 @@ from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.persistence.layout_store import LayoutStore
 from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.project_service import ProjectService
+from frc_arch_modeler.services.reconcile_service import ReconciliationResult, ReconciliationService
 from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
 from frc_arch_modeler.ui.details_panel import DetailsPanel, EditDescriptionCommand
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
@@ -40,6 +41,7 @@ class MainWindow(QMainWindow):
         self.model_root: Path | None = None
         self.robot_project_root: Path | None = None
         self.last_scan: ScanResult | None = None
+        self.reconciliation: ReconciliationResult | None = None
         self._inventory_symbols: dict[str, object] = {}
         self.is_dirty = False
         self.project_service = ProjectService()
@@ -66,9 +68,10 @@ class MainWindow(QMainWindow):
         )
         self.refresh_code_action = toolbar.addAction("Refresh Code", self.refresh_robot_project)
         self.refresh_code_action.setEnabled(False)
-        for label in ("Compare Changes", "Export AI Change Request"):
-            action = toolbar.addAction(label)
-            action.setEnabled(False)
+        self.compare_action = toolbar.addAction("Compare Changes", self.compare_changes)
+        self.compare_action.setEnabled(False)
+        self.export_change_request_action = toolbar.addAction("Export AI Change Request")
+        self.export_change_request_action.setEnabled(False)
         self.export_architecture_action = toolbar.addAction(
             "Export Architecture", self._prompt_export_architecture
         )
@@ -106,7 +109,9 @@ class MainWindow(QMainWindow):
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
         self.project = project
-        self.scene.render_project(project, scan=self.last_scan)
+        self.scene.render_project(
+            project, scan=self.last_scan, statuses=self._comparison_statuses()
+        )
         self.details_panel.set_element(None)
         self.new_command_action.setEnabled(project is not None)
         self.new_subsystem_action.setEnabled(project is not None)
@@ -116,6 +121,7 @@ class MainWindow(QMainWindow):
         self.minimize_action.setEnabled(project is not None)
         self.restore_action.setEnabled(project is not None)
         self.export_architecture_action.setEnabled(project is not None)
+        self.compare_action.setEnabled(project is not None and self.last_scan is not None)
         if project is None:
             self.is_dirty = False
             self.statusBar().showMessage("No robot project connected")
@@ -172,6 +178,7 @@ class MainWindow(QMainWindow):
         """Scan a Java/WPILib project without altering the user-authored design."""
         self.robot_project_root = Path(root)
         self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
+        self.reconciliation = None
         self.refresh_code_action.setEnabled(True)
         self._render_with_current_scan()
         self._show_scan_inventory()
@@ -183,6 +190,7 @@ class MainWindow(QMainWindow):
         if self.robot_project_root is None:
             return None
         self.last_scan = JavaProjectScanner().scan(self.robot_project_root)
+        self.reconciliation = None
         self._render_with_current_scan()
         self._show_scan_inventory()
         self._show_scan_status("Refreshed")
@@ -258,8 +266,27 @@ class MainWindow(QMainWindow):
 
     def _render_with_current_scan(self) -> None:
         self.scene.render_project(
-            self.project, layout=self.scene.layout_state(), scan=self.last_scan
+            self.project,
+            layout=self.scene.layout_state(),
+            scan=self.last_scan,
+            statuses=self._comparison_statuses(),
         )
+
+    def compare_changes(self) -> ReconciliationResult | None:
+        """Display a non-destructive design/code comparison on the canvas."""
+        if self.project is None or self.last_scan is None:
+            return None
+        self.reconciliation = ReconciliationService().reconcile(self.project, self.last_scan)
+        self._render_with_current_scan()
+        matched = len(self.reconciliation.matches)
+        design_only = sum(
+            state.value == "design_only" for state in self.reconciliation.statuses.values()
+        )
+        self.statusBar().showMessage(f"Comparison: {matched} matched, {design_only} design-only")
+        return self.reconciliation
+
+    def _comparison_statuses(self) -> dict:
+        return self.reconciliation.statuses if self.reconciliation is not None else {}
 
     def add_command(self, name: str) -> None:
         """Add a command and refresh its deterministic initial canvas position."""

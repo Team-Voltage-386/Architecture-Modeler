@@ -109,3 +109,24 @@ def test_connect_robot_project_scans_code_without_changing_design(qtbot) -> None
         if isinstance(item, ArchitectureBlock) and item.imported
     ]
     assert len(imported_blocks) == 2
+
+
+def test_compare_marks_exact_import_match_on_canvas(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+    window.connect_robot_project(fixture_root)
+
+    comparison = window.compare_changes()
+
+    assert comparison is not None
+    assert len(comparison.matches) == 1
+    matched_block = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock) and not item.imported and item.kind == "subsystem"
+    )
+    assert matched_block.caption.toPlainText() == "Matched SUBSYSTEM"

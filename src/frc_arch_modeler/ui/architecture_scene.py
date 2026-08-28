@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QGraphicsTextItem,
 )
 
-from frc_arch_modeler.domain.model import ArchitectureProject, Command, Subsystem
+from frc_arch_modeler.domain.model import ArchitectureProject, Command, ComparisonState, Subsystem
 from frc_arch_modeler.importers.base import ScannedSymbol, ScanResult
 from frc_arch_modeler.ui.theme import MUTED_TEXT, PANEL_BLACK, VOLTAGE_BLUE, VOLTAGE_YELLOW
 
@@ -23,18 +23,28 @@ BLOCK_HEIGHT = 92
 HORIZONTAL_GAP = 42
 COMMAND_Y = 0
 SUBSYSTEM_Y = 250
+MATCHED_GREEN = "#35C759"
 
 
 class ArchitectureBlock(QGraphicsRectItem):
     """Movable visual representation of one command or subsystem."""
 
-    def __init__(self, element_id: UUID, label: str, kind: str, imported: bool = False) -> None:
+    def __init__(
+        self,
+        element_id: UUID,
+        label: str,
+        kind: str,
+        imported: bool = False,
+        comparison_state: ComparisonState | None = None,
+    ) -> None:
         super().__init__(0, 0, BLOCK_WIDTH, BLOCK_HEIGHT)
         self.element_id = element_id
         self.kind = kind
         self.imported = imported
         self.minimized = False
-        accent = VOLTAGE_YELLOW if kind == "command" else VOLTAGE_BLUE
+        accent = MATCHED_GREEN if comparison_state == ComparisonState.MATCHED else (
+            VOLTAGE_YELLOW if kind == "command" else VOLTAGE_BLUE
+        )
         self.setBrush(QColor(PANEL_BLACK))
         style = Qt.PenStyle.DotLine if imported else Qt.PenStyle.SolidLine
         self.setPen(QPen(QColor(accent), 3 if kind == "command" else 2, style))
@@ -47,6 +57,7 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.title.setTextWidth(BLOCK_WIDTH - 24)
         self.title.setPos(12, 12)
         source = "Imported " if imported else ""
+        source = "Matched " if comparison_state == ComparisonState.MATCHED else source
         caption = f"{source}{kind.upper()}"
         self.caption = QGraphicsTextItem(caption, self)
         self.caption.setDefaultTextColor(QColor(accent))
@@ -92,6 +103,7 @@ class ArchitectureScene(QGraphicsScene):
         project: ArchitectureProject | None,
         layout: dict[str, dict[str, Any]] | None = None,
         scan: ScanResult | None = None,
+        statuses: dict[UUID, ComparisonState] | None = None,
     ) -> None:
         """Replace scene contents with a deterministic initial model layout."""
         self.clear()
@@ -103,12 +115,13 @@ class ArchitectureScene(QGraphicsScene):
             return
 
         layout = layout or {}
+        statuses = statuses or {}
         blocks: dict[UUID, ArchitectureBlock] = {}
         for index, command in enumerate(project.commands):
-            block = self._add_block(command, "command", index, COMMAND_Y, layout)
+            block = self._add_block(command, "command", index, COMMAND_Y, layout, statuses)
             blocks[command.id] = block
         for index, subsystem in enumerate(project.subsystems):
-            block = self._add_block(subsystem, "subsystem", index, SUBSYSTEM_Y, layout)
+            block = self._add_block(subsystem, "subsystem", index, SUBSYSTEM_Y, layout, statuses)
             blocks[subsystem.id] = block
         for command in project.commands:
             command_block = blocks[command.id]
@@ -127,8 +140,14 @@ class ArchitectureScene(QGraphicsScene):
         index: int,
         y_position: int,
         layout: dict[str, dict[str, Any]],
+        statuses: dict[UUID, ComparisonState],
     ) -> ArchitectureBlock:
-        block = ArchitectureBlock(element.id, element.name.effective or "Unnamed", kind)
+        block = ArchitectureBlock(
+            element.id,
+            element.name.effective or "Unnamed",
+            kind,
+            comparison_state=statuses.get(element.id),
+        )
         item_layout = layout.get(str(element.id), {})
         block.setPos(
             float(item_layout.get("x", index * (BLOCK_WIDTH + HORIZONTAL_GAP))),
