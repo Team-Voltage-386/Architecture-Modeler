@@ -28,6 +28,11 @@ COMMAND_METHOD_PATTERN = re.compile(
     r"(?P<name>\w+)\s*\(",
     re.MULTILINE,
 )
+COMMAND_COMPOSITION_PATTERN = re.compile(
+    r"\b(?:(?:Commands\.)?(?P<factory>runOnce|run|runEnd|startEnd|sequence|parallel|"
+    r"race|deadline)|new\s+(?P<group>SequentialCommandGroup|ParallelCommandGroup|"
+    r"ParallelRaceGroup|ParallelDeadlineGroup))\s*\("
+)
 REQUIREMENT_PATTERN = re.compile(r"\baddRequirements\s*\((?P<arguments>[^)]*)\)")
 LIFECYCLE_PATTERN = re.compile(
     r"@Override\s+(?:public|protected)\s+(?:void|boolean)\s+"
@@ -154,6 +159,37 @@ class JavaProjectScanner:
                     match.start(),
                     relative_path,
                     source_hash,
+                )
+            )
+        self._scan_command_compositions(source, package, relative_path, source_hash, result)
+
+    def _scan_command_compositions(
+        self,
+        source: str,
+        package: str,
+        relative_path: str,
+        source_hash: str,
+        result: ScanResult,
+    ) -> None:
+        """Record inline WPILib command forms without pretending to resolve their lambdas.
+
+        A composition is deliberately kept separate from a named command class or
+        factory: callers can present one unified command inventory while retaining
+        the truth that this source is an inline factory/group expression.
+        """
+        for match in COMMAND_COMPOSITION_PATTERN.finditer(source):
+            form = match.group("factory") or match.group("group")
+            assert form is not None
+            line = source.count("\n", 0, match.start()) + 1
+            qualified_name = f"{package}.{form}@{line}" if package else f"{form}@{line}"
+            result.symbols.append(
+                ScannedSymbol(
+                    kind="command_composition",
+                    name=f"{form} (line {line})",
+                    anchor=self._anchor_at_offset(
+                        qualified_name, source, match.start(), relative_path, source_hash
+                    ),
+                    confidence="exact",
                 )
             )
 

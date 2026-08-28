@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QTreeWidgetItem,
 )
 
-from frc_arch_modeler.domain.model import ArchitectureProject
+from frc_arch_modeler.domain.model import ArchitectureProject, SourceAnchor
 from frc_arch_modeler.importers.base import ScanResult
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.persistence.layout_store import LayoutStore
@@ -284,6 +284,7 @@ class MainWindow(QMainWindow):
             "subsystem": "Subsystems",
             "command": "Commands",
             "command_factory": "Command factories",
+            "command_composition": "Command forms and groups",
             "lifecycle_method": "Lifecycle methods",
         }
         groups: dict[str, QTreeWidgetItem] = {}
@@ -422,11 +423,17 @@ class MainWindow(QMainWindow):
         self._mark_dirty("Canvas layout updated")
 
     def _update_selected_element(self) -> None:
-        if self.project is None:
-            self.details_panel.set_element(None)
-            return
         selected = self.scene.selected_blocks()
         if len(selected) != 1:
+            self.details_panel.set_element(None)
+            return
+        imported_anchor = selected[0].source_anchor
+        if isinstance(imported_anchor, SourceAnchor):
+            self.details_panel.set_imported_fact(
+                selected[0].title.toPlainText(), selected[0].kind, imported_anchor
+            )
+            return
+        if self.project is None:
             self.details_panel.set_element(None)
             return
         element_id = selected[0].element_id
@@ -520,7 +527,7 @@ class MainWindow(QMainWindow):
     def _build_details_dock(self) -> None:
         dock = QDockWidget("Details", self)
         dock.setObjectName("detailsDock")
-        self.details_panel = DetailsPanel(self.edit_selected_description)
+        self.details_panel = DetailsPanel(self.edit_selected_description, self._open_source_anchor)
         dock.setWidget(self.details_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
 
@@ -551,5 +558,11 @@ class MainWindow(QMainWindow):
         symbol = self._inventory_symbols.get(symbol_name)
         if symbol is None or self.robot_project_root is None:
             return
-        dialog = SourceViewerDialog(self.robot_project_root, symbol.anchor, self)
+        self._open_source_anchor(symbol.anchor)
+
+    def _open_source_anchor(self, anchor: SourceAnchor) -> None:
+        """Open portable source evidence when a robot project is currently connected."""
+        if self.robot_project_root is None:
+            return
+        dialog = SourceViewerDialog(self.robot_project_root, anchor, self)
         dialog.open()

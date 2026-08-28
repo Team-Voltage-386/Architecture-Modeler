@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from frc_arch_modeler.domain.model import Command, Subsystem
+from frc_arch_modeler.domain.model import Command, SourceAnchor, Subsystem
 
 ArchitectureElement = Command | Subsystem
 
@@ -43,10 +43,16 @@ class EditDescriptionCommand(QUndoCommand):
 class DetailsPanel(QWidget):
     """Shows code evidence beside the editable user-authored description."""
 
-    def __init__(self, on_description_edit: Callable[[str | None], None]) -> None:
+    def __init__(
+        self,
+        on_description_edit: Callable[[str | None], None],
+        on_open_source: Callable[[SourceAnchor], None] | None = None,
+    ) -> None:
         super().__init__()
         self._on_description_edit = on_description_edit
         self._element: ArchitectureElement | None = None
+        self._source_anchor: SourceAnchor | None = None
+        self._on_open_source = on_open_source
         layout = QVBoxLayout(self)
         self.title = QLabel("Select a command or subsystem to inspect its details.", self)
         self.title.setObjectName("detailsTitle")
@@ -58,6 +64,7 @@ class DetailsPanel(QWidget):
         self.design_description.setPlaceholderText("Optional proposed description")
         self.save_button = QPushButton("Apply Description", self)
         self.revert_button = QPushButton("Revert Design Override", self)
+        self.open_source_button = QPushButton("Open Source", self)
         form = QFormLayout()
         form.addRow("From code", self.code_description)
         form.addRow("Design / proposed", self.design_description)
@@ -65,18 +72,22 @@ class DetailsPanel(QWidget):
         layout.addLayout(form)
         layout.addWidget(self.save_button)
         layout.addWidget(self.revert_button)
+        layout.addWidget(self.open_source_button)
         layout.addStretch()
         self.save_button.clicked.connect(self._apply_description)
         self.revert_button.clicked.connect(self._revert_description)
+        self.open_source_button.clicked.connect(self._open_source)
         self._set_editing_enabled(False)
 
     def set_element(self, element: ArchitectureElement | None) -> None:
         self._element = element
+        self._source_anchor = None
         if element is None:
             self.title.setText("Select a command or subsystem to inspect its details.")
             self.code_description.setText("No code-derived description available.")
             self.design_description.clear()
             self._set_editing_enabled(False)
+            self.open_source_button.setEnabled(False)
             return
         self.title.setText(f"{element.name.effective} ({type(element).__name__})")
         self.code_description.setText(
@@ -84,6 +95,20 @@ class DetailsPanel(QWidget):
         )
         self.design_description.setPlainText(element.description.design or "")
         self._set_editing_enabled(True)
+        self.open_source_button.setEnabled(False)
+
+    def set_imported_fact(self, label: str, kind: str, anchor: SourceAnchor) -> None:
+        """Present selected regenerated code evidence without enabling design edits."""
+        self._element = None
+        self._source_anchor = anchor
+        self.title.setText(f"{label} (imported {kind})")
+        self.code_description.setText(
+            f"Code-derived {kind} at {anchor.relative_path}:{anchor.start_line}.\n"
+            f"Symbol: {anchor.qualified_symbol}\nConfidence: exact"
+        )
+        self.design_description.clear()
+        self._set_editing_enabled(False)
+        self.open_source_button.setEnabled(self._on_open_source is not None)
 
     def refresh(self) -> None:
         self.set_element(self._element)
@@ -101,3 +126,7 @@ class DetailsPanel(QWidget):
     def _revert_description(self) -> None:
         if self._element is not None:
             self._on_description_edit(None)
+
+    def _open_source(self) -> None:
+        if self._source_anchor is not None and self._on_open_source is not None:
+            self._on_open_source(self._source_anchor)

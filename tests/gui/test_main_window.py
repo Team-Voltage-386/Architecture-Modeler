@@ -112,6 +112,28 @@ def test_connect_robot_project_scans_code_without_changing_design(qtbot) -> None
     assert len(imported_blocks) == 3
 
 
+def test_imported_canvas_block_shows_read_only_evidence(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+    window.connect_robot_project(fixture_root)
+    block = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock)
+        and item.imported
+        and item.title.toPlainText() == "Drive"
+    )
+
+    block.setSelected(True)
+
+    assert "imported subsystem" in window.details_panel.title.text()
+    assert "Drive.java" in window.details_panel.code_description.text()
+    assert not window.details_panel.design_description.isEnabled()
+    assert window.details_panel.open_source_button.isEnabled()
+
+
 def test_compare_marks_exact_import_match_on_canvas(qtbot) -> None:
     create_application([])
     window = MainWindow()

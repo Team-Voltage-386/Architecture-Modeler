@@ -36,11 +36,13 @@ class ArchitectureBlock(QGraphicsRectItem):
         kind: str,
         imported: bool = False,
         comparison_state: ComparisonState | None = None,
+        source_anchor: object | None = None,
     ) -> None:
         super().__init__(0, 0, BLOCK_WIDTH, BLOCK_HEIGHT)
         self.element_id = element_id
         self.kind = kind
         self.imported = imported
+        self.source_anchor = source_anchor
         self.minimized = False
         accent = MATCHED_GREEN if comparison_state == ComparisonState.MATCHED else (
             VOLTAGE_YELLOW if kind == "command" else VOLTAGE_BLUE
@@ -165,6 +167,7 @@ class ArchitectureScene(QGraphicsScene):
         imported_commands = [
             *scan.symbols_of_kind("command"),
             *scan.symbols_of_kind("command_factory"),
+            *scan.symbols_of_kind("command_composition"),
         ]
         for kind, symbols, offset, y_position in (
             ("command", imported_commands, command_offset, COMMAND_Y),
@@ -188,7 +191,11 @@ class ArchitectureScene(QGraphicsScene):
         self, symbol: ScannedSymbol, kind: str, index: int, y_position: int
     ) -> ArchitectureBlock:
         block = ArchitectureBlock(
-            uuid5(NAMESPACE_URL, symbol.anchor.qualified_symbol), symbol.name, kind, imported=True
+            uuid5(NAMESPACE_URL, symbol.anchor.qualified_symbol),
+            symbol.name,
+            kind,
+            imported=True,
+            source_anchor=symbol.anchor,
         )
         block.setPos(index * (BLOCK_WIDTH + HORIZONTAL_GAP), y_position)
         self.addItem(block)
