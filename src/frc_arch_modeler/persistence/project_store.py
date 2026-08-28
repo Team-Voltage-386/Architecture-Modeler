@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from frc_arch_modeler.domain.model import ArchitectureProject
+from frc_arch_modeler.persistence.migrations import migrate_model_payload
 
 
 class ProjectStore:
@@ -43,4 +44,4 @@ class ProjectStore:
     def load(self) -> ArchitectureProject:
         """Load and validate a saved model."""
         with self.model_path.open(encoding="utf-8") as model_file:
-            return ArchitectureProject.from_dict(json.load(model_file))
+            return ArchitectureProject.from_dict(migrate_model_payload(json.load(model_file)))

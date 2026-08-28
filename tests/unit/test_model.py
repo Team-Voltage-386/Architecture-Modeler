@@ -6,6 +6,7 @@ from frc_arch_modeler.domain.model import (
     SourceAnchor,
     Subsystem,
 )
+from frc_arch_modeler.persistence.migrations import migrate_model_payload
 from frc_arch_modeler.persistence.project_store import ProjectStore
 
 
@@ -42,3 +43,15 @@ def test_source_anchor_rejects_machine_specific_or_parent_paths() -> None:
         except ValueError:
             continue
         raise AssertionError(f"Expected {unsafe_path!r} to be rejected")
+
+
+def test_migration_adds_schema_version_to_legacy_payload() -> None:
+    project = ArchitectureProject(name="Robot")
+    legacy = project.to_dict()
+    legacy.pop("schemaVersion")
+    legacy["futureField"] = {"value": 1}
+
+    migrated = migrate_model_payload(legacy)
+
+    assert migrated["schemaVersion"] == 1
+    assert migrated["futureField"] == {"value": 1}
