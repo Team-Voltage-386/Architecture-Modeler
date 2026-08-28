@@ -40,6 +40,7 @@ class ArchitectureBlock(QGraphicsRectItem):
         comparison_state: ComparisonState | None = None,
         source_anchor: object | None = None,
         code_summary: str | None = None,
+        search_text: str = "",
     ) -> None:
         super().__init__(0, 0, BLOCK_WIDTH, BLOCK_HEIGHT)
         self.element_id = element_id
@@ -47,6 +48,7 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.imported = imported
         self.source_anchor = source_anchor
         self.code_summary = code_summary
+        self.search_text = search_text.casefold()
         self.minimized = False
         accents = {
             ComparisonState.MATCHED: MATCHED_GREEN,
@@ -189,6 +191,16 @@ class ArchitectureScene(QGraphicsScene):
             element.name.effective or "Unnamed",
             kind,
             comparison_state=statuses.get(element.id),
+            search_text=" ".join(
+                filter(
+                    None,
+                    [
+                        element.name.effective,
+                        element.description.effective,
+                        statuses.get(element.id),
+                    ],
+                )
+            ),
         )
         item_layout = layout.get(str(element.id), {})
         block.setPos(
@@ -209,6 +221,15 @@ class ArchitectureScene(QGraphicsScene):
         code_only_symbols = code_only_symbols or set()
         imported_by_symbol: dict[str, ArchitectureBlock] = {}
         imported_subsystems: dict[str, ArchitectureBlock] = {}
+        evidence_by_symbol: dict[str, list[str]] = {}
+        for device in scan.devices:
+            evidence_by_symbol.setdefault(device.owner_symbol, []).extend(
+                [device.device_type, device.constructor_arguments, device.resolved_arguments or ""]
+            )
+        for trigger in scan.triggers:
+            evidence_by_symbol.setdefault(trigger.anchor.qualified_symbol, []).extend(
+                [trigger.controller_expression, trigger.activation, trigger.command_expression]
+            )
         imported_commands = [
             *scan.symbols_of_kind("command"),
             *scan.symbols_of_kind("command_factory"),
@@ -227,6 +248,7 @@ class ArchitectureScene(QGraphicsScene):
                     ComparisonState.CODE_ONLY
                     if symbol.anchor.qualified_symbol in code_only_symbols
                     else None,
+                    evidence_by_symbol.get(symbol.anchor.qualified_symbol, []),
                 )
                 imported_by_symbol[symbol.anchor.qualified_symbol] = block
                 if kind == "subsystem":
@@ -247,6 +269,7 @@ class ArchitectureScene(QGraphicsScene):
         index: int,
         y_position: int,
         comparison_state: ComparisonState | None = None,
+        evidence: list[str] | None = None,
     ) -> ArchitectureBlock:
         block = ArchitectureBlock(
             uuid5(NAMESPACE_URL, symbol.anchor.qualified_symbol),
@@ -256,6 +279,12 @@ class ArchitectureScene(QGraphicsScene):
             comparison_state=comparison_state,
             source_anchor=symbol.anchor,
             code_summary=symbol.documentation,
+            search_text=" ".join(
+                filter(
+                    None,
+                    [symbol.name, symbol.kind, symbol.documentation or "", *(evidence or [])],
+                )
+            ),
         )
         block.setPos(index * (BLOCK_WIDTH + HORIZONTAL_GAP), y_position)
         self.addItem(block)
@@ -305,6 +334,7 @@ class ArchitectureScene(QGraphicsScene):
                     not self._search_query
                     or self._search_query in name
                     or self._search_query in caption
+                    or self._search_query in item.search_text
                 )
                 visible = (
                     matches_search and self._block_state(item) in self._visible_states

@@ -127,6 +127,29 @@ def test_filter_hides_nonmatching_blocks_and_relationships(qapp) -> None:
     assert all(edge.isVisible() for edge in scene._edges)
 
 
+def test_filter_matches_design_description_and_imported_device_evidence(qapp) -> None:
+    design = Command(
+        name=FieldValue(design="Teleop"), description=FieldValue(design="Drive using joysticks")
+    )
+    scene = ArchitectureScene()
+    scan = JavaProjectScanner().scan(Path(__file__).parents[1] / "fixtures" / "java_basic")
+    scene.render_project(ArchitectureProject(name="Robot", commands=[design]), scan=scan)
+
+    scene.filter_blocks("joysticks")
+
+    assert [
+        block.title.toPlainText()
+        for block in scene.items()
+        if isinstance(block, ArchitectureBlock) and block.isVisible()
+    ] == ["Teleop"]
+    scene.filter_blocks("SparkMax")
+    assert [
+        block.title.toPlainText()
+        for block in scene.items()
+        if isinstance(block, ArchitectureBlock) and block.isVisible()
+    ] == ["Drive"]
+
+
 def test_modified_status_has_non_color_caption_and_border_style(qapp) -> None:
     command = Command(name=FieldValue(design="Teleop Drive"))
     scene = ArchitectureScene()
