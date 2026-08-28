@@ -249,6 +249,14 @@ class ArchitectureScene(QGraphicsScene):
             *scan.symbols_of_kind("command_factory"),
             *scan.symbols_of_kind("command_composition"),
         ]
+        trigger_lines_by_symbol = {
+            symbol.anchor.qualified_symbol: [
+                f"{trigger.controller_expression} · {trigger.activation}"
+                for trigger in scan.triggers
+                if self._normalized(symbol.name) in self._normalized(trigger.command_expression)
+            ]
+            for symbol in imported_commands
+        }
         for kind, symbols, offset, y_position in (
             ("command", imported_commands, command_offset, COMMAND_Y),
             ("subsystem", scan.symbols_of_kind("subsystem"), subsystem_offset, SUBSYSTEM_Y),
@@ -265,7 +273,7 @@ class ArchitectureScene(QGraphicsScene):
                     evidence_by_symbol.get(symbol.anchor.qualified_symbol, []),
                     device_lines_by_symbol.get(symbol.anchor.qualified_symbol, [])
                     if kind == "subsystem"
-                    else [],
+                    else trigger_lines_by_symbol.get(symbol.anchor.qualified_symbol, []),
                 )
                 imported_by_symbol[symbol.anchor.qualified_symbol] = block
                 if kind == "subsystem":
@@ -308,6 +316,10 @@ class ArchitectureScene(QGraphicsScene):
         block.setPos(index * (BLOCK_WIDTH + HORIZONTAL_GAP), y_position)
         self.addItem(block)
         return block
+
+    @staticmethod
+    def _normalized(value: str) -> str:
+        return "".join(character for character in value.casefold() if character.isalnum())
 
     def layout_state(self) -> dict[str, dict[str, Any]]:
         """Return independently persistable presentation state for all blocks."""
