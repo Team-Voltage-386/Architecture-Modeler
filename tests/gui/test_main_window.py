@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence, QPalette
 from PySide6.QtWidgets import QDockWidget, QMessageBox
 
@@ -166,6 +167,27 @@ def test_command_requirement_edit_undo_and_redo(qtbot) -> None:
     window.undo_stack.undo()
     assert window.project.commands[0].requirement_ids == []
     window.undo_stack.redo()
+    assert window.project.commands[0].requirement_ids == [window.project.subsystems[0].id]
+
+
+def test_command_details_apply_checked_subsystem_requirement(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    window.add_command("Teleop Drive")
+    command_block = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock) and item.kind == "command"
+    )
+    command_block.setSelected(True)
+
+    assert window.details_panel.requirements.count() == 1
+    window.details_panel.requirements.item(0).setCheckState(Qt.CheckState.Checked)
+    window.details_panel.save_button.click()
+
     assert window.project.commands[0].requirement_ids == [window.project.subsystems[0].id]
 
 
