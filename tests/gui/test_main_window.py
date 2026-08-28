@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence, QPalette
-from PySide6.QtWidgets import QDockWidget, QMessageBox
+from PySide6.QtWidgets import QDockWidget, QGraphicsPathItem, QMessageBox
 
 from frc_arch_modeler.app import create_application
 from frc_arch_modeler.domain.model import ComparisonState
@@ -67,6 +67,24 @@ def test_design_devices_and_triggers_appear_on_their_canvas_blocks(qtbot) -> Non
     assert "Driver A · onTrue" in command.summary.toPlainText()
     assert window.new_device_action.isEnabled()
     assert window.new_trigger_action.isEnabled()
+
+
+def test_explicit_design_relationship_is_rendered_with_evidence_tooltip(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    window.add_command("Teleop Drive")
+    assert window.project is not None
+
+    window.add_relationship(
+        "calls", window.project.commands[0].id, window.project.subsystems[0].id
+    )
+
+    edges = [item for item in window.scene.items() if isinstance(item, QGraphicsPathItem)]
+    assert any(item.toolTip() == "Designed calls relationship" for item in edges)
+    assert window.new_relationship_action.isEnabled()
 
 
 def test_imported_command_details_show_lifecycle_with_inherited_phases(qtbot) -> None:

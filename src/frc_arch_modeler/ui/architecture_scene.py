@@ -206,6 +206,11 @@ class ArchitectureScene(QGraphicsScene):
                     self._add_requirement_edge(
                         command_block, subsystem_block, evidence="Designed requirement"
                     )
+        for relationship in project.relationships:
+            source = blocks.get(relationship.source_id)
+            target = blocks.get(relationship.target_id)
+            if source is not None and target is not None:
+                self._add_design_relationship_edge(source, target, relationship.relationship_type)
         if scan is not None:
             self._add_imported_code(
                 scan, len(project.commands), len(project.subsystems), code_only_symbols
@@ -470,6 +475,25 @@ class ArchitectureScene(QGraphicsScene):
         edge.setData(0, {command.element_id, subsystem.element_id})
         edge.setData(1, default_pen)
         edge.setToolTip(evidence)
+        edge.setZValue(-1)
+        self.addItem(edge)
+        self._edges.append(edge)
+
+    def _add_design_relationship_edge(
+        self, source: ArchitectureBlock, target: ArchitectureBlock, relationship_type: str
+    ) -> None:
+        """Render an explicit authored relationship without confusing it with requires."""
+        start = source.sceneBoundingRect().center()
+        end = target.sceneBoundingRect().center()
+        path = QPainterPath(start)
+        midpoint = (start.x() + end.x()) / 2
+        path.cubicTo(QPointF(midpoint, start.y()), QPointF(midpoint, end.y()), end)
+        edge = QGraphicsPathItem(path)
+        pen = QPen(QColor(MUTED_TEXT), 1.25, Qt.PenStyle.DotLine)
+        edge.setPen(pen)
+        edge.setData(0, {source.element_id, target.element_id})
+        edge.setData(1, pen)
+        edge.setToolTip(f"Designed {relationship_type.replace('_', ' ')} relationship")
         edge.setZValue(-1)
         self.addItem(edge)
         self._edges.append(edge)

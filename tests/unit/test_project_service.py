@@ -43,6 +43,18 @@ def test_add_design_device_and_trigger() -> None:
     assert trigger.expression.effective == "Operator A"
 
 
+def test_add_explicit_design_relationship() -> None:
+    service = ProjectService()
+    project = service.create("Competition Robot")
+    source = service.add_command(project, "Score")
+    target = service.add_subsystem(project, "Elevator")
+
+    relationship = service.add_relationship(project, "calls", source.id, target.id)
+
+    assert project.relationships == [relationship]
+    assert relationship.relationship_type == "calls"
+
+
 def test_open_reports_corrupt_model_with_its_location(tmp_path) -> None:
     destination = tmp_path / ".frc-architecture" / "model.json"
     destination.parent.mkdir()

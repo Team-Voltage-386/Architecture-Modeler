@@ -10,6 +10,7 @@ from frc_arch_modeler.domain.model import (
     Command,
     Device,
     FieldValue,
+    Relationship,
     Subsystem,
     TriggerBinding,
 )
@@ -81,3 +82,11 @@ class ProjectService:
         )
         project.triggers.append(trigger)
         return trigger
+
+    def add_relationship(
+        self, project: ArchitectureProject, relationship_type: str, source_id: UUID, target_id: UUID
+    ) -> Relationship:
+        """Add an explicit, non-code-derived architecture relationship."""
+        relationship = Relationship(relationship_type, source_id, target_id)
+        project.relationships.append(relationship)
+        return relationship

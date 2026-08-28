@@ -125,6 +125,10 @@ class MainWindow(QMainWindow):
         self.new_device_action.setEnabled(False)
         self.new_trigger_action = toolbar.addAction("New Trigger", self._prompt_new_trigger)
         self.new_trigger_action.setEnabled(False)
+        self.new_relationship_action = toolbar.addAction(
+            "New Relationship", self._prompt_new_relationship
+        )
+        self.new_relationship_action.setEnabled(False)
         self.search_field = QLineEdit(self)
         self.search_field.setObjectName("architectureSearch")
         self.search_field.setAccessibleName("Search architecture evidence")
@@ -236,6 +240,9 @@ class MainWindow(QMainWindow):
         self.new_subsystem_action.setEnabled(project is not None)
         self.new_device_action.setEnabled(project is not None and bool(project.subsystems))
         self.new_trigger_action.setEnabled(project is not None and bool(project.commands))
+        self.new_relationship_action.setEnabled(
+            project is not None and len(project.commands) + len(project.subsystems) > 1
+        )
         self.save_model_action.setEnabled(project is not None)
         self.auto_layout_action.setEnabled(project is not None)
         self.zoom_to_fit_action.setEnabled(project is not None)
@@ -634,11 +641,23 @@ class MainWindow(QMainWindow):
         self.project_service.add_trigger(self.project, command_id, expression, activation)
         self._refresh_after_edit()
 
+    def add_relationship(
+        self, relationship_type: str, source_id, target_id
+    ) -> None:  # type: ignore[no-untyped-def]
+        """Add an authored relationship between visible command/subsystem blocks."""
+        if self.project is None:
+            raise RuntimeError("Create or open a model before adding a relationship.")
+        self.project_service.add_relationship(self.project, relationship_type, source_id, target_id)
+        self._refresh_after_edit()
+
     def _refresh_after_edit(self) -> None:
         assert self.project is not None
         self.scene.render_project(self.project, scan=self.last_scan)
         self.new_device_action.setEnabled(bool(self.project.subsystems))
         self.new_trigger_action.setEnabled(bool(self.project.commands))
+        self.new_relationship_action.setEnabled(
+            len(self.project.commands) + len(self.project.subsystems) > 1
+        )
         self._mark_dirty(f"Unsaved design model: {self.project.name}")
 
     def auto_layout(self) -> None:
@@ -967,6 +986,37 @@ class MainWindow(QMainWindow):
         )
         if accepted:
             self.add_trigger(command.id, expression.strip(), activation)
+
+    def _prompt_new_relationship(self) -> None:
+        if self.project is None:
+            return
+        elements = [*self.project.commands, *self.project.subsystems]
+        if len(elements) < 2:
+            return
+        labels = [f"{type(element).__name__}: {element.name.effective}" for element in elements]
+        source_label, accepted = QInputDialog.getItem(
+            self, "New relationship", "Source:", labels, 0, False
+        )
+        if not accepted:
+            return
+        source = elements[labels.index(source_label)]
+        target_options = [label for label in labels if label != source_label]
+        target_label, accepted = QInputDialog.getItem(
+            self, "New relationship", "Target:", target_options, 0, False
+        )
+        if not accepted:
+            return
+        target = elements[labels.index(target_label)]
+        relationship_type, accepted = QInputDialog.getItem(
+            self,
+            "New relationship",
+            "Type:",
+            ["calls", "contains", "triggers", "owns_device"],
+            0,
+            False,
+        )
+        if accepted:
+            self.add_relationship(relationship_type, source.id, target.id)
 
     def _prompt_element(self, title: str, create_element: Callable[[str], None]) -> None:
         name, accepted = QInputDialog.getText(self, title, "Name:")
