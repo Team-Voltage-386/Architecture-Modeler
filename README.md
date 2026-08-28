@@ -29,11 +29,13 @@ and leaves an error message visible if that runtime is unavailable.
 ```
 
 Create a model, add a command and subsystem, optionally select the command to
-edit its description, then use **Save Model**. The selected folder receives:
+edit its proposed name, description, and required subsystems, then use **Save
+Model**. The selected folder receives:
 
 ```text
 .frc-architecture/
   model.json
+  bindings.json           # accepted/manual design-to-code mappings
   layout.json
   draft.json              # recoverable only; cleared after an explicit Save
   exports/architecture.md
@@ -58,6 +60,10 @@ At narrower widths, double-click a selected canvas block to open the compact
 non-modal details sheet. A saved model receives an atomic `draft.json` after an
 edit; reopening offers to recover a differing draft, while explicit Save clears it.
 
+Keyboard basics: `Ctrl+N`, `Ctrl+O`, and `Ctrl+S` create/open/save models;
+`F5` refreshes code; `Ctrl+E` exports Architecture Markdown; and `Ctrl+F`
+focuses the evidence search field.
+
 Imported facts are dotted and regenerated on Refresh Code; design intent remains
 solid and is never overwritten by a scan.
 
@@ -80,5 +86,6 @@ Install the project build extra into the isolated runtime, then run
 .\build_windows.bat
 ```
 
-The build bundles Qt and the Tree-sitter Java grammar. Review their respective
-distribution licenses before publishing a release.
+The build bundles Qt and the Tree-sitter Java grammar. The generated folder has
+been smoke-validated for its executable, root-level MIT license, and Java grammar
+payload. Review third-party distribution licenses before publishing a release.
