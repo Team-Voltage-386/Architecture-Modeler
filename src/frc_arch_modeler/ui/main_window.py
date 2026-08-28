@@ -239,7 +239,9 @@ class MainWindow(QMainWindow):
                 project = draft
                 recovered = True
         self.set_project(project)
-        self.scene.render_project(project, LayoutStore(self.model_root).load(), self.last_scan)
+        layout_store = LayoutStore(self.model_root)
+        self.scene.render_project(project, layout_store.load(), self.last_scan)
+        self._restore_ui_preferences(layout_store.load_ui())
         if recovered:
             self.is_dirty = True
             self.statusBar().showMessage(f"Recovered unsaved draft: {project.name}")
@@ -256,7 +258,7 @@ class MainWindow(QMainWindow):
         if self.model_root is None:
             raise RuntimeError("Choose a folder for the model before saving.")
         saved_path = self.project_service.save(self.model_root, self.project)
-        LayoutStore(self.model_root).save(self.scene.layout_state())
+        LayoutStore(self.model_root).save(self.scene.layout_state(), self._ui_preferences())
         DraftStore(self.model_root).discard()
         self.is_dirty = False
         self.undo_stack.setClean()
@@ -744,6 +746,27 @@ class MainWindow(QMainWindow):
     def _update_details_presentation(self) -> None:
         """Use a dock on wide screens and reserve a sheet on laptop-width windows."""
         self.details_dock.setVisible(self.width() >= DETAILS_DOCK_BREAKPOINT)
+
+    def _ui_preferences(self) -> dict[str, int]:
+        """Persist bounded presentation values separately from semantic design data."""
+        return {
+            "windowWidth": self.width(),
+            "windowHeight": self.height(),
+            "detailsWidth": self.details_dock.width(),
+        }
+
+    def _restore_ui_preferences(self, preferences: dict[str, object]) -> None:
+        """Restore only reasonable dimensions so changed monitor setups remain usable."""
+        width = preferences.get("windowWidth")
+        height = preferences.get("windowHeight")
+        if isinstance(width, int) and isinstance(height, int):
+            self.resize(min(max(width, 800), 2560), min(max(height, 600), 1600))
+        details_width = preferences.get("detailsWidth")
+        if isinstance(details_width, int) and 180 <= details_width <= 900:
+            self.resizeDocks(
+                [self.details_dock], [details_width], Qt.Orientation.Horizontal
+            )
+        self._update_details_presentation()
 
     def _open_compact_details(self) -> None:
         if self.width() >= DETAILS_DOCK_BREAKPOINT or len(self.scene.selected_blocks()) != 1:
