@@ -437,7 +437,7 @@ class MainWindow(QMainWindow):
                 key = f"device:{index}"
                 item = QTreeWidgetItem(
                     [
-                        f"{device.device_type} ({device.constructor_arguments})",
+                        self._device_inventory_label(device),
                         f"{device.anchor.relative_path}:{device.anchor.start_line}",
                     ]
                 )
@@ -452,6 +452,13 @@ class MainWindow(QMainWindow):
                     QTreeWidgetItem([diagnostic.message, diagnostic.relative_path or ""])
                 )
         self.inventory_tree.expandAll()
+
+    @staticmethod
+    def _device_inventory_label(device) -> str:  # type: ignore[no-untyped-def]
+        resolved = (
+            f" → {device.resolved_arguments}" if device.resolved_arguments is not None else ""
+        )
+        return f"{device.device_type} ({device.constructor_arguments}{resolved})"
 
     def _render_with_current_scan(self) -> None:
         self.scene.render_project(

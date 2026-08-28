@@ -165,3 +165,22 @@ class RobotContainer {
         ("default_command", "new DriveCommand(drive)"),
         ("autonomous_registration", "new ScoreCommand()"),
     ]
+
+
+def test_scanner_resolves_local_static_hardware_constants(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "Drive.java").write_text(
+        """class Drive extends SubsystemBase {
+  private static final int LEFT_MOTOR_ID = 4;
+  private final SparkMax motor = new SparkMax(LEFT_MOTOR_ID, MotorType.kBrushless);
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    assert result.devices[0].constructor_arguments == "LEFT_MOTOR_ID, MotorType.kBrushless"
+    assert result.devices[0].resolved_arguments == "4, MotorType.kBrushless"

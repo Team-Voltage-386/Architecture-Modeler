@@ -61,6 +61,11 @@ DEVICE_PATTERN = re.compile(
     r"AddressableLED)\s*\((?P<arguments>[^)]*)\)",
     re.MULTILINE,
 )
+CONSTANT_PATTERN = re.compile(
+    r"\b(?:public|protected|private)?\s*(?:static\s+final|final\s+static)\s+"
+    r"(?:int|long|double|boolean|String)\s+(?P<name>[A-Z][A-Z0-9_]*)\s*=\s*"
+    r"(?P<value>[^;]+);"
+)
 EXCLUDED_DIRECTORY_NAMES = {".gradle", "build", "bin", "vendordeps"}
 
 
@@ -122,6 +127,7 @@ class JavaProjectScanner:
         package_match = PACKAGE_PATTERN.search(source)
         package = package_match.group(1) if package_match else ""
         source_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        constants = self._constant_values(source)
         for match in TYPE_PATTERN.finditer(source):
             declaration = match.group("declaration")
             kind = self._type_kind(declaration)
@@ -146,6 +152,7 @@ class JavaProjectScanner:
                     relative_path,
                     source_hash,
                     result,
+                    constants,
                 )
                 self._scan_command_registrations(
                     source,
@@ -277,13 +284,16 @@ class JavaProjectScanner:
         relative_path: str,
         source_hash: str,
         result: ScanResult,
+        constants: dict[str, str],
     ) -> None:
         body = source[body_start:body_end]
         for match in DEVICE_PATTERN.finditer(body):
+            arguments = " ".join(match.group("arguments").split())
+            resolved = self._resolve_constants(arguments, constants)
             result.devices.append(
                 ScannedDevice(
                     device_type=match.group("type"),
-                    constructor_arguments=" ".join(match.group("arguments").split()),
+                    constructor_arguments=arguments,
                     owner_symbol=owner_symbol,
                     anchor=self._anchor_at_offset(
                         owner_symbol,
@@ -292,8 +302,26 @@ class JavaProjectScanner:
                         relative_path,
                         source_hash,
                     ),
+                    resolved_arguments=resolved if resolved != arguments else None,
                 )
             )
+
+    @staticmethod
+    def _constant_values(source: str) -> dict[str, str]:
+        """Collect literal-like static constants for one safe local resolution hop."""
+        return {
+            match.group("name"): " ".join(match.group("value").split())
+            for match in CONSTANT_PATTERN.finditer(source)
+        }
+
+    @staticmethod
+    def _resolve_constants(arguments: str, constants: dict[str, str]) -> str:
+        """Resolve uppercase constant references while retaining unknown expressions."""
+        return re.sub(
+            r"\b(?:[A-Za-z_]\w*\.)*(?P<name>[A-Z][A-Z0-9_]*)\b",
+            lambda match: constants.get(match.group("name"), match.group(0)),
+            arguments,
+        )
 
     def _scan_command_registrations(
         self,

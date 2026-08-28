@@ -59,6 +59,7 @@ class ScannedDevice:
     owner_symbol: str
     anchor: SourceAnchor
     confidence: str = "exact"
+    resolved_arguments: str | None = None
 
 
 @dataclass(slots=True)
