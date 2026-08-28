@@ -26,6 +26,7 @@ from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
 from frc_arch_modeler.ui.details_panel import DetailsPanel, EditDescriptionCommand
+from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
 
 
 class MainWindow(QMainWindow):
@@ -39,6 +40,7 @@ class MainWindow(QMainWindow):
         self.model_root: Path | None = None
         self.robot_project_root: Path | None = None
         self.last_scan: ScanResult | None = None
+        self._inventory_symbols: dict[str, object] = {}
         self.is_dirty = False
         self.project_service = ProjectService()
         self.export_service = ArchitectureExportService()
@@ -201,6 +203,7 @@ class MainWindow(QMainWindow):
     def _show_scan_inventory(self) -> None:
         assert self.last_scan is not None
         self.inventory_tree.clear()
+        self._inventory_symbols = {}
         labels = {
             "subsystem": "Subsystems",
             "command": "Commands",
@@ -217,11 +220,12 @@ class MainWindow(QMainWindow):
         for symbol in self.last_scan.symbols:
             group = groups.get(symbol.kind)
             if group is not None:
-                group.addChild(
-                    QTreeWidgetItem(
-                        [symbol.name, f"{symbol.anchor.relative_path}:{symbol.anchor.start_line}"]
-                    )
+                item = QTreeWidgetItem(
+                    [symbol.name, f"{symbol.anchor.relative_path}:{symbol.anchor.start_line}"]
                 )
+                item.setData(0, Qt.ItemDataRole.UserRole, symbol.anchor.qualified_symbol)
+                self._inventory_symbols[symbol.anchor.qualified_symbol] = symbol
+                group.addChild(item)
         self.inventory_tree.expandAll()
 
     def _render_with_current_scan(self) -> None:
@@ -376,5 +380,14 @@ class MainWindow(QMainWindow):
         self.inventory_tree = QTreeWidget(dock)
         self.inventory_tree.setObjectName("codeInventoryTree")
         self.inventory_tree.setHeaderLabels(["Symbol", "Source"])
+        self.inventory_tree.itemDoubleClicked.connect(self._open_inventory_source)
         dock.setWidget(self.inventory_tree)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+
+    def _open_inventory_source(self, item: QTreeWidgetItem, column: int) -> None:
+        symbol_name = item.data(0, Qt.ItemDataRole.UserRole)
+        symbol = self._inventory_symbols.get(symbol_name)
+        if symbol is None or self.robot_project_root is None:
+            return
+        dialog = SourceViewerDialog(self.robot_project_root, symbol.anchor, self)
+        dialog.open()
