@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from frc_arch_modeler.domain.model import ArchitectureProject
 from frc_arch_modeler.persistence.layout_store import LayoutStore
+from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
 from frc_arch_modeler.ui.details_panel import DetailsPanel, EditDescriptionCommand
@@ -34,6 +35,7 @@ class MainWindow(QMainWindow):
         self.model_root: Path | None = None
         self.is_dirty = False
         self.project_service = ProjectService()
+        self.export_service = ArchitectureExportService()
         self.undo_stack = QUndoStack(self)
         self.scene = ArchitectureScene(self)
         self._build_toolbar()
@@ -53,11 +55,14 @@ class MainWindow(QMainWindow):
             "Connect Robot Project",
             "Refresh Code",
             "Compare Changes",
-            "Export Architecture",
             "Export AI Change Request",
         ):
             action = toolbar.addAction(label)
             action.setEnabled(False)
+        self.export_architecture_action = toolbar.addAction(
+            "Export Architecture", self._prompt_export_architecture
+        )
+        self.export_architecture_action.setEnabled(False)
         self.new_command_action = toolbar.addAction("New Command", self._prompt_new_command)
         self.new_command_action.setEnabled(False)
         self.new_subsystem_action = toolbar.addAction("New Subsystem", self._prompt_new_subsystem)
@@ -93,6 +98,7 @@ class MainWindow(QMainWindow):
         self.auto_layout_action.setEnabled(project is not None)
         self.minimize_action.setEnabled(project is not None)
         self.restore_action.setEnabled(project is not None)
+        self.export_architecture_action.setEnabled(project is not None)
         if project is None:
             self.is_dirty = False
             self.statusBar().showMessage("No robot project connected")
@@ -133,6 +139,17 @@ class MainWindow(QMainWindow):
         self.undo_stack.setClean()
         self.statusBar().showMessage(f"Saved design model: {saved_path}")
         return saved_path
+
+    def export_architecture(self, root: Path | None = None) -> Path:
+        """Write a deterministic Architecture Markdown document for the current design."""
+        if self.project is None:
+            raise RuntimeError("Create or open a model before exporting.")
+        export_root = Path(root) if root is not None else self.model_root
+        if export_root is None:
+            raise RuntimeError("Choose a folder for the architecture export.")
+        destination = self.export_service.export(export_root, self.project)
+        self.statusBar().showMessage(f"Exported architecture: {destination}")
+        return destination
 
     def add_command(self, name: str) -> None:
         """Add a command and refresh its deterministic initial canvas position."""
@@ -234,6 +251,15 @@ class MainWindow(QMainWindow):
             self.save_project(Path(root))
         else:
             self.save_project()
+
+    def _prompt_export_architecture(self) -> None:
+        root = self.model_root
+        if root is None:
+            selected_root = QFileDialog.getExistingDirectory(self, "Export architecture")
+            if not selected_root:
+                return
+            root = Path(selected_root)
+        self.export_architecture(root)
 
     def _prompt_new_command(self) -> None:
         self._prompt_element("New command", self.add_command)
