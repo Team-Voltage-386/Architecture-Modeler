@@ -452,6 +452,7 @@ def test_imported_composition_details_show_direct_children(qtbot, tmp_path) -> N
     composition.setSelected(True)
 
     assert "Composition children:" in window.details_panel.code_description.text()
+    assert window.details_panel.lifecycle_flow.isHidden()
     assert "- one()" in window.details_panel.code_description.text()
     assert "- two()" in window.details_panel.code_description.text()
 

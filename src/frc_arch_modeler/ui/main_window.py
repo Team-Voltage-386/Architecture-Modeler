@@ -864,13 +864,17 @@ class MainWindow(QMainWindow):
             return
         imported_anchor = selected[0].source_anchor
         if isinstance(imported_anchor, SourceAnchor):
+            conventional_command = (
+                selected[0].kind == "command" and self._is_conventional_command(imported_anchor)
+            )
             self.details_panel.set_imported_fact(
                 selected[0].title.toPlainText(),
                 selected[0].kind,
                 imported_anchor,
                 self._imported_details(selected[0]),
-                self._lifecycle_methods(imported_anchor) if selected[0].kind == "command" else None,
-                self._lifecycle_anchors(imported_anchor) if selected[0].kind == "command" else None,
+                self._lifecycle_methods(imported_anchor) if conventional_command else None,
+                self._lifecycle_anchors(imported_anchor) if conventional_command else None,
+                conventional_command,
             )
             self._update_compact_details()
             return
@@ -979,6 +983,14 @@ class MainWindow(QMainWindow):
             for symbol in self.last_scan.symbols_of_kind("lifecycle_method")
             if symbol.anchor.qualified_symbol.startswith(f"{command_anchor.qualified_symbol}#")
         ]
+
+    def _is_conventional_command(self, command_anchor: SourceAnchor) -> bool:
+        """Only command subclasses have the conventional initialize/execute lifecycle."""
+        return self.last_scan is not None and any(
+            symbol.kind == "command"
+            and symbol.anchor.qualified_symbol == command_anchor.qualified_symbol
+            for symbol in self.last_scan.symbols
+        )
 
     def _lifecycle_anchors(self, command_anchor: SourceAnchor) -> dict[str, SourceAnchor]:
         if self.last_scan is None:
@@ -1332,13 +1344,17 @@ class MainWindow(QMainWindow):
             return
         block = selected[0]
         if isinstance(block.source_anchor, SourceAnchor):
+            conventional_command = (
+                block.kind == "command" and self._is_conventional_command(block.source_anchor)
+            )
             self.compact_details_panel.set_imported_fact(
                 block.title.toPlainText(),
                 block.kind,
                 block.source_anchor,
                 self._imported_details(block),
-                self._lifecycle_methods(block.source_anchor) if block.kind == "command" else None,
-                self._lifecycle_anchors(block.source_anchor) if block.kind == "command" else None,
+                self._lifecycle_methods(block.source_anchor) if conventional_command else None,
+                self._lifecycle_anchors(block.source_anchor) if conventional_command else None,
+                conventional_command,
             )
             return
         if self.project is None:
