@@ -52,6 +52,11 @@ class ReconciliationService:
         scan: ScanResult,
     ) -> ComparisonState:
         """Roll directly comparable extracted facts up into an element status."""
+        if any(
+            diagnostic.relative_path == symbol.anchor.relative_path
+            for diagnostic in scan.diagnostics
+        ):
+            return ComparisonState.SCAN_ERROR
         if element.name.design is not None and (
             ReconciliationService._normalize(element.name.design)
             != ReconciliationService._normalize(symbol.name)

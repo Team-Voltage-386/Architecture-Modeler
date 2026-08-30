@@ -8,7 +8,13 @@ from frc_arch_modeler.domain.model import (
     Subsystem,
     TriggerBinding,
 )
-from frc_arch_modeler.importers.base import ScannedDevice, ScannedSymbol, ScannedTrigger, ScanResult
+from frc_arch_modeler.importers.base import (
+    ScanDiagnostic,
+    ScannedDevice,
+    ScannedSymbol,
+    ScannedTrigger,
+    ScanResult,
+)
 from frc_arch_modeler.services.reconcile_service import ReconciliationService
 
 
@@ -71,6 +77,21 @@ def test_reconciliation_marks_duplicate_exact_names_as_ambiguous(tmp_path) -> No
 
     assert result.statuses[command.id] == ComparisonState.AMBIGUOUS
     assert len(result.code_only) == 2
+
+
+def test_reconciliation_marks_matched_symbol_with_parse_diagnostic_as_scan_error(tmp_path) -> None:
+    command = Command(name=FieldValue(design="Score"))
+    symbol = _symbol("command", "Score")
+    project = ArchitectureProject(name="Robot", commands=[command])
+    scan = ScanResult(
+        project_root=tmp_path,
+        symbols=[symbol],
+        diagnostics=[ScanDiagnostic("warning", "Java syntax issue", symbol.anchor.relative_path)],
+    )
+
+    result = ReconciliationService().reconcile(project, scan)
+
+    assert result.statuses[command.id] == ComparisonState.SCAN_ERROR
 
 
 def test_reconciliation_rolls_device_and_trigger_evidence_into_matched_status(tmp_path) -> None:

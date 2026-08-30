@@ -57,6 +57,7 @@ class ArchitectureBlock(QGraphicsRectItem):
             ComparisonState.DESIGN_ONLY: VOLTAGE_YELLOW,
             ComparisonState.UNRESOLVED: UNRESOLVED_MAGENTA,
             ComparisonState.AMBIGUOUS: UNRESOLVED_MAGENTA,
+            ComparisonState.SCAN_ERROR: "#FF5C5C",
         }
         default_accent = VOLTAGE_YELLOW if kind == "command" else VOLTAGE_BLUE
         accent = accents.get(comparison_state, default_accent)
@@ -90,6 +91,7 @@ class ArchitectureBlock(QGraphicsRectItem):
             ComparisonState.DESIGN_ONLY: "+ DESIGN ONLY",
             ComparisonState.UNRESOLVED: "? UNRESOLVED",
             ComparisonState.AMBIGUOUS: "? AMBIGUOUS",
+            ComparisonState.SCAN_ERROR: "! SCAN ERROR",
             ComparisonState.CODE_ONLY: "↓ CODE ONLY",
         }
         caption = status_labels.get(
@@ -454,6 +456,7 @@ class ArchitectureScene(QGraphicsScene):
             "+ DESIGN ONLY": ComparisonState.DESIGN_ONLY,
             "? UNRESOLVED": ComparisonState.UNRESOLVED,
             "? AMBIGUOUS": ComparisonState.AMBIGUOUS,
+            "! SCAN ERROR": ComparisonState.SCAN_ERROR,
             "↓ CODE ONLY": ComparisonState.CODE_ONLY,
         }
         return labels.get(block.caption.toPlainText(), ComparisonState.UNRESOLVED)

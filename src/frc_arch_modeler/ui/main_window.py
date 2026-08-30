@@ -188,6 +188,7 @@ class MainWindow(QMainWindow):
             (ComparisonState.CODE_ONLY, "Code Only"),
             (ComparisonState.UNRESOLVED, "Unresolved"),
             (ComparisonState.AMBIGUOUS, "Ambiguous"),
+            (ComparisonState.SCAN_ERROR, "Scan Error"),
         ):
             action = toolbar.addAction(label)
             action.setCheckable(True)

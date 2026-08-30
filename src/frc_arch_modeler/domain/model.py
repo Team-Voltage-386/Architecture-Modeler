@@ -20,6 +20,7 @@ class ComparisonState(StrEnum):
     CODE_ONLY = "code_only"
     UNRESOLVED = "unresolved"
     AMBIGUOUS = "ambiguous"
+    SCAN_ERROR = "scan_error"
 
 
 @dataclass(frozen=True, slots=True)
