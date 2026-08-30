@@ -224,6 +224,32 @@ def test_imported_functional_command_shows_lifecycle_flow(qtbot, tmp_path) -> No
     assert "Functional command phases:" in window.details_panel.code_description.text()
 
 
+def test_imported_run_once_command_shows_its_instant_flow(qtbot, tmp_path) -> None:
+    create_application([])
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    (source_root / "Commands.java").write_text(
+        """class Commands {
+  Command stop() { return Commands.runOnce(() -> stopMotor()); }
+}
+""",
+        encoding="utf-8",
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.connect_robot_project(tmp_path)
+    run_once = next(
+        block
+        for block in window.scene.items()
+        if isinstance(block, ArchitectureBlock) and block.title.toPlainText() == "runOnce (line 2)"
+    )
+    run_once.setSelected(True)
+
+    assert window.details_panel.lifecycle_flow.text() == "Start \u2192 action \u2192 Finish"
+
+
 def test_imported_command_details_show_scheduler_registration_evidence(qtbot, tmp_path) -> None:
     create_application([])
     source_root = tmp_path / "src" / "main" / "java"

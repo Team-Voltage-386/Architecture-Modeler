@@ -915,6 +915,7 @@ class MainWindow(QMainWindow):
                 selected[0].kind == "command" and self._is_conventional_command(imported_anchor)
             )
             functional_command = self._functional_phase_expressions(imported_anchor)
+            inline_flow = self._inline_command_flow(imported_anchor)
             self.details_panel.set_imported_fact(
                 selected[0].title.toPlainText(),
                 selected[0].kind,
@@ -926,7 +927,8 @@ class MainWindow(QMainWindow):
                 if functional_command
                 else None,
                 self._lifecycle_anchors(imported_anchor) if conventional_command else None,
-                conventional_command or bool(functional_command),
+                conventional_command or bool(functional_command) or bool(inline_flow),
+                inline_flow,
             )
             self._update_compact_details()
             return
@@ -1064,6 +1066,23 @@ class MainWindow(QMainWindow):
             if relationship.kind == "functional_phase"
             and relationship.source_symbol == command_anchor.qualified_symbol
         ]
+
+    def _inline_command_flow(self, command_anchor: SourceAnchor) -> list[str] | None:
+        """Describe the fixed scheduler behavior of supported inline WPILib factories."""
+        if self.last_scan is None or not any(
+            symbol.kind == "command_composition"
+            and symbol.anchor.qualified_symbol == command_anchor.qualified_symbol
+            for symbol in self.last_scan.symbols
+        ):
+            return None
+        form = command_anchor.qualified_symbol.rsplit(".", 1)[-1].split("@", 1)[0]
+        flows = {
+            "runOnce": ["Start", "action", "Finish"],
+            "run": ["Start", "execute", "Until interrupted", "end(interrupted)"],
+            "runEnd": ["Start", "execute", "end(interrupted)"],
+            "startEnd": ["Start", "execute", "end(interrupted)"],
+        }
+        return flows.get(form)
 
     def _lifecycle_anchors(self, command_anchor: SourceAnchor) -> dict[str, SourceAnchor]:
         if self.last_scan is None:

@@ -233,6 +233,7 @@ class DetailsPanel(QWidget):
         lifecycle_methods: list[str] | None = None,
         lifecycle_anchors: dict[str, SourceAnchor] | None = None,
         show_lifecycle: bool = False,
+        custom_flow_phases: list[str] | None = None,
     ) -> None:
         """Present selected regenerated code evidence without enabling design edits."""
         self._element = None
@@ -248,7 +249,11 @@ class DetailsPanel(QWidget):
             f"{summary}\n\nCode-derived {kind} at {anchor.relative_path}:{anchor.start_line}.\n"
             f"Symbol: {anchor.qualified_symbol}\nConfidence: exact"
         )
-        if kind == "command" and show_lifecycle:
+        if kind == "command" and custom_flow_phases:
+            self.lifecycle_flow.setText(" → ".join(custom_flow_phases))
+            self.lifecycle_flow.setVisible(True)
+            self.lifecycle_diagram.set_phases(custom_flow_phases)
+        elif kind == "command" and show_lifecycle:
             overridden = set(lifecycle_methods or [])
             phases = [
                 "Start",
