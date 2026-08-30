@@ -32,7 +32,11 @@ class ReconciliationService:
             expected_kind = "command" if isinstance(element, Command) else "subsystem"
             candidate = self._match(element, expected_kind, unmatched_symbols.values())
             if candidate is None:
-                result.statuses[element.id] = ComparisonState.DESIGN_ONLY
+                result.statuses[element.id] = (
+                    ComparisonState.AMBIGUOUS
+                    if self._has_ambiguous_name(element, expected_kind, unmatched_symbols.values())
+                    else ComparisonState.DESIGN_ONLY
+                )
                 continue
             result.matches[element.id] = candidate
             result.statuses[element.id] = self._status_for(element, candidate, project, scan)
@@ -177,6 +181,20 @@ class ReconciliationService:
             if ReconciliationService._normalize(symbol.name) == target_name
         ]
         return named[0] if len(named) == 1 else None
+
+    @staticmethod
+    def _has_ambiguous_name(
+        element: Command | Subsystem, expected_kind: str, symbols: object
+    ) -> bool:
+        target_name = ReconciliationService._normalize(element.name.effective or "")
+        return (
+            sum(
+                symbol.kind == expected_kind
+                and ReconciliationService._normalize(symbol.name) == target_name
+                for symbol in symbols
+            )
+            > 1
+        )
 
     @staticmethod
     def _normalize(value: str) -> str:

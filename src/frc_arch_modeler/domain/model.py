@@ -19,6 +19,7 @@ class ComparisonState(StrEnum):
     DESIGN_ONLY = "design_only"
     CODE_ONLY = "code_only"
     UNRESOLVED = "unresolved"
+    AMBIGUOUS = "ambiguous"
 
 
 @dataclass(frozen=True, slots=True)

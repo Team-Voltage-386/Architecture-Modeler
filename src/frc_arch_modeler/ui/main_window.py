@@ -187,6 +187,7 @@ class MainWindow(QMainWindow):
             (ComparisonState.DESIGN_ONLY, "Design Only"),
             (ComparisonState.CODE_ONLY, "Code Only"),
             (ComparisonState.UNRESOLVED, "Unresolved"),
+            (ComparisonState.AMBIGUOUS, "Ambiguous"),
         ):
             action = toolbar.addAction(label)
             action.setCheckable(True)
