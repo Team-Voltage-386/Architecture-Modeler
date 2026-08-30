@@ -137,6 +137,36 @@ def test_imported_command_details_show_lifecycle_with_inherited_phases(qtbot) ->
     assert len(opened) == 1
 
 
+def test_imported_command_details_show_scheduler_registration_evidence(qtbot, tmp_path) -> None:
+    create_application([])
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    (source_root / "DriveCommand.java").write_text(
+        "class DriveCommand extends CommandBase {}", encoding="utf-8"
+    )
+    (source_root / "RobotContainer.java").write_text(
+        """class RobotContainer {
+  void configure(Drive drive) { drive.setDefaultCommand(new DriveCommand()); }
+}
+""",
+        encoding="utf-8",
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.connect_robot_project(tmp_path)
+    command = next(
+        block
+        for block in window.scene.items()
+        if isinstance(block, ArchitectureBlock) and block.title.toPlainText() == "DriveCommand"
+    )
+    command.setSelected(True)
+
+    assert "Scheduler registrations:" in window.details_panel.code_description.text()
+    assert "Default command: new DriveCommand()" in window.details_panel.code_description.text()
+
+
 def test_save_and_open_model_round_trip_from_window(qtbot, tmp_path) -> None:
     create_application([])
     window = MainWindow()

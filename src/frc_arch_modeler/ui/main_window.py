@@ -820,6 +820,20 @@ class MainWindow(QMainWindow):
                 lines.extend(["Triggers:", *triggers])
             if lifecycle:
                 lines.append(f"Lifecycle overrides: {', '.join(lifecycle)}")
+            registrations = [
+                "- "
+                + (
+                    "Default command"
+                    if relationship.kind == "default_command"
+                    else "Autonomous registration"
+                )
+                + f": {relationship.target_expression}"
+                for relationship in self.last_scan.relationships
+                if relationship.kind in {"default_command", "autonomous_registration"}
+                and normalized_block_name in self._normalized(relationship.target_expression)
+            ]
+            if registrations:
+                lines.extend(["Scheduler registrations:", *registrations])
         children = [
             relationship.target_expression
             for relationship in self.last_scan.relationships
