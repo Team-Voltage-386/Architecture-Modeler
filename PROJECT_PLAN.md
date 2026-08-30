@@ -447,6 +447,18 @@ Estimates below are person-weeks for one experienced developer and are intention
 
 **Exit:** representative FRC code idioms have golden tests, a Windows build can be installed by a student, and failure modes produce actionable diagnostics.
 
+### Future capability — System behavior diagrams (post-MVP)
+
+Add an optional behavior-diagram workspace alongside the static architecture canvas.
+It should model authored scenarios, states, events, and command/subsystem interactions
+without pretending to be a full SysML implementation. The initial notation can be
+SysML-inspired: activity flows for operator and autonomous scenarios, plus state
+transitions for high-level robot modes. These diagrams should reference the same
+commands, subsystems, triggers, and typed relationships already stored in the
+architecture model, while remaining a separately editable design layer. Importing
+Java code may eventually provide evidence links, but must not overwrite authored
+behavior intent.
+
 **Expected MVP:** about 7–11 person-weeks. A useful design-only prototype arrives much earlier at the end of Phase 1.
 
 ## 9. Test and validation strategy
