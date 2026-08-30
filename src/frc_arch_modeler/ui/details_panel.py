@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from frc_arch_modeler.domain.model import Command, SourceAnchor, Subsystem
+from frc_arch_modeler.ui.command_flow_widget import CommandFlowWidget
 
 ArchitectureElement = Command | Subsystem
 
@@ -117,6 +118,7 @@ class DetailsPanel(QWidget):
         self.lifecycle_flow = QLabel(self)
         self.lifecycle_flow.setObjectName("lifecycleFlow")
         self.lifecycle_flow.setWordWrap(True)
+        self.lifecycle_diagram = CommandFlowWidget(self)
         self.design_name = QLineEdit(self)
         self.design_name.setObjectName("designName")
         self.design_name.setAccessibleName("Proposed architecture name")
@@ -137,6 +139,7 @@ class DetailsPanel(QWidget):
         form.addRow("Design / proposed name", self.design_name)
         form.addRow("From code", self.code_description)
         form.addRow("Lifecycle / flow", self.lifecycle_flow)
+        form.addRow("", self.lifecycle_diagram)
         form.addRow("Design / proposed", self.design_description)
         form.addRow("Required subsystems", self.requirements)
         layout.addWidget(self.title)
@@ -173,6 +176,7 @@ class DetailsPanel(QWidget):
             self.requirements.setVisible(False)
             self.lifecycle_flow.clear()
             self.lifecycle_flow.setVisible(False)
+            self.lifecycle_diagram.set_phases([])
             self._set_editing_enabled(False)
             self.open_source_button.setEnabled(False)
             self.adopt_name_button.setEnabled(False)
@@ -189,6 +193,7 @@ class DetailsPanel(QWidget):
         self.design_description.setPlainText(element.description.design or "")
         self.lifecycle_flow.clear()
         self.lifecycle_flow.setVisible(False)
+        self.lifecycle_diagram.set_phases([])
         self._set_requirement_options(element, subsystem_options or [])
         self._set_editing_enabled(True)
         self.open_source_button.setEnabled(
@@ -232,9 +237,11 @@ class DetailsPanel(QWidget):
             ]
             self.lifecycle_flow.setText(" → ".join(phases))
             self.lifecycle_flow.setVisible(True)
+            self.lifecycle_diagram.set_phases(phases)
         else:
             self.lifecycle_flow.clear()
             self.lifecycle_flow.setVisible(False)
+            self.lifecycle_diagram.set_phases([])
         self.design_description.clear()
         self.requirements.clear()
         self.requirements.setVisible(False)
