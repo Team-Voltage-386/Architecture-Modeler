@@ -8,7 +8,7 @@ from frc_arch_modeler.domain.model import (
     Subsystem,
     TriggerBinding,
 )
-from frc_arch_modeler.importers.base import ScannedSymbol, ScanResult
+from frc_arch_modeler.importers.base import ScanDiagnostic, ScannedSymbol, ScanResult
 from frc_arch_modeler.services.change_request_export import ChangeRequestExportService
 from frc_arch_modeler.services.reconcile_service import ReconciliationResult
 
@@ -92,3 +92,26 @@ def test_change_request_export_includes_design_devices_and_triggers(tmp_path) ->
 
     assert "  - Left motor: SparkMax (REAL)" in content
     assert "  - Driver A â€” onTrue" in content
+
+
+def test_change_request_export_surfaces_ambiguous_and_scan_error_elements(tmp_path) -> None:
+    ambiguous = Command(name=FieldValue(design="Score"))
+    broken = Command(name=FieldValue(design="Balance"))
+    project = ArchitectureProject(name="Robot", commands=[ambiguous, broken])
+    comparison = ReconciliationResult(
+        statuses={
+            ambiguous.id: ComparisonState.AMBIGUOUS,
+            broken.id: ComparisonState.SCAN_ERROR,
+        }
+    )
+    scan = ScanResult(
+        tmp_path,
+        diagnostics=[ScanDiagnostic("warning", "Syntax issue", "src/Balance.java")],
+    )
+
+    content = ChangeRequestExportService().render(project, scan, comparison)
+
+    assert "## Uncertainties Requiring Inspection" in content
+    assert "Command `Score`: ambiguous." in content
+    assert "Command `Balance`: scan error." in content
+    assert "Parser diagnostics are present" in content

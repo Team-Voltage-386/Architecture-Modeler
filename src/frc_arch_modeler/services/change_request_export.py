@@ -39,6 +39,12 @@ class ChangeRequestExportService:
             for element in [*project.subsystems, *project.commands]
             if comparison.statuses.get(element.id) == ComparisonState.MODIFIED
         ]
+        uncertain = [
+            element
+            for element in [*project.subsystems, *project.commands]
+            if comparison.statuses.get(element.id)
+            in {ComparisonState.AMBIGUOUS, ComparisonState.SCAN_ERROR, ComparisonState.UNRESOLVED}
+        ]
         lines = [
             f"# AI Change Request: {project.name}",
             "",
@@ -66,6 +72,19 @@ class ChangeRequestExportService:
                 lines.extend(self._modified_element_lines(element, comparison))
         else:
             lines.append("_No modified design elements._")
+        lines.extend(["", "## Uncertainties Requiring Inspection", ""])
+        if uncertain:
+            for element in self._sorted(uncertain):
+                status = comparison.statuses.get(element.id, ComparisonState.UNRESOLVED)
+                lines.append(
+                    f"- {type(element).__name__} `{element.name.effective}`: "
+                    f"{status.replace('_', ' ')}. "
+                    "Inspect relevant source before making changes."
+                )
+        else:
+            lines.append("_None._")
+        if scan.diagnostics:
+            lines.append("- Parser diagnostics are present; inspect their listed source locations.")
         lines.extend(["", "## Current Code-Only Facts", ""])
         if comparison.code_only:
             code_only = sorted(
