@@ -267,6 +267,31 @@ def test_scanner_resolves_local_static_hardware_constants(tmp_path) -> None:
     assert result.devices[0].resolved_arguments == "4, MotorType.kBrushless"
 
 
+def test_scanner_inventories_broader_wpilib_hardware_catalog(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "Hardware.java").write_text(
+        """class Hardware extends SubsystemBase {
+  CANcoder encoder = new CANcoder(3);
+  PneumaticHub hub = new PneumaticHub(1);
+  PowerDistribution pdh = new PowerDistribution();
+  Servo indicator = new Servo(0);
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    assert [device.device_type for device in result.devices] == [
+        "CANcoder",
+        "PneumaticHub",
+        "PowerDistribution",
+        "Servo",
+    ]
+
+
 def test_scanner_resolves_cross_file_constants_and_marks_io_mode(tmp_path) -> None:
     (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
     source_root = tmp_path / "src" / "main" / "java"

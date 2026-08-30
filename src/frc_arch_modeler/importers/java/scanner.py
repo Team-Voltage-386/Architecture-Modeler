@@ -64,8 +64,9 @@ AUTONOMOUS_REGISTRATION_PATTERN = re.compile(
 DEVICE_PATTERN = re.compile(
     r"\bnew\s+(?P<type>SparkMax|SparkFlex|TalonFX|TalonSRX|VictorSPX|"
     r"CANSparkMax|CANSparkFlex|DigitalInput|AnalogInput|Encoder|DutyCycleEncoder|"
-    r"ADIS16470_IMU|Pigeon2|AHRS|PhotonCamera|Compressor|Solenoid|DoubleSolenoid|"
-    r"AddressableLED)\s*\((?P<arguments>[^)]*)\)",
+    r"ADIS16470_IMU|Pigeon2|AHRS|CANcoder|CANrange|LaserCan|PhotonCamera|"
+    r"Compressor|PneumaticHub|Solenoid|DoubleSolenoid|Relay|Servo|PowerDistribution|"
+    r"ColorSensorV3|AddressableLED)\s*\((?P<arguments>[^)]*)\)",
     re.MULTILINE,
 )
 CONSTANT_PATTERN = re.compile(
