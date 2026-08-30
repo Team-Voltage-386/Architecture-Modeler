@@ -62,6 +62,28 @@ def test_reconciliation_marks_explicitly_bound_renamed_symbol_as_modified(tmp_pa
     assert result.statuses[command.id] == ComparisonState.MODIFIED
 
 
+def test_reconciliation_populates_scanned_fields_without_changing_design(tmp_path) -> None:
+    command = Command(name=FieldValue(design="Proposed Drive"))
+    symbol = ScannedSymbol(
+        "command",
+        "DriveCommand",
+        SourceAnchor("src/DriveCommand.java", "robot.DriveCommand", 1, 10),
+        documentation="Drives the robot.",
+    )
+    command.code_binding = symbol.anchor
+    project = ArchitectureProject(name="Robot", commands=[command])
+    service = ReconciliationService()
+
+    result = service.reconcile(project, ScanResult(project_root=tmp_path, symbols=[symbol]))
+    service.populate_scanned_fields(project, result)
+
+    assert command.name.design == "Proposed Drive"
+    assert command.name.scanned == "DriveCommand"
+    assert command.name.evidence == symbol.anchor
+    assert command.description.scanned == "Drives the robot."
+    assert command.description.evidence == symbol.anchor
+
+
 def test_reconciliation_marks_duplicate_exact_names_as_ambiguous(tmp_path) -> None:
     command = Command(name=FieldValue(design="Score"))
     project = ArchitectureProject(name="Robot", commands=[command])

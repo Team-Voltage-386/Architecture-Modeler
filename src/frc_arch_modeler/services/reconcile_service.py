@@ -45,6 +45,24 @@ class ReconciliationService:
         return result
 
     @staticmethod
+    def populate_scanned_fields(project: ArchitectureProject, result: ReconciliationResult) -> None:
+        """Update only regenerable code facts for the current reconciliation snapshot.
+
+        Authored ``design`` values and accepted bindings remain untouched. This
+        gives the details editor a real code layer to reveal when an override is
+        reverted, while a later scan can safely replace these fields.
+        """
+        elements = {item.id: item for item in [*project.commands, *project.subsystems]}
+        for element_id, symbol in result.matches.items():
+            element = elements[element_id]
+            element.name.scanned = symbol.name
+            element.name.evidence = symbol.anchor
+            element.name.confidence = symbol.confidence
+            element.description.scanned = symbol.documentation
+            element.description.evidence = symbol.anchor if symbol.documentation else None
+            element.description.confidence = symbol.confidence if symbol.documentation else None
+
+    @staticmethod
     def _status_for(
         element: Command | Subsystem,
         symbol: ScannedSymbol,

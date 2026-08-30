@@ -615,7 +615,9 @@ class MainWindow(QMainWindow):
         """Display a non-destructive design/code comparison on the canvas."""
         if self.project is None or self.last_scan is None:
             return None
-        self.reconciliation = ReconciliationService().reconcile(self.project, self.last_scan)
+        reconciliation_service = ReconciliationService()
+        self.reconciliation = reconciliation_service.reconcile(self.project, self.last_scan)
+        reconciliation_service.populate_scanned_fields(self.project, self.reconciliation)
         self._render_with_current_scan()
         self.accept_matches_action.setEnabled(bool(self.reconciliation.matches))
         matched = len(self.reconciliation.matches)
@@ -660,7 +662,9 @@ class MainWindow(QMainWindow):
             return False
         element.code_binding = code_block.source_anchor
         code_name = code_block.title.toPlainText()
-        self.reconciliation = ReconciliationService().reconcile(self.project, self.last_scan)
+        reconciliation_service = ReconciliationService()
+        self.reconciliation = reconciliation_service.reconcile(self.project, self.last_scan)
+        reconciliation_service.populate_scanned_fields(self.project, self.reconciliation)
         self._render_with_current_scan()
         self._mark_dirty(f"Bound {element.name.effective} to {code_name}")
         return True
@@ -1118,10 +1122,10 @@ class MainWindow(QMainWindow):
             EditDescriptionCommand(element, description, self._description_changed)
         )
 
-    def edit_selected_name(self, name: str) -> None:
+    def edit_selected_name(self, name: str | None) -> None:
         """Apply a selected element's proposed display name through the undo stack."""
         selected = self.scene.selected_blocks()
-        if self.project is None or len(selected) != 1 or not name.strip():
+        if self.project is None or len(selected) != 1 or (name is not None and not name.strip()):
             return
         element = next(
             (

@@ -320,6 +320,28 @@ def test_name_edit_undo_and_redo(qtbot) -> None:
     assert window.project.commands[0].name.design == "Driver Control"
 
 
+def test_details_can_revert_proposed_name_and_description_to_scanned_values(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_command("Proposed Drive")
+    command = window.project.commands[0]
+    command.name.scanned = "DriveCommand"
+    command.description.scanned = "Drives the robot from joystick input."
+    block = next(item for item in window.scene.items() if isinstance(item, ArchitectureBlock))
+    block.setSelected(True)
+    window.edit_selected_description("Custom proposed behavior.")
+
+    window.details_panel.revert_name_button.click()
+    window.details_panel.revert_button.click()
+
+    assert command.name.design is None
+    assert command.name.effective == "DriveCommand"
+    assert command.description.design is None
+    assert command.description.effective == "Drives the robot from joystick input."
+
+
 def test_command_requirement_edit_undo_and_redo(qtbot) -> None:
     create_application([])
     window = MainWindow()
