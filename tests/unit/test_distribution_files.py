@@ -15,3 +15,12 @@ def test_windows_distribution_manifest_is_present() -> None:
     assert "--windowed" in script
     assert "%CD%\\LICENSE;." in script
     assert "copy /Y" in script
+
+
+def test_windows_release_script_matches_portable_teammate_distribution() -> None:
+    root = Path(__file__).parents[2]
+    script = (root / "build_release.bat").read_text(encoding="utf-8")
+
+    assert "call build_windows.bat" in script
+    assert "Compress-Archive" in script
+    assert "FRC-Architecture-Modeler_" in script

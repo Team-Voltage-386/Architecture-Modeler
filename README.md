@@ -99,3 +99,7 @@ Install the project build extra into the isolated runtime, then run
 The build bundles Qt and the Tree-sitter Java grammar. The generated folder has
 been smoke-validated for its executable, root-level MIT license, and Java grammar
 payload. Review third-party distribution licenses before publishing a release.
+
+For the same teammate-release approach used by StrategySimulation, run
+`build_release.bat`. It rebuilds the portable package and writes a timestamped,
+self-contained ZIP to `dist\` for teammates to unzip and run.
