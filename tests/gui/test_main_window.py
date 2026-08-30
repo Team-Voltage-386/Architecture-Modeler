@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence, QPalette
-from PySide6.QtWidgets import QDockWidget, QGraphicsPathItem, QMessageBox
+from PySide6.QtWidgets import QDockWidget, QGraphicsPathItem, QMessageBox, QToolButton
 
 from frc_arch_modeler.app import create_application
 from frc_arch_modeler.domain.model import ComparisonState
@@ -29,6 +29,10 @@ def test_main_window_has_planned_regions(qtbot) -> None:
     assert window.canvas.accessibleName() == "Architecture canvas"
     assert window.find_shortcut.key() == QKeySequence.StandardKey.Find
     assert window.save_model_action.shortcut() == QKeySequence.StandardKey.Save
+    toolbar_labels = [button.text() for button in window.findChildren(QToolButton)]
+    assert {"Model", "Code", "New", "Filters", "View"} <= set(toolbar_labels)
+    assert not window.undo_action.icon().isNull()
+    assert not window.redo_action.icon().isNull()
 
 
 def test_new_model_and_design_elements_update_the_canvas(qtbot) -> None:

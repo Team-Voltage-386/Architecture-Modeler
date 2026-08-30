@@ -6,7 +6,15 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread
-from PySide6.QtGui import QCloseEvent, QKeySequence, QPainter, QShortcut, QUndoCommand, QUndoStack
+from PySide6.QtGui import (
+    QCloseEvent,
+    QIcon,
+    QKeySequence,
+    QPainter,
+    QShortcut,
+    QUndoCommand,
+    QUndoStack,
+)
 from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
@@ -16,8 +24,10 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QToolBar,
+    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -150,59 +160,59 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("Architecture actions", self)
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
-        self.new_model_action = toolbar.addAction("New Model", self._prompt_new_project)
+        self.new_model_action = self.addAction("New Model", self._prompt_new_project)
         self.new_model_action.setShortcut(QKeySequence.StandardKey.New)
-        self.open_model_action = toolbar.addAction("Open Model", self._prompt_open_project)
+        self.open_model_action = self.addAction("Open Model", self._prompt_open_project)
         self.open_model_action.setShortcut(QKeySequence.StandardKey.Open)
-        self.save_model_action = toolbar.addAction("Save Model", self._prompt_save_project)
+        self.save_model_action = self.addAction("Save Model", self._prompt_save_project)
         self.save_model_action.setShortcut(QKeySequence.StandardKey.Save)
         self.save_model_action.setEnabled(False)
-        self.connect_robot_action = toolbar.addAction(
+        self.connect_robot_action = self.addAction(
             "Connect Robot Project", self._prompt_connect_robot_project
         )
-        self.refresh_code_action = toolbar.addAction(
+        self.refresh_code_action = self.addAction(
             "Refresh Code", self._refresh_robot_project_async
         )
         self.refresh_code_action.setShortcut(QKeySequence(Qt.Key.Key_F5))
         self.refresh_code_action.setEnabled(False)
-        self.cancel_scan_action = toolbar.addAction("Cancel Scan", self.cancel_scan)
+        self.cancel_scan_action = self.addAction("Cancel Scan", self.cancel_scan)
         self.cancel_scan_action.setEnabled(False)
-        self.compare_action = toolbar.addAction("Compare Changes", self.compare_changes)
+        self.compare_action = self.addAction("Compare Changes", self.compare_changes)
         self.compare_action.setEnabled(False)
-        self.accept_matches_action = toolbar.addAction("Accept Matches", self.accept_matches)
+        self.accept_matches_action = self.addAction("Accept Matches", self.accept_matches)
         self.accept_matches_action.setEnabled(False)
-        self.bind_selected_action = toolbar.addAction("Bind Selected", self.bind_selected)
+        self.bind_selected_action = self.addAction("Bind Selected", self.bind_selected)
         self.bind_selected_action.setEnabled(False)
-        self.export_change_request_action = toolbar.addAction(
+        self.export_change_request_action = self.addAction(
             "Export AI Change Request", self._prompt_export_change_request
         )
         self.export_change_request_action.setEnabled(False)
-        self.export_architecture_action = toolbar.addAction(
+        self.export_architecture_action = self.addAction(
             "Export Architecture", self._prompt_export_architecture
         )
         self.export_architecture_action.setShortcut(QKeySequence("Ctrl+E"))
         self.export_architecture_action.setEnabled(False)
-        self.new_command_action = toolbar.addAction("New Command", self._prompt_new_command)
+        self.new_command_action = self.addAction("New Command", self._prompt_new_command)
         self.new_command_action.setEnabled(False)
-        self.new_subsystem_action = toolbar.addAction("New Subsystem", self._prompt_new_subsystem)
+        self.new_subsystem_action = self.addAction("New Subsystem", self._prompt_new_subsystem)
         self.new_subsystem_action.setEnabled(False)
-        self.new_device_action = toolbar.addAction("New Device", self._prompt_new_device)
+        self.new_device_action = self.addAction("New Device", self._prompt_new_device)
         self.new_device_action.setEnabled(False)
-        self.new_trigger_action = toolbar.addAction("New Trigger", self._prompt_new_trigger)
+        self.new_trigger_action = self.addAction("New Trigger", self._prompt_new_trigger)
         self.new_trigger_action.setEnabled(False)
-        self.new_relationship_action = toolbar.addAction(
+        self.new_relationship_action = self.addAction(
             "New Relationship", self._prompt_new_relationship
         )
         self.new_relationship_action.setEnabled(False)
-        self.show_command_forms_action = toolbar.addAction("Show Command Forms")
+        self.show_command_forms_action = self.addAction("Show Command Forms")
         self.show_command_forms_action.setCheckable(True)
         self.show_command_forms_action.toggled.connect(self._toggle_command_forms)
-        self.link_selected_action = toolbar.addAction(
+        self.link_selected_action = self.addAction(
             "Link Selected (Requires)", self.link_selected_requirement
         )
         self.link_selected_action.setShortcut(QKeySequence("Ctrl+L"))
         self.link_selected_action.setEnabled(False)
-        self.delete_selected_action = toolbar.addAction(
+        self.delete_selected_action = self.addAction(
             "Delete Selected", self._confirm_delete_selected
         )
         self.delete_selected_action.setShortcut(QKeySequence(Qt.Key.Key_Delete))
@@ -213,7 +223,6 @@ class MainWindow(QMainWindow):
         self.search_field.setPlaceholderText("Search architecture")
         self.search_field.setClearButtonEnabled(True)
         self.search_field.textChanged.connect(self.scene.filter_blocks)
-        toolbar.addWidget(self.search_field)
         self.find_shortcut = QShortcut(QKeySequence.StandardKey.Find, self)
         self.find_shortcut.activated.connect(self.search_field.setFocus)
         self._status_filter_actions = {}
@@ -226,7 +235,7 @@ class MainWindow(QMainWindow):
             (ComparisonState.AMBIGUOUS, "Ambiguous"),
             (ComparisonState.SCAN_ERROR, "Scan Error"),
         ):
-            action = toolbar.addAction(label)
+            action = self.addAction(label)
             action.setCheckable(True)
             action.setChecked(True)
             action.toggled.connect(self._apply_status_filters)
@@ -234,13 +243,10 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         self.undo_action = self.undo_stack.createUndoAction(self, "Undo")
         self.redo_action = self.undo_stack.createRedoAction(self, "Redo")
-        toolbar.addAction(self.undo_action)
-        toolbar.addAction(self.redo_action)
-        toolbar.addSeparator()
-        self.auto_layout_action = toolbar.addAction("Auto Layout", self.auto_layout)
-        self.zoom_to_fit_action = toolbar.addAction("Zoom to Fit", self.zoom_to_fit)
-        self.minimize_action = toolbar.addAction("Minimize Selected", self.minimize_selected)
-        self.restore_action = toolbar.addAction("Restore Selected", self.restore_selected)
+        self.auto_layout_action = self.addAction("Auto Layout", self.auto_layout)
+        self.zoom_to_fit_action = self.addAction("Zoom to Fit", self.zoom_to_fit)
+        self.minimize_action = self.addAction("Minimize Selected", self.minimize_selected)
+        self.restore_action = self.addAction("Restore Selected", self.restore_selected)
         for action in (
             self.auto_layout_action,
             self.zoom_to_fit_action,
@@ -248,6 +254,67 @@ class MainWindow(QMainWindow):
             self.restore_action,
         ):
             action.setEnabled(False)
+        self._organize_toolbar(toolbar)
+
+    def _organize_toolbar(self, toolbar: QToolBar) -> None:
+        """Replace a wrapping action strip with compact, named action groups."""
+        toolbar.clear()
+
+        def add_group(label: str, actions: list) -> None:  # type: ignore[no-untyped-def]
+            button = QToolButton(toolbar)
+            button.setText(label)
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+            button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            menu = QMenu(button)
+            menu.addActions(actions)
+            button.setMenu(menu)
+            toolbar.addWidget(button)
+
+        add_group("Model", [self.new_model_action, self.open_model_action, self.save_model_action])
+        add_group(
+            "Code",
+            [
+                self.connect_robot_action,
+                self.refresh_code_action,
+                self.cancel_scan_action,
+                self.compare_action,
+                self.accept_matches_action,
+                self.bind_selected_action,
+                self.show_command_forms_action,
+                self.export_architecture_action,
+                self.export_change_request_action,
+            ],
+        )
+        add_group(
+            "New",
+            [
+                self.new_command_action,
+                self.new_subsystem_action,
+                self.new_device_action,
+                self.new_trigger_action,
+                self.new_relationship_action,
+                self.link_selected_action,
+                self.delete_selected_action,
+            ],
+        )
+        add_group("Filters", list(self._status_filter_actions.values()))
+        add_group(
+            "View",
+            [
+                self.auto_layout_action,
+                self.zoom_to_fit_action,
+                self.minimize_action,
+                self.restore_action,
+            ],
+        )
+        toolbar.addSeparator()
+        icon_root = Path(__file__).resolve().parents[1] / "resources" / "icons"
+        self.undo_action.setIcon(QIcon(str(icon_root / "undo.svg")))
+        self.redo_action.setIcon(QIcon(str(icon_root / "redo.svg")))
+        toolbar.addAction(self.undo_action)
+        toolbar.addAction(self.redo_action)
+        toolbar.addSeparator()
+        toolbar.addWidget(self.search_field)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Protect unsaved design and canvas edits when the main window closes."""
