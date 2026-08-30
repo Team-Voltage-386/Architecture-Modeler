@@ -124,20 +124,44 @@ class Autos {
         for relationship in result.relationships
         if relationship.kind == "composition_child"
     ] == [
-        (
-            "frc.robot.sequence@4",
-            "Commands.runOnce(() -> {})",
-        ),
-        (
-            "frc.robot.sequence@4",
-            "new ParallelCommandGroup(Commands.run(() -> {}))",
-        ),
+        ("frc.robot.sequence@4", "Commands.runOnce(() -> {})"),
+        ("frc.robot.sequence@4", "new ParallelCommandGroup(Commands.run(() -> {}))"),
         ("frc.robot.runOnce@4", "() -> {}"),
         ("frc.robot.ParallelCommandGroup@5", "Commands.run(() -> {})"),
         ("frc.robot.run@5", "() -> {}"),
     ]
 
 
+def test_scanner_records_functional_command_lifecycle_lambdas(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "Commands.java").write_text(
+        """package frc.robot;
+class Commands {
+  Command hold(Drive drive) {
+    return new FunctionalCommand(() -> drive.start(), () -> drive.run(),
+        interrupted -> drive.stop(), () -> false, drive);
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    functional = result.symbols_of_kind("command_composition")
+    assert "FunctionalCommand (line 4)" in [symbol.name for symbol in functional]
+    assert [
+        relationship.target_expression
+        for relationship in result.relationships
+        if relationship.kind == "functional_phase"
+    ] == [
+        "initialize: () -> drive.start()",
+        "execute: () -> drive.run()",
+        "end(interrupted): interrupted -> drive.stop()",
+        "isFinished: () -> false",
+    ]
 def test_scanner_records_implicit_requirement_of_subsystem_command_helpers(tmp_path) -> None:
     (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
     source_root = tmp_path / "src" / "main" / "java"

@@ -32,7 +32,7 @@ COMMAND_METHOD_PATTERN = re.compile(
 COMMAND_COMPOSITION_PATTERN = re.compile(
     r"\b(?:(?:Commands\.)?(?P<factory>runOnce|run|runEnd|startEnd|sequence|parallel|"
     r"race|deadline)|new\s+(?P<group>SequentialCommandGroup|ParallelCommandGroup|"
-    r"ParallelRaceGroup|ParallelDeadlineGroup))\s*\("
+    r"ParallelRaceGroup|ParallelDeadlineGroup|FunctionalCommand))\s*\("
 )
 SUBSYSTEM_COMMAND_HELPER_PATTERN = re.compile(
     r"\b(?P<subsystem>[a-z][A-Za-z0-9_]*)\.(?P<factory>runOnce|run)\s*\("
@@ -358,7 +358,8 @@ class JavaProjectScanner:
                 )
                 continue
             arguments = source[match.end() : closing_parenthesis]
-            for child_expression in self._split_top_level_arguments(arguments):
+            children = self._split_top_level_arguments(arguments)
+            for child_expression in children:
                 result.relationships.append(
                     ScannedRelationship(
                         kind="composition_child",
@@ -367,6 +368,20 @@ class JavaProjectScanner:
                         anchor=anchor,
                     )
                 )
+            if form == "FunctionalCommand":
+                for phase, expression in zip(
+                    ("initialize", "execute", "end(interrupted)", "isFinished"),
+                    children[:4],
+                    strict=False,
+                ):
+                    result.relationships.append(
+                        ScannedRelationship(
+                            kind="functional_phase",
+                            source_symbol=qualified_name,
+                            target_expression=f"{phase}: {expression}",
+                            anchor=anchor,
+                        )
+                    )
 
     def _scan_trigger_bindings(
         self,

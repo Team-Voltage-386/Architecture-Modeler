@@ -1019,6 +1019,16 @@ class MainWindow(QMainWindow):
         ]
         if decorators:
             lines.extend(["Decorators:", *(f"- {decorator}" for decorator in decorators)])
+        functional_phases = [
+            relationship.target_expression
+            for relationship in self.last_scan.relationships
+            if relationship.kind == "functional_phase"
+            and relationship.source_symbol == qualified_symbol
+        ]
+        if functional_phases:
+            lines.extend(
+                ["Functional command phases:", *(f"- {phase}" for phase in functional_phases)]
+            )
         return "\n\n".join(lines) or None
 
     def _lifecycle_methods(self, command_anchor: SourceAnchor) -> list[str]:
