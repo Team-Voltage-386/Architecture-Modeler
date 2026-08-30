@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence, QPalette
 from PySide6.QtWidgets import QDockWidget, QGraphicsPathItem, QMessageBox
 
@@ -60,6 +60,24 @@ def test_creation_actions_are_undoable(qtbot) -> None:
     assert not window.project.subsystems
     window.undo_stack.redo()
     assert [subsystem.name.effective for subsystem in window.project.subsystems] == ["Drive"]
+
+
+def test_canvas_layout_moves_are_undoable(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_command("Score")
+    block = next(item for item in window.scene.items() if isinstance(item, ArchitectureBlock))
+    before = QPointF(block.pos())
+    after = QPointF(160, 90)
+    block.setPos(after)
+
+    window._record_layout_move({block.element_id: before}, {block.element_id: after})
+    window.undo_stack.undo()
+    assert block.pos() == before
+    window.undo_stack.redo()
+    assert block.pos() == after
 
 
 def test_design_devices_and_triggers_appear_on_their_canvas_blocks(qtbot) -> None:

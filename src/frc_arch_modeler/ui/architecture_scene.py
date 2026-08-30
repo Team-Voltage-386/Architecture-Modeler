@@ -109,6 +109,7 @@ class ArchitectureScene(QGraphicsScene):
     """Render design elements in semantic command and subsystem regions."""
 
     layout_changed = Signal()
+    layout_move_completed = Signal(object, object)
     block_double_clicked = Signal()
 
     def __init__(self, parent: object | None = None) -> None:
@@ -128,13 +129,24 @@ class ArchitectureScene(QGraphicsScene):
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         super().mouseReleaseEvent(event)
-        if any(
-            block.pos() != position
+        moved_blocks = {
+            block.element_id: QPointF(block.pos())
             for block in self.selected_blocks()
             if (position := self._drag_start_positions.get(block.element_id)) is not None
-        ):
-            self.layout_changed.emit()
+            and block.pos() != position
+        }
+        if moved_blocks:
+            self.layout_move_completed.emit(
+                {element_id: self._drag_start_positions[element_id] for element_id in moved_blocks},
+                moved_blocks,
+            )
         self._drag_start_positions = {}
+
+    def apply_block_positions(self, positions: dict[UUID, QPointF]) -> None:
+        """Apply persisted/undoable positions without recreating the architecture scene."""
+        for item in self.items():
+            if isinstance(item, ArchitectureBlock) and item.element_id in positions:
+                item.setPos(positions[item.element_id])
 
     def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         """Expose a compact-details affordance without coupling blocks to a window."""

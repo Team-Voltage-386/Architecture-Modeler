@@ -67,6 +67,25 @@ class AddDesignEntityCommand(QUndoCommand):
         self.on_change()
 
 
+class MoveBlocksCommand(QUndoCommand):
+    """Undoable canvas movement that leaves semantic design intent untouched."""
+
+    def __init__(self, scene: ArchitectureScene, before, after, on_change) -> None:  # type: ignore[no-untyped-def]
+        super().__init__("Move architecture blocks")
+        self.scene = scene
+        self.before = before
+        self.after = after
+        self.on_change = on_change
+
+    def redo(self) -> None:
+        self.scene.apply_block_positions(self.after)
+        self.on_change()
+
+    def undo(self) -> None:
+        self.scene.apply_block_positions(self.before)
+        self.on_change()
+
+
 class MainWindow(QMainWindow):
     """Initial shell that reserves the plan's primary UI regions."""
 
@@ -91,6 +110,7 @@ class MainWindow(QMainWindow):
         self.undo_stack = QUndoStack(self)
         self.scene = ArchitectureScene(self)
         self.scene.layout_changed.connect(self._layout_changed)
+        self.scene.layout_move_completed.connect(self._record_layout_move)
         self.scene.block_double_clicked.connect(self._open_compact_details)
         self._build_toolbar()
         self._build_canvas()
@@ -737,6 +757,10 @@ class MainWindow(QMainWindow):
 
     def _layout_changed(self) -> None:
         self._mark_dirty("Canvas layout updated")
+
+    def _record_layout_move(self, before, after) -> None:  # type: ignore[no-untyped-def]
+        """Place completed drags on the normal undo stack after Qt releases the mouse."""
+        self.undo_stack.push(MoveBlocksCommand(self.scene, before, after, self._layout_changed))
 
     def _update_selected_element(self) -> None:
         selected = self.scene.selected_blocks()
