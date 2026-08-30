@@ -194,6 +194,9 @@ class MainWindow(QMainWindow):
             "New Relationship", self._prompt_new_relationship
         )
         self.new_relationship_action.setEnabled(False)
+        self.show_command_forms_action = toolbar.addAction("Show Command Forms")
+        self.show_command_forms_action.setCheckable(True)
+        self.show_command_forms_action.toggled.connect(self._toggle_command_forms)
         self.link_selected_action = toolbar.addAction(
             "Link Selected (Requires)", self.link_selected_requirement
         )
@@ -610,6 +613,11 @@ class MainWindow(QMainWindow):
             statuses=self._comparison_statuses(),
             code_only_symbols=self._code_only_symbols(),
         )
+
+    def _toggle_command_forms(self, visible: bool) -> None:
+        """Keep inline forms in the inventory unless the user explicitly expands the canvas."""
+        self.scene.show_command_forms = visible
+        self._render_with_current_scan()
 
     def compare_changes(self) -> ReconciliationResult | None:
         """Display a non-destructive design/code comparison on the canvas."""

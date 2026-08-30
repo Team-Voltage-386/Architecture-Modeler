@@ -210,6 +210,7 @@ def test_imported_functional_command_shows_lifecycle_flow(qtbot, tmp_path) -> No
     qtbot.addWidget(window)
 
     window.connect_robot_project(tmp_path)
+    window.show_command_forms_action.setChecked(True)
     functional = next(
         block
         for block in window.scene.items()
@@ -240,6 +241,7 @@ def test_imported_run_once_command_shows_its_instant_flow(qtbot, tmp_path) -> No
     qtbot.addWidget(window)
 
     window.connect_robot_project(tmp_path)
+    window.show_command_forms_action.setChecked(True)
     run_once = next(
         block
         for block in window.scene.items()
@@ -544,6 +546,7 @@ def test_imported_composition_details_show_direct_children(qtbot, tmp_path) -> N
         encoding="utf-8",
     )
     window.connect_robot_project(tmp_path)
+    window.show_command_forms_action.setChecked(True)
     composition = next(
         item
         for item in window.scene.items()

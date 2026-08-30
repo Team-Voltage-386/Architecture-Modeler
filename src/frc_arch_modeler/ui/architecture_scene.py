@@ -121,6 +121,7 @@ class ArchitectureScene(QGraphicsScene):
         super().__init__(parent)
         self._drag_start_positions: dict[UUID, QPointF] = {}
         self._edges: list[QGraphicsPathItem] = []
+        self.show_command_forms = False
         self._search_query = ""
         self._visible_states = set(ComparisonState)
         self.selectionChanged.connect(self._update_edge_visibility)
@@ -332,8 +333,9 @@ class ArchitectureScene(QGraphicsScene):
         imported_commands = [
             *scan.symbols_of_kind("command"),
             *scan.symbols_of_kind("command_factory"),
-            *scan.symbols_of_kind("command_composition"),
         ]
+        if self.show_command_forms:
+            imported_commands.extend(scan.symbols_of_kind("command_composition"))
         trigger_lines_by_symbol = {
             symbol.anchor.qualified_symbol: [
                 f"{trigger.controller_expression} · {trigger.activation}"

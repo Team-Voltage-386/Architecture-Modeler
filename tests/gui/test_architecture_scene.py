@@ -127,6 +127,26 @@ def test_scene_renders_code_import_as_separate_architecture_layer(qapp) -> None:
     assert edges[0].toolTip() == "addRequirements(drive)"
 
 
+def test_scene_keeps_inline_command_forms_out_of_canvas_until_requested(qapp, tmp_path) -> None:
+    scan = ScanResult(
+        tmp_path,
+        symbols=[
+            ScannedSymbol(
+                "command_composition",
+                "runOnce (line 1)",
+                SourceAnchor("A.java", "runOnce@1", 1, 1),
+            )
+        ],
+    )
+    scene = ArchitectureScene()
+    scene.render_project(ArchitectureProject(name="Robot"), scan=scan)
+
+    assert not any(isinstance(item, ArchitectureBlock) for item in scene.items())
+    scene.show_command_forms = True
+    scene.render_project(ArchitectureProject(name="Robot"), scan=scan)
+    assert any(isinstance(item, ArchitectureBlock) for item in scene.items())
+
+
 def test_scene_groups_io_variant_devices_under_logical_subsystem(qapp, tmp_path) -> None:
     drive = ScannedSymbol(
         kind="subsystem",
