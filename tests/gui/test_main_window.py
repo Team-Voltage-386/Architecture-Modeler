@@ -129,6 +129,12 @@ def test_imported_command_details_show_lifecycle_with_inherited_phases(qtbot) ->
     window.show()
     qtbot.waitUntil(window.details_panel.lifecycle_diagram.isVisible)
     assert not window.details_panel.lifecycle_diagram.grab().isNull()
+    opened = []
+    window.details_panel._on_open_source = opened.append
+    window.details_panel.lifecycle_diagram.phase_activated.emit("initialize")
+    assert opened[0].qualified_symbol.endswith("DriveCommand#initialize")
+    window.details_panel.lifecycle_diagram.phase_activated.emit("inherited phase")
+    assert len(opened) == 1
 
 
 def test_save_and_open_model_round_trip_from_window(qtbot, tmp_path) -> None:

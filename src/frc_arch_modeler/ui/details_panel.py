@@ -105,6 +105,7 @@ class DetailsPanel(QWidget):
         self._element: ArchitectureElement | None = None
         self._source_anchor: SourceAnchor | None = None
         self._code_name: str | None = None
+        self._lifecycle_anchors: dict[str, SourceAnchor] = {}
         self._on_open_source = on_open_source
         layout = QVBoxLayout(self)
         self.title = QLabel("Select a command or subsystem to inspect its details.", self)
@@ -119,6 +120,7 @@ class DetailsPanel(QWidget):
         self.lifecycle_flow.setObjectName("lifecycleFlow")
         self.lifecycle_flow.setWordWrap(True)
         self.lifecycle_diagram = CommandFlowWidget(self)
+        self.lifecycle_diagram.phase_activated.connect(self._open_lifecycle_source)
         self.design_context = QLabel(self)
         self.design_context.setObjectName("designContext")
         self.design_context.setWordWrap(True)
@@ -217,11 +219,13 @@ class DetailsPanel(QWidget):
         anchor: SourceAnchor,
         documentation: str | None = None,
         lifecycle_methods: list[str] | None = None,
+        lifecycle_anchors: dict[str, SourceAnchor] | None = None,
     ) -> None:
         """Present selected regenerated code evidence without enabling design edits."""
         self._element = None
         self._source_anchor = anchor
         self._code_name = label
+        self._lifecycle_anchors = lifecycle_anchors or {}
         self.title.setText(f"{label} (imported {kind})")
         self.code_name.setText(label)
         self.design_name.clear()
@@ -259,6 +263,13 @@ class DetailsPanel(QWidget):
         self._set_editing_enabled(False)
         self.open_source_button.setEnabled(self._on_open_source is not None)
         self.adopt_name_button.setEnabled(False)
+
+    def _open_lifecycle_source(self, display_phase: str) -> None:
+        """Open only an explicit override; inherited phases deliberately have no source link."""
+        phase = "end" if display_phase.startswith("end(") else display_phase.split(" ", 1)[0]
+        anchor = self._lifecycle_anchors.get(phase)
+        if anchor is not None and self._on_open_source is not None:
+            self._on_open_source(anchor)
 
     def refresh(self) -> None:
         self.set_element(self._element)

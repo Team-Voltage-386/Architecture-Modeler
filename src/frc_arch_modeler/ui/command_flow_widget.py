@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -65,3 +65,22 @@ class CommandFlowWidget(QWidget):
                 painter.drawLine(arrow_start + 1, center_y, arrow_end - 1, center_y)
                 painter.drawLine(arrow_end - 4, center_y - 3, arrow_end - 1, center_y)
                 painter.drawLine(arrow_end - 4, center_y + 3, arrow_end - 1, center_y)
+
+    def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        index = self._phase_index_at(event.position().x())
+        if index is not None:
+            self.phase_activated.emit(self._phases[index])
+        super().mouseDoubleClickEvent(event)
+
+    def _phase_index_at(self, x_position: float) -> int | None:
+        if not self._phases:
+            return None
+        bounds = self.rect().adjusted(2, 8, -2, -8)
+        gap = 8
+        node_width = max(42, (bounds.width() - gap * (len(self._phases) - 1)) // len(self._phases))
+        for index in range(len(self._phases)):
+            left = bounds.x() + index * (node_width + gap)
+            if left <= x_position <= left + node_width:
+                return index
+        return None
+    phase_activated = Signal(str)

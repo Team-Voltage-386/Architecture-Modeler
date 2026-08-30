@@ -752,6 +752,7 @@ class MainWindow(QMainWindow):
                 imported_anchor,
                 self._imported_details(selected[0]),
                 self._lifecycle_methods(imported_anchor) if selected[0].kind == "command" else None,
+                self._lifecycle_anchors(imported_anchor) if selected[0].kind == "command" else None,
             )
             self._update_compact_details()
             return
@@ -846,6 +847,15 @@ class MainWindow(QMainWindow):
             for symbol in self.last_scan.symbols_of_kind("lifecycle_method")
             if symbol.anchor.qualified_symbol.startswith(f"{command_anchor.qualified_symbol}#")
         ]
+
+    def _lifecycle_anchors(self, command_anchor: SourceAnchor) -> dict[str, SourceAnchor]:
+        if self.last_scan is None:
+            return {}
+        return {
+            symbol.name: symbol.anchor
+            for symbol in self.last_scan.symbols_of_kind("lifecycle_method")
+            if symbol.anchor.qualified_symbol.startswith(f"{command_anchor.qualified_symbol}#")
+        }
 
     def _design_structure(self, element_id) -> str | None:  # type: ignore[no-untyped-def]
         """Summarize authored devices, controls, and typed links for the details panel."""
@@ -1195,6 +1205,8 @@ class MainWindow(QMainWindow):
                 block.kind,
                 block.source_anchor,
                 self._imported_details(block),
+                self._lifecycle_methods(block.source_anchor) if block.kind == "command" else None,
+                self._lifecycle_anchors(block.source_anchor) if block.kind == "command" else None,
             )
             return
         if self.project is None:
