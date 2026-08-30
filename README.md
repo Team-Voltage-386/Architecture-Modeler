@@ -53,6 +53,9 @@ Model**. The selected folder receives:
    Imported command details show a lifecycle flow and explicitly label inherited
    WPILib phases. Hardware constants are resolved across simple Java constant files
    when safe, while original expressions remain visible as evidence.
+   Inline command forms and groups stay in **Code Inventory** by default to keep
+   the architecture canvas readable; choose **Show Command Forms** when you need
+   to inspect those forms directly on the canvas.
 3. Use **Compare Changes** to show matched, modified, design-only, code-only, and
    unresolved states. Status labels and border styles supplement the colors; use
    the toolbar state buttons to filter dense canvases.
