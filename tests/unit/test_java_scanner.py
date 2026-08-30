@@ -298,3 +298,26 @@ class Drive extends SubsystemBase {
     result = JavaProjectScanner().scan(tmp_path)
 
     assert result.devices[0].resolved_arguments == "7, MotorType.kBrushless"
+
+
+def test_scanner_leaves_ambiguous_cross_package_constant_unresolved(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    for package, value in (("a", "3"), ("b", "9")):
+        package_root = source_root / package
+        package_root.mkdir(parents=True, exist_ok=True)
+        (package_root / "Constants.java").write_text(
+            f"package {package}; class Constants {{ static final int motorId = {value}; }}",
+            encoding="utf-8",
+        )
+    (source_root / "Drive.java").write_text(
+        """class Drive extends SubsystemBase {
+  private final SparkMax motor = new SparkMax(Constants.motorId, MotorType.kBrushless);
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    assert result.devices[0].resolved_arguments is None

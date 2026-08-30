@@ -445,6 +445,15 @@ class JavaProjectScanner:
         """
         values: dict[str, str] = {}
         bare_values: dict[str, str | None] = {}
+        ambiguous_keys: set[str] = set()
+
+        def record(key: str, value: str) -> None:
+            previous = values.get(key)
+            if previous is not None and previous != value:
+                ambiguous_keys.add(key)
+            else:
+                values[key] = value
+
         for source_path in source_paths:
             try:
                 source = source_path.read_text(encoding="utf-8")
@@ -457,13 +466,15 @@ class JavaProjectScanner:
                 continue
             type_name = type_match.group("name")
             for name, value in JavaProjectScanner._constant_values(source).items():
-                values[f"{type_name}.{name}"] = value
+                record(f"{type_name}.{name}", value)
                 if package:
-                    values[f"{package}.{type_name}.{name}"] = value
+                    record(f"{package}.{type_name}.{name}", value)
                 if name not in bare_values:
                     bare_values[name] = value
                 elif bare_values[name] != value:
                     bare_values[name] = None
+        for key in ambiguous_keys:
+            values.pop(key, None)
         values.update({name: value for name, value in bare_values.items() if value is not None})
         # Follow simple aliases such as ``simDriveId = realDriveId`` without
         # attempting expression evaluation or general Java type resolution.
