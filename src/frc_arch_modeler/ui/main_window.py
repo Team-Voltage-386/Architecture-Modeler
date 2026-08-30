@@ -914,14 +914,19 @@ class MainWindow(QMainWindow):
             conventional_command = (
                 selected[0].kind == "command" and self._is_conventional_command(imported_anchor)
             )
+            functional_command = self._functional_phase_expressions(imported_anchor)
             self.details_panel.set_imported_fact(
                 selected[0].title.toPlainText(),
                 selected[0].kind,
                 imported_anchor,
                 self._imported_details(selected[0]),
-                self._lifecycle_methods(imported_anchor) if conventional_command else None,
+                self._lifecycle_methods(imported_anchor)
+                if conventional_command
+                else ["initialize", "execute", "isFinished", "end"]
+                if functional_command
+                else None,
                 self._lifecycle_anchors(imported_anchor) if conventional_command else None,
-                conventional_command,
+                conventional_command or bool(functional_command),
             )
             self._update_compact_details()
             return
@@ -1048,6 +1053,17 @@ class MainWindow(QMainWindow):
             and symbol.anchor.qualified_symbol == command_anchor.qualified_symbol
             for symbol in self.last_scan.symbols
         )
+
+    def _functional_phase_expressions(self, command_anchor: SourceAnchor) -> list[str]:
+        """Identify a FunctionalCommand form without fabricating conventional source methods."""
+        if self.last_scan is None:
+            return []
+        return [
+            relationship.target_expression
+            for relationship in self.last_scan.relationships
+            if relationship.kind == "functional_phase"
+            and relationship.source_symbol == command_anchor.qualified_symbol
+        ]
 
     def _lifecycle_anchors(self, command_anchor: SourceAnchor) -> dict[str, SourceAnchor]:
         if self.last_scan is None:

@@ -191,6 +191,39 @@ def test_imported_command_details_show_lifecycle_with_inherited_phases(qtbot) ->
     assert len(opened) == 1
 
 
+def test_imported_functional_command_shows_lifecycle_flow(qtbot, tmp_path) -> None:
+    create_application([])
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    (source_root / "Commands.java").write_text(
+        """class Commands {
+  Command hold() {
+    return new FunctionalCommand(() -> start(), () -> run(),
+        interrupted -> stop(), () -> false);
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.connect_robot_project(tmp_path)
+    functional = next(
+        block
+        for block in window.scene.items()
+        if isinstance(block, ArchitectureBlock)
+        and block.title.toPlainText() == "FunctionalCommand (line 3)"
+    )
+    functional.setSelected(True)
+
+    assert "Start \u2192 initialize \u2192 execute \u2192 isFinished \u2192 end(interrupted)" in (
+        window.details_panel.lifecycle_flow.text()
+    )
+    assert "Functional command phases:" in window.details_panel.code_description.text()
+
+
 def test_imported_command_details_show_scheduler_registration_evidence(qtbot, tmp_path) -> None:
     create_application([])
     source_root = tmp_path / "src" / "main" / "java"
