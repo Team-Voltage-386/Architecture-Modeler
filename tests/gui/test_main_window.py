@@ -121,6 +121,9 @@ def test_imported_command_details_show_lifecycle_with_inherited_phases(qtbot) ->
         window.details_panel.lifecycle_flow.text()
     )
     assert not window.details_panel.lifecycle_diagram.isHidden()
+    window.show()
+    qtbot.waitUntil(window.details_panel.lifecycle_diagram.isVisible)
+    assert not window.details_panel.lifecycle_diagram.grab().isNull()
 
 
 def test_save_and_open_model_round_trip_from_window(qtbot, tmp_path) -> None:
