@@ -194,6 +194,11 @@ class MainWindow(QMainWindow):
             "New Relationship", self._prompt_new_relationship
         )
         self.new_relationship_action.setEnabled(False)
+        self.link_selected_action = toolbar.addAction(
+            "Link Selected (Requires)", self.link_selected_requirement
+        )
+        self.link_selected_action.setShortcut(QKeySequence("Ctrl+L"))
+        self.link_selected_action.setEnabled(False)
         self.delete_selected_action = toolbar.addAction(
             "Delete Selected", self._confirm_delete_selected
         )
@@ -300,6 +305,7 @@ class MainWindow(QMainWindow):
         self.scene.selectionChanged.connect(self._update_selected_element)
         self.scene.selectionChanged.connect(self._update_bind_selected_action)
         self.scene.selectionChanged.connect(self._update_delete_selected_action)
+        self.scene.selectionChanged.connect(self._update_link_selected_action)
 
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
@@ -688,6 +694,16 @@ class MainWindow(QMainWindow):
             self.project is not None and len(blocks) == 1 and not blocks[0].imported
         )
 
+    def _update_link_selected_action(self) -> None:
+        """Enable the direct drafting shortcut for a command/subsystem pair."""
+        blocks = self.scene.selected_blocks()
+        self.link_selected_action.setEnabled(
+            self.project is not None
+            and len(blocks) == 2
+            and not any(block.imported for block in blocks)
+            and {block.kind for block in blocks} == {"command", "subsystem"}
+        )
+
     def add_command(self, name: str) -> None:
         """Add a command and refresh its deterministic initial canvas position."""
         if self.project is None:
@@ -755,6 +771,33 @@ class MainWindow(QMainWindow):
                 self.project.relationships, relationship, "relationship", self._refresh_after_edit
             )
         )
+
+    def link_selected_requirement(self) -> bool:
+        """Create the visible command-to-subsystem requirement selected on the canvas."""
+        if self.project is None:
+            return False
+        blocks = self.scene.selected_blocks()
+        if (
+            len(blocks) != 2
+            or any(block.imported for block in blocks)
+            or {block.kind for block in blocks} != {"command", "subsystem"}
+        ):
+            return False
+        command_block = next(block for block in blocks if block.kind == "command")
+        subsystem_block = next(block for block in blocks if block.kind == "subsystem")
+        command = next(
+            (item for item in self.project.commands if item.id == command_block.element_id), None
+        )
+        if command is None or subsystem_block.element_id in command.requirement_ids:
+            return False
+        self.undo_stack.push(
+            EditRequirementsCommand(
+                command,
+                [*command.requirement_ids, subsystem_block.element_id],
+                self._requirements_changed,
+            )
+        )
+        return True
 
     def _confirm_delete_selected(self) -> None:
         if not self.delete_selected():

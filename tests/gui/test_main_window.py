@@ -140,6 +140,26 @@ def test_explicit_design_relationship_is_rendered_with_evidence_tooltip(qtbot) -
     assert window.new_relationship_action.isEnabled()
 
 
+def test_selected_command_and_subsystem_can_be_linked_as_a_requirement(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    window.add_command("Teleop Drive")
+    assert window.project is not None
+
+    blocks = [item for item in window.scene.items() if isinstance(item, ArchitectureBlock)]
+    next(block for block in blocks if block.kind == "command").setSelected(True)
+    next(block for block in blocks if block.kind == "subsystem").setSelected(True)
+
+    assert window.link_selected_action.isEnabled()
+    assert window.link_selected_requirement()
+    assert window.project.subsystems[0].id in window.project.commands[0].requirement_ids
+    edges = [item for item in window.scene.items() if isinstance(item, QGraphicsPathItem)]
+    assert any(item.toolTip() == "Designed requirement" for item in edges)
+
+
 def test_imported_command_details_show_lifecycle_with_inherited_phases(qtbot) -> None:
     create_application([])
     window = MainWindow()
