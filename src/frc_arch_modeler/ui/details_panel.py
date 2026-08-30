@@ -119,6 +119,9 @@ class DetailsPanel(QWidget):
         self.lifecycle_flow.setObjectName("lifecycleFlow")
         self.lifecycle_flow.setWordWrap(True)
         self.lifecycle_diagram = CommandFlowWidget(self)
+        self.design_context = QLabel(self)
+        self.design_context.setObjectName("designContext")
+        self.design_context.setWordWrap(True)
         self.design_name = QLineEdit(self)
         self.design_name.setObjectName("designName")
         self.design_name.setAccessibleName("Proposed architecture name")
@@ -140,6 +143,7 @@ class DetailsPanel(QWidget):
         form.addRow("From code", self.code_description)
         form.addRow("Lifecycle / flow", self.lifecycle_flow)
         form.addRow("", self.lifecycle_diagram)
+        form.addRow("Design structure", self.design_context)
         form.addRow("Design / proposed", self.design_description)
         form.addRow("Required subsystems", self.requirements)
         layout.addWidget(self.title)
@@ -162,6 +166,7 @@ class DetailsPanel(QWidget):
         code_description: str | None = None,
         code_anchor: SourceAnchor | None = None,
         subsystem_options: list[tuple[UUID, str]] | None = None,
+        design_context: str | None = None,
     ) -> None:
         self._element = element
         self._source_anchor = code_anchor
@@ -177,6 +182,8 @@ class DetailsPanel(QWidget):
             self.lifecycle_flow.clear()
             self.lifecycle_flow.setVisible(False)
             self.lifecycle_diagram.set_phases([])
+            self.design_context.clear()
+            self.design_context.setVisible(False)
             self._set_editing_enabled(False)
             self.open_source_button.setEnabled(False)
             self.adopt_name_button.setEnabled(False)
@@ -194,6 +201,8 @@ class DetailsPanel(QWidget):
         self.lifecycle_flow.clear()
         self.lifecycle_flow.setVisible(False)
         self.lifecycle_diagram.set_phases([])
+        self.design_context.setText(design_context or "")
+        self.design_context.setVisible(bool(design_context))
         self._set_requirement_options(element, subsystem_options or [])
         self._set_editing_enabled(True)
         self.open_source_button.setEnabled(
@@ -243,6 +252,8 @@ class DetailsPanel(QWidget):
             self.lifecycle_flow.setVisible(False)
             self.lifecycle_diagram.set_phases([])
         self.design_description.clear()
+        self.design_context.clear()
+        self.design_context.setVisible(False)
         self.requirements.clear()
         self.requirements.setVisible(False)
         self._set_editing_enabled(False)

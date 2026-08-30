@@ -81,6 +81,11 @@ def test_design_devices_and_triggers_appear_on_their_canvas_blocks(qtbot) -> Non
     assert "Driver A · onTrue" in command.summary.toPlainText()
     assert window.new_device_action.isEnabled()
     assert window.new_trigger_action.isEnabled()
+    drive.setSelected(True)
+    assert "Devices: Left motor (SparkMax)" in window.details_panel.design_context.text()
+    drive.setSelected(False)
+    command.setSelected(True)
+    assert "Triggers: Driver A · onTrue" in window.details_panel.design_context.text()
 
 
 def test_explicit_design_relationship_is_rendered_with_evidence_tooltip(qtbot) -> None:

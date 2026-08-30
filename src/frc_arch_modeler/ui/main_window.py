@@ -772,6 +772,7 @@ class MainWindow(QMainWindow):
             element,
             *self._matched_code_details(element.id) if element is not None else (),
             subsystem_options=self._subsystem_options(),
+            design_context=self._design_structure(element.id) if element is not None else None,
         )
         self._update_compact_details()
 
@@ -845,6 +846,42 @@ class MainWindow(QMainWindow):
             for symbol in self.last_scan.symbols_of_kind("lifecycle_method")
             if symbol.anchor.qualified_symbol.startswith(f"{command_anchor.qualified_symbol}#")
         ]
+
+    def _design_structure(self, element_id) -> str | None:  # type: ignore[no-untyped-def]
+        """Summarize authored devices, controls, and typed links for the details panel."""
+        if self.project is None:
+            return None
+        lines: list[str] = []
+        devices = [
+            device for device in self.project.devices if device.owner_subsystem_id == element_id
+        ]
+        if devices:
+            lines.append(
+                "Devices: "
+                + ", ".join(
+                    f"{device.name.effective} ({device.device_type.effective})"
+                    for device in devices
+                )
+            )
+        triggers = [
+            trigger for trigger in self.project.triggers if trigger.command_id == element_id
+        ]
+        if triggers:
+            lines.append(
+                "Triggers: "
+                + ", ".join(
+                    f"{trigger.expression.effective} · {trigger.activation.effective}"
+                    for trigger in triggers
+                )
+            )
+        links = [
+            relationship.relationship_type.replace("_", " ")
+            for relationship in self.project.relationships
+            if element_id in {relationship.source_id, relationship.target_id}
+        ]
+        if links:
+            lines.append("Relationships: " + ", ".join(links))
+        return "\n".join(lines) or None
 
     @staticmethod
     def _normalized(value: str) -> str:
@@ -1175,6 +1212,7 @@ class MainWindow(QMainWindow):
             element,
             *self._matched_code_details(element.id) if element is not None else (),
             subsystem_options=self._subsystem_options(),
+            design_context=self._design_structure(element.id) if element is not None else None,
         )
 
     def _subsystem_options(self) -> list[tuple]:  # type: ignore[type-arg]
