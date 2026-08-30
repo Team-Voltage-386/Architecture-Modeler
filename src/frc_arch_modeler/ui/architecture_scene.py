@@ -6,7 +6,7 @@ from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from PySide6.QtCore import QPointF, Qt, Signal
-from PySide6.QtGui import QColor, QPainterPath, QPen
+from PySide6.QtGui import QColor, QKeyEvent, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QGraphicsPathItem,
     QGraphicsRectItem,
@@ -74,6 +74,7 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.setFlags(
             QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable
             | QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsRectItem.GraphicsItemFlag.ItemIsFocusable
         )
         self.title = QGraphicsTextItem(label, self)
         self.title.setDefaultTextColor(QColor("#F4F6FA"))
@@ -152,6 +153,29 @@ class ArchitectureScene(QGraphicsScene):
         super().mouseMoveEvent(event)
         if self._drag_start_positions:
             self._update_edge_paths()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Move selected blocks from the keyboard through the normal undoable layout path."""
+        offsets = {
+            Qt.Key.Key_Left: QPointF(-1, 0),
+            Qt.Key.Key_Right: QPointF(1, 0),
+            Qt.Key.Key_Up: QPointF(0, -1),
+            Qt.Key.Key_Down: QPointF(0, 1),
+        }
+        direction = offsets.get(event.key())
+        blocks = self.selected_blocks()
+        if direction is None or not blocks:
+            super().keyPressEvent(event)
+            return
+        distance = 50 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 10
+        before = {block.element_id: QPointF(block.pos()) for block in blocks}
+        after = {
+            block.element_id: block.pos() + direction * distance
+            for block in blocks
+        }
+        self.apply_block_positions(after)
+        self.layout_move_completed.emit(before, after)
+        event.accept()
 
     def apply_block_positions(self, positions: dict[UUID, QPointF]) -> None:
         """Apply persisted/undoable positions without recreating the architecture scene."""

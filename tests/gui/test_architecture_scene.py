@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QGraphicsPathItem
 
 from frc_arch_modeler.domain.model import (
@@ -75,6 +76,23 @@ def test_requirement_edge_follows_block_positions(qapp) -> None:
     assert edge.path().currentPosition() == drive_block.sceneBoundingRect().topLeft() + QPointF(
         105, 0
     )
+
+
+def test_selected_blocks_can_move_by_keyboard_and_emit_layout_change(qapp) -> None:
+    command = Command(name=FieldValue(design="Score"))
+    scene = ArchitectureScene()
+    scene.render_project(ArchitectureProject(name="Robot", commands=[command]))
+    block = next(item for item in scene.items() if isinstance(item, ArchitectureBlock))
+    block.setSelected(True)
+    changes = []
+    scene.layout_move_completed.connect(lambda before, after: changes.append((before, after)))
+
+    scene.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Right, Qt.NoModifier))
+
+    assert block.flags() & block.GraphicsItemFlag.ItemIsFocusable
+    assert block.pos() == QPointF(10, 0)
+    assert changes[0][0][command.id] == QPointF(0, 0)
+    assert changes[0][1][command.id] == QPointF(10, 0)
 
 
 def test_scene_renders_code_import_as_separate_architecture_layer(qapp) -> None:
