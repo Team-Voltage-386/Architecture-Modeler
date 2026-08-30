@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPointF, Qt
 from PySide6.QtWidgets import QGraphicsPathItem
 
 from frc_arch_modeler.domain.model import (
@@ -54,6 +54,27 @@ def test_scene_round_trips_block_layout_and_minimized_state(qapp) -> None:
 
     assert restored_block.pos() == block.pos()
     assert restored_block.minimized
+
+
+def test_requirement_edge_follows_block_positions(qapp) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    command = Command(name=FieldValue(design="Teleop Drive"), requirement_ids=[drive.id])
+    scene = ArchitectureScene()
+    scene.render_project(ArchitectureProject(name="Robot", commands=[command], subsystems=[drive]))
+    edge = next(item for item in scene.items() if isinstance(item, QGraphicsPathItem))
+    before = edge.path().currentPosition()
+
+    scene.apply_block_positions({drive.id: QPointF(400, 480)})
+
+    assert edge.path().currentPosition() != before
+    drive_block = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.element_id == drive.id
+    )
+    assert edge.path().currentPosition() == drive_block.sceneBoundingRect().topLeft() + QPointF(
+        105, 0
+    )
 
 
 def test_scene_renders_code_import_as_separate_architecture_layer(qapp) -> None:

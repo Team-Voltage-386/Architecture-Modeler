@@ -133,6 +133,7 @@ class ArchitectureScene(QGraphicsScene):
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         super().mouseReleaseEvent(event)
+        self._update_edge_paths()
         moved_blocks = {
             block.element_id: QPointF(block.pos())
             for block in self.selected_blocks()
@@ -146,11 +147,18 @@ class ArchitectureScene(QGraphicsScene):
             )
         self._drag_start_positions = {}
 
+    def mouseMoveEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        """Keep relationship paths visually attached while a selected block is dragged."""
+        super().mouseMoveEvent(event)
+        if self._drag_start_positions:
+            self._update_edge_paths()
+
     def apply_block_positions(self, positions: dict[UUID, QPointF]) -> None:
         """Apply persisted/undoable positions without recreating the architecture scene."""
         for item in self.items():
             if isinstance(item, ArchitectureBlock) and item.element_id in positions:
                 item.setPos(positions[item.element_id])
+        self._update_edge_paths()
 
     def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         """Expose a compact-details affordance without coupling blocks to a window."""
@@ -481,17 +489,14 @@ class ArchitectureScene(QGraphicsScene):
         imported: bool = False,
         evidence: str = "Requirement relationship",
     ) -> None:
-        start = command.sceneBoundingRect().bottomLeft() + QPointF(BLOCK_WIDTH / 2, 0)
-        end = subsystem.sceneBoundingRect().topLeft() + QPointF(BLOCK_WIDTH / 2, 0)
-        path = QPainterPath(start)
-        midpoint = (start.y() + end.y()) / 2
-        path.cubicTo(QPointF(start.x(), midpoint), QPointF(end.x(), midpoint), end)
-        edge = QGraphicsPathItem(path)
+        edge = QGraphicsPathItem(self._requirement_path(command, subsystem))
         color = VOLTAGE_BLUE if imported else MUTED_TEXT
         default_pen = QPen(QColor(color), 1.5, Qt.PenStyle.DashLine)
         edge.setPen(default_pen)
         edge.setData(0, {command.element_id, subsystem.element_id})
         edge.setData(1, default_pen)
+        edge.setData(2, "requirement")
+        edge.setData(3, (command.element_id, subsystem.element_id))
         edge.setToolTip(evidence)
         edge.setZValue(-1)
         self.addItem(edge)
@@ -501,17 +506,54 @@ class ArchitectureScene(QGraphicsScene):
         self, source: ArchitectureBlock, target: ArchitectureBlock, relationship_type: str
     ) -> None:
         """Render an explicit authored relationship without confusing it with requires."""
+        edge = QGraphicsPathItem(self._design_relationship_path(source, target))
+        pen = QPen(QColor(MUTED_TEXT), 1.25, Qt.PenStyle.DotLine)
+        edge.setPen(pen)
+        edge.setData(0, {source.element_id, target.element_id})
+        edge.setData(1, pen)
+        edge.setData(2, "design_relationship")
+        edge.setData(3, (source.element_id, target.element_id))
+        edge.setToolTip(f"Designed {relationship_type.replace('_', ' ')} relationship")
+        edge.setZValue(-1)
+        self.addItem(edge)
+        self._edges.append(edge)
+
+    @staticmethod
+    def _requirement_path(command: ArchitectureBlock, subsystem: ArchitectureBlock) -> QPainterPath:
+        start = command.sceneBoundingRect().bottomLeft() + QPointF(BLOCK_WIDTH / 2, 0)
+        end = subsystem.sceneBoundingRect().topLeft() + QPointF(BLOCK_WIDTH / 2, 0)
+        path = QPainterPath(start)
+        midpoint = (start.y() + end.y()) / 2
+        path.cubicTo(QPointF(start.x(), midpoint), QPointF(end.x(), midpoint), end)
+        return path
+
+    @staticmethod
+    def _design_relationship_path(
+        source: ArchitectureBlock, target: ArchitectureBlock
+    ) -> QPainterPath:
         start = source.sceneBoundingRect().center()
         end = target.sceneBoundingRect().center()
         path = QPainterPath(start)
         midpoint = (start.x() + end.x()) / 2
         path.cubicTo(QPointF(midpoint, start.y()), QPointF(midpoint, end.y()), end)
-        edge = QGraphicsPathItem(path)
-        pen = QPen(QColor(MUTED_TEXT), 1.25, Qt.PenStyle.DotLine)
-        edge.setPen(pen)
-        edge.setData(0, {source.element_id, target.element_id})
-        edge.setData(1, pen)
-        edge.setToolTip(f"Designed {relationship_type.replace('_', ' ')} relationship")
-        edge.setZValue(-1)
-        self.addItem(edge)
-        self._edges.append(edge)
+        return path
+
+    def _update_edge_paths(self) -> None:
+        """Rebuild curves from their endpoints after a block position changes."""
+        blocks = {
+            item.element_id: item
+            for item in self.items()
+            if isinstance(item, ArchitectureBlock)
+        }
+        for edge in self._edges:
+            endpoint_ids = edge.data(3)
+            if not isinstance(endpoint_ids, tuple) or len(endpoint_ids) != 2:
+                continue
+            source = blocks.get(endpoint_ids[0])
+            target = blocks.get(endpoint_ids[1])
+            if source is None or target is None:
+                continue
+            if edge.data(2) == "requirement":
+                edge.setPath(self._requirement_path(source, target))
+            else:
+                edge.setPath(self._design_relationship_path(source, target))
