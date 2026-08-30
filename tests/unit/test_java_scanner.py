@@ -148,6 +148,35 @@ class Drive extends SubsystemBase {
     ]
 
 
+def test_scanner_records_chained_command_decorators(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "Autos.java").write_text(
+        """package frc.robot;
+class Autos {
+  Command auto() { return score().withTimeout(2.0).andThen(stow()); }
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    assert [symbol.name for symbol in result.symbols_of_kind("command_composition")] == [
+        "score().withTimeout (line 3)",
+        "score().withTimeout(2.0).andThen (line 3)",
+    ]
+    assert [
+        (relationship.kind, relationship.target_expression)
+        for relationship in result.relationships
+        if relationship.kind == "command_decorator"
+    ] == [
+        ("command_decorator", "score().withTimeout(2.0)"),
+        ("command_decorator", "score().withTimeout(2.0).andThen(stow())"),
+    ]
+
+
 def test_scanner_extracts_attached_javadoc_for_types_and_lifecycle(tmp_path) -> None:
     (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
     source_root = tmp_path / "src" / "main" / "java"

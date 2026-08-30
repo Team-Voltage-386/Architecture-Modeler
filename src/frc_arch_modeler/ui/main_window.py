@@ -826,6 +826,14 @@ class MainWindow(QMainWindow):
         ]
         if children:
             lines.extend(["Composition children:", *(f"- {child}" for child in children)])
+        decorators = [
+            relationship.target_expression
+            for relationship in self.last_scan.relationships
+            if relationship.kind == "command_decorator"
+            and relationship.source_symbol == qualified_symbol
+        ]
+        if decorators:
+            lines.extend(["Decorators:", *(f"- {decorator}" for decorator in decorators)])
         return "\n\n".join(lines) or None
 
     def _lifecycle_methods(self, command_anchor: SourceAnchor) -> list[str]:

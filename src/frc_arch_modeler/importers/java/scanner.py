@@ -37,6 +37,9 @@ COMMAND_COMPOSITION_PATTERN = re.compile(
 SUBSYSTEM_COMMAND_HELPER_PATTERN = re.compile(
     r"\b(?P<subsystem>[a-z][A-Za-z0-9_]*)\.(?P<factory>runOnce|run)\s*\("
 )
+COMMAND_DECORATOR_PATTERN = re.compile(
+    r"\.(?P<decorator>andThen|alongWith|withTimeout|until|onlyIf|deadlineFor)\s*\("
+)
 REQUIREMENT_PATTERN = re.compile(r"\baddRequirements\s*\((?P<arguments>[^)]*)\)")
 LIFECYCLE_PATTERN = re.compile(
     r"@Override\s+(?:public|protected)\s+(?:void|boolean)\s+"
@@ -213,6 +216,65 @@ class JavaProjectScanner:
             )
         self._scan_command_compositions(source, package, relative_path, source_hash, result)
         self._scan_subsystem_command_helpers(source, package, relative_path, source_hash, result)
+        self._scan_command_decorators(source, package, relative_path, source_hash, result)
+
+    def _scan_command_decorators(
+        self,
+        source: str,
+        package: str,
+        relative_path: str,
+        source_hash: str,
+        result: ScanResult,
+    ) -> None:
+        """Record chained command decorators as semantic forms with source evidence."""
+        for match in COMMAND_DECORATOR_PATTERN.finditer(source):
+            line = source.count("\n", 0, match.start()) + 1
+            decorator = match.group("decorator")
+            receiver = self._decorator_receiver(source, match.start())
+            if not receiver:
+                continue
+            qualified_name = (
+                f"{package}.{decorator}@{line}" if package else f"{decorator}@{line}"
+            )
+            anchor = self._anchor_at_offset(
+                qualified_name, source, match.start(), relative_path, source_hash
+            )
+            result.symbols.append(
+                ScannedSymbol(
+                    kind="command_composition",
+                    name=f"{receiver}.{decorator} (line {line})",
+                    anchor=anchor,
+                    confidence="exact",
+                )
+            )
+            opening_parenthesis = source.find("(", match.start("decorator"))
+            closing_parenthesis = self._matching_parenthesis(source, opening_parenthesis)
+            if closing_parenthesis is None:
+                result.diagnostics.append(
+                    ScanDiagnostic(
+                        "warning",
+                        f"Unclosed command decorator {decorator} near line {line}.",
+                        relative_path,
+                    )
+                )
+                continue
+            arguments = " ".join(source[match.end() : closing_parenthesis].split())
+            result.relationships.append(
+                ScannedRelationship(
+                    kind="command_decorator",
+                    source_symbol=qualified_name,
+                    target_expression=f"{receiver}.{decorator}({arguments})",
+                    anchor=anchor,
+                )
+            )
+
+    @staticmethod
+    def _decorator_receiver(source: str, decorator_offset: int) -> str:
+        """Return the immediately preceding simple chained expression for a decorator."""
+        start = decorator_offset - 1
+        while start >= 0 and (source[start].isalnum() or source[start] in "_.$()"):
+            start -= 1
+        return source[start + 1 : decorator_offset].rstrip(".")
 
     def _scan_subsystem_command_helpers(
         self,
