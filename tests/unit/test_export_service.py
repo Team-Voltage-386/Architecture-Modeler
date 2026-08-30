@@ -71,6 +71,17 @@ def test_architecture_export_includes_design_hardware_controls_and_relationships
     assert "| owns_device | Drive | Left motor |" in content
 
 
+def test_architecture_export_escapes_markdown_table_cells(tmp_path) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive | chassis"))
+    command = Command(name=FieldValue(design="Teleop | drive"), requirement_ids=[drive.id])
+
+    content = ArchitectureExportService().render(
+        ArchitectureProject(name="Robot", commands=[command], subsystems=[drive])
+    )
+
+    assert "| Teleop \\| drive | Drive \\| chassis |" in content
+
+
 def test_architecture_export_includes_optional_code_scan_discrepancies(tmp_path) -> None:
     drive = Subsystem(name=FieldValue(design="Drive"))
     imported = ScannedSymbol(

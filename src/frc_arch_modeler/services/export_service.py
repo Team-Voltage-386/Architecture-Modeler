@@ -102,7 +102,7 @@ class ArchitectureExportService:
                 ]
                 command_name = command.name.effective or "Unnamed"
                 requirement_text = ", ".join(requirements) or "None"
-                lines.append(f"| {command_name} | {requirement_text} |")
+                lines.append(f"| {self._cell(command_name)} | {self._cell(requirement_text)} |")
         else:
             lines.append("| _No commands_ | None |")
         lines.extend(
@@ -130,9 +130,9 @@ class ArchitectureExportService:
                 key=lambda item: (item.relationship_type, str(item.source_id), str(item.target_id)),
             ):
                 lines.append(
-                    f"| {relationship.relationship_type} | "
-                    f"{names.get(relationship.source_id, 'Unknown')} | "
-                    f"{names.get(relationship.target_id, 'Unknown')} |"
+                    f"| {self._cell(relationship.relationship_type)} | "
+                    f"{self._cell(names.get(relationship.source_id, 'Unknown'))} | "
+                    f"{self._cell(names.get(relationship.target_id, 'Unknown'))} |"
                 )
         else:
             lines.append("| _None_ | â€” | â€” |")
@@ -175,12 +175,12 @@ class ArchitectureExportService:
                 )
                 kind = "Subsystem" if isinstance(element, Subsystem) else "Command"
                 lines.append(
-                    f"| {element.name.effective} | {kind} | "
+                    f"| {self._cell(element.name.effective)} | {kind} | "
                     f"{comparison.statuses.get(element.id, 'unresolved')} | {evidence} |"
                 )
             for symbol in sorted(comparison.code_only, key=lambda item: (item.kind, item.name)):
                 lines.append(
-                    f"| {symbol.name} | {symbol.kind.replace('_', ' ')} | code_only | "
+                    f"| {self._cell(symbol.name)} | {symbol.kind.replace('_', ' ')} | code_only | "
                     f"`{symbol.anchor.relative_path}:{symbol.anchor.start_line}` |"
                 )
         lines.extend(["", "## Imported Hardware", ""])
@@ -202,7 +202,9 @@ class ArchitectureExportService:
                 mode = f" ({device.mode})" if device.mode else ""
                 arguments = device.resolved_arguments or device.constructor_arguments
                 lines.append(
-                    f"| {device.owner_symbol} | {device.device_type}{mode} | `{arguments}` | "
+                    f"| {self._cell(device.owner_symbol)} | "
+                    f"{self._cell(device.device_type + mode)} | "
+                    f"`{self._cell(arguments)}` | "
                     f"`{device.anchor.relative_path}:{device.anchor.start_line}` |"
                 )
         else:
@@ -225,8 +227,9 @@ class ArchitectureExportService:
                 ),
             ):
                 lines.append(
-                    f"| {trigger.controller_expression} | {trigger.activation} | "
-                    f"`{trigger.command_expression}` | "
+                    f"| {self._cell(trigger.controller_expression)} | "
+                    f"{self._cell(trigger.activation)} | "
+                    f"`{self._cell(trigger.command_expression)}` | "
                     f"`{trigger.anchor.relative_path}:{trigger.anchor.start_line}` |"
                 )
         else:
@@ -249,6 +252,11 @@ class ArchitectureExportService:
     @staticmethod
     def _description(element: Command | Subsystem) -> str:
         return element.description.effective or "_Not specified._"
+
+    @staticmethod
+    def _cell(value: object) -> str:
+        """Escape table delimiters while retaining deterministic human-readable Markdown."""
+        return str(value).replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>")
 
     def _subsystem_lines(self, subsystem: Subsystem, devices) -> list:  # type: ignore[no-untyped-def]
         lines = [
