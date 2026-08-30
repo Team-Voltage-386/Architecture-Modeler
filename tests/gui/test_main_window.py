@@ -80,6 +80,22 @@ def test_canvas_layout_moves_are_undoable(qtbot) -> None:
     assert block.pos() == after
 
 
+def test_selected_design_block_can_be_deleted_and_undone(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_command("Score")
+    block = next(item for item in window.scene.items() if isinstance(item, ArchitectureBlock))
+    block.setSelected(True)
+
+    assert window.delete_selected()
+    assert window.project is not None
+    assert not window.project.commands
+    window.undo_stack.undo()
+    assert [command.name.effective for command in window.project.commands] == ["Score"]
+
+
 def test_design_devices_and_triggers_appear_on_their_canvas_blocks(qtbot) -> None:
     create_application([])
     window = MainWindow()

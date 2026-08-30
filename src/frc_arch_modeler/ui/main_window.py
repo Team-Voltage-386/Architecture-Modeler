@@ -86,6 +86,29 @@ class MoveBlocksCommand(QUndoCommand):
         self.on_change()
 
 
+class RemoveDesignEntityCommand(QUndoCommand):
+    """Undoable removal of an authored entity once its references are clear."""
+
+    def __init__(
+        self, collection: list, entity: object, label: str, on_change: Callable[[], None]
+    ) -> None:
+        super().__init__(f"Delete {label}")
+        self.collection = collection
+        self.entity = entity
+        self.index = collection.index(entity)
+        self.on_change = on_change
+
+    def redo(self) -> None:
+        if self.entity in self.collection:
+            self.collection.remove(self.entity)
+        self.on_change()
+
+    def undo(self) -> None:
+        if self.entity not in self.collection:
+            self.collection.insert(self.index, self.entity)
+        self.on_change()
+
+
 class MainWindow(QMainWindow):
     """Initial shell that reserves the plan's primary UI regions."""
 
@@ -171,6 +194,11 @@ class MainWindow(QMainWindow):
             "New Relationship", self._prompt_new_relationship
         )
         self.new_relationship_action.setEnabled(False)
+        self.delete_selected_action = toolbar.addAction(
+            "Delete Selected", self._confirm_delete_selected
+        )
+        self.delete_selected_action.setShortcut(QKeySequence(Qt.Key.Key_Delete))
+        self.delete_selected_action.setEnabled(False)
         self.search_field = QLineEdit(self)
         self.search_field.setObjectName("architectureSearch")
         self.search_field.setAccessibleName("Search architecture evidence")
@@ -271,6 +299,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.canvas)
         self.scene.selectionChanged.connect(self._update_selected_element)
         self.scene.selectionChanged.connect(self._update_bind_selected_action)
+        self.scene.selectionChanged.connect(self._update_delete_selected_action)
 
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
@@ -653,6 +682,12 @@ class MainWindow(QMainWindow):
             and self.last_scan is not None
         )
 
+    def _update_delete_selected_action(self) -> None:
+        blocks = self.scene.selected_blocks()
+        self.delete_selected_action.setEnabled(
+            self.project is not None and len(blocks) == 1 and not blocks[0].imported
+        )
+
     def add_command(self, name: str) -> None:
         """Add a command and refresh its deterministic initial canvas position."""
         if self.project is None:
@@ -720,6 +755,63 @@ class MainWindow(QMainWindow):
                 self.project.relationships, relationship, "relationship", self._refresh_after_edit
             )
         )
+
+    def _confirm_delete_selected(self) -> None:
+        if not self.delete_selected():
+            return
+
+    def delete_selected(self) -> bool:
+        """Delete one authored block only when no other design fact depends on it."""
+        if self.project is None:
+            return False
+        blocks = self.scene.selected_blocks()
+        if len(blocks) != 1 or blocks[0].imported:
+            return False
+        element_id = blocks[0].element_id
+        element = next(
+            (
+                item
+                for item in [*self.project.commands, *self.project.subsystems]
+                if item.id == element_id
+            ),
+            None,
+        )
+        if element is None:
+            return False
+        dependencies = [
+            *[
+                "command requirement"
+                for command in self.project.commands
+                if element_id in command.requirement_ids
+            ],
+            *[
+                "device"
+                for device in self.project.devices
+                if device.owner_subsystem_id == element_id
+            ],
+            *["trigger" for trigger in self.project.triggers if trigger.command_id == element_id],
+            *[
+                "relationship"
+                for relationship in self.project.relationships
+                if element_id in {relationship.source_id, relationship.target_id}
+            ],
+        ]
+        if dependencies:
+            QMessageBox.warning(
+                self,
+                "Cannot delete selected element",
+                "Remove dependent " + ", ".join(sorted(set(dependencies))) + " entries first.",
+            )
+            return False
+        collection = (
+            self.project.commands if element in self.project.commands else self.project.subsystems
+        )
+        self.undo_stack.push(
+            RemoveDesignEntityCommand(
+                collection, element, type(element).__name__.lower(), self._refresh_after_edit
+            )
+        )
+        return True
 
     def _refresh_after_edit(self) -> None:
         assert self.project is not None
