@@ -47,7 +47,8 @@ LIFECYCLE_PATTERN = re.compile(
     re.MULTILINE,
 )
 TRIGGER_PATTERN = re.compile(
-    r"(?P<controller>[\w.]+\([^)]*\))\.(?P<activation>onTrue|onFalse|whileTrue|whileFalse|"
+    r"(?P<controller>[\w.]+\([^)]*\)(?:\.\w+\([^)]*\))*)\."
+    r"(?P<activation>onTrue|onFalse|whileTrue|whileFalse|"
     r"toggleOnTrue|toggleOnFalse)\s*\((?P<command>[^;]+?)\)\s*;",
     re.MULTILINE | re.DOTALL,
 )

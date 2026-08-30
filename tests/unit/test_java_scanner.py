@@ -48,6 +48,25 @@ def test_scanner_requires_a_gradle_project(tmp_path) -> None:
         JavaProjectScanner().scan(tmp_path)
 
 
+def test_scanner_preserves_composed_trigger_expression(tmp_path) -> None:
+    (tmp_path / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    source_root = tmp_path / "src" / "main" / "java"
+    source_root.mkdir(parents=True)
+    (source_root / "RobotContainer.java").write_text(
+        """class RobotContainer {
+  void configure() { driver.a().debounce(0.15).whileTrue(new IntakeCommand()); }
+}
+""",
+        encoding="utf-8",
+    )
+
+    result = JavaProjectScanner().scan(tmp_path)
+
+    assert [(trigger.controller_expression, trigger.activation) for trigger in result.triggers] == [
+        ("driver.a().debounce(0.15)", "whileTrue")
+    ]
+
+
 def test_scanner_stops_between_files_when_cancelled() -> None:
     root = Path(__file__).parents[1] / "fixtures" / "java_basic"
 
