@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -145,6 +146,7 @@ class MainWindow(QMainWindow):
         self.scene.layout_changed.connect(self._layout_changed)
         self.scene.layout_move_completed.connect(self._record_layout_move)
         self.scene.block_double_clicked.connect(self._open_compact_details)
+        self.scene.delete_requested.connect(self._confirm_delete_selected)
         self._build_toolbar()
         self._build_canvas()
         self._build_details_dock()
@@ -294,7 +296,6 @@ class MainWindow(QMainWindow):
                 self.new_trigger_action,
                 self.new_relationship_action,
                 self.link_selected_action,
-                self.delete_selected_action,
             ],
         )
         add_group("Filters", list(self._status_filter_actions.values()))
@@ -308,9 +309,9 @@ class MainWindow(QMainWindow):
             ],
         )
         toolbar.addSeparator()
-        icon_root = Path(__file__).resolve().parents[1] / "resources" / "icons"
-        self.undo_action.setIcon(QIcon(str(icon_root / "undo.svg")))
-        self.redo_action.setIcon(QIcon(str(icon_root / "redo.svg")))
+        icon_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3])) / "assets"
+        self.undo_action.setIcon(QIcon(str(icon_root / "ios-undo-e88c9d.svg")))
+        self.redo_action.setIcon(QIcon(str(icon_root / "ios-redo-b88e64.svg")))
         toolbar.addAction(self.undo_action)
         toolbar.addAction(self.redo_action)
         toolbar.addSeparator()

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsTextItem,
+    QMenu,
 )
 
 from frc_arch_modeler.domain.model import ArchitectureProject, Command, ComparisonState, Subsystem
@@ -83,7 +84,7 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.summary = QGraphicsTextItem(self)
         self.summary.setDefaultTextColor(QColor(MUTED_TEXT))
         self.summary.setTextWidth(BLOCK_WIDTH - 24)
-        compact_lines = [line for line in (detail_lines or []) if line][:2]
+        compact_lines = [line for line in (detail_lines or []) if line][:3]
         self.summary.setPlainText("\n".join(compact_lines))
         self.summary.setPos(12, 36)
         status_labels = {
@@ -95,12 +96,10 @@ class ArchitectureBlock(QGraphicsRectItem):
             ComparisonState.SCAN_ERROR: "! SCAN ERROR",
             ComparisonState.CODE_ONLY: "↓ CODE ONLY",
         }
-        caption = status_labels.get(
-            comparison_state, f"{'Imported ' if imported else ''}{kind.upper()}"
-        )
+        caption = status_labels.get(comparison_state, "IMPORTED" if imported else "")
         self.caption = QGraphicsTextItem(caption, self)
         self.caption.setDefaultTextColor(QColor(accent))
-        self.caption.setPos(12, 78 if compact_lines else 58)
+        self.caption.setPos(12, 94 if compact_lines else 58)
 
     def set_minimized(self, minimized: bool) -> None:
         """Collapse optional detail while retaining an identifiable canvas block."""
@@ -116,6 +115,7 @@ class ArchitectureScene(QGraphicsScene):
     layout_changed = Signal()
     layout_move_completed = Signal(object, object)
     block_double_clicked = Signal()
+    delete_requested = Signal()
 
     def __init__(self, parent: object | None = None) -> None:
         super().__init__(parent)
@@ -193,6 +193,22 @@ class ArchitectureScene(QGraphicsScene):
         if isinstance(item, ArchitectureBlock):
             self.block_double_clicked.emit()
         super().mouseDoubleClickEvent(event)
+
+    def contextMenuEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        """Offer deletion only for the authored block the user right-clicked."""
+        item = self.itemAt(event.scenePos(), self.views()[0].transform()) if self.views() else None
+        while item is not None and not isinstance(item, ArchitectureBlock):
+            item = item.parentItem()
+        if isinstance(item, ArchitectureBlock) and not item.imported:
+            self.clearSelection()
+            item.setSelected(True)
+            menu = QMenu()
+            delete_action = menu.addAction("Delete Selected")
+            delete_action.triggered.connect(self.delete_requested.emit)
+            menu.exec(event.screenPos())
+            event.accept()
+            return
+        super().contextMenuEvent(event)
 
     def render_project(
         self,

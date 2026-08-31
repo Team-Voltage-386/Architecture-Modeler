@@ -118,8 +118,8 @@ def test_scene_renders_code_import_as_separate_architecture_layer(qapp) -> None:
     imported_subsystem = next(item for item in imported if item.kind == "subsystem")
     assert imported_command.pen().color().name() == VOLTAGE_YELLOW.lower()
     assert imported_subsystem.pen().color().name() == VOLTAGE_BLUE.lower()
-    assert imported_command.caption.toPlainText() == "Imported COMMAND"
-    assert imported_subsystem.caption.toPlainText() == "Imported SUBSYSTEM"
+    assert imported_command.caption.toPlainText() == "IMPORTED"
+    assert imported_subsystem.caption.toPlainText() == "IMPORTED"
     assert "driver.a() · onTrue" in imported_command.summary.toPlainText()
     assert "SparkMax: 4, MotorType.kBrushless" in imported_subsystem.summary.toPlainText()
     edges = [item for item in scene.items() if isinstance(item, QGraphicsPathItem)]

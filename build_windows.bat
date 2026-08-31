@@ -15,6 +15,7 @@ if not exist "%PYTHON_EXE%" (
     --name "FRC Architecture Modeler" ^
     --paths src ^
     --collect-all tree_sitter_java ^
+    --add-data "%CD%\assets;assets" ^
     --add-data "%CD%\LICENSE;." ^
     --distpath dist ^
     --workpath build\pyinstaller ^
