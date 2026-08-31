@@ -367,6 +367,21 @@ def test_description_edit_undo_and_redo(qtbot) -> None:
     assert window.project.commands[0].description.design == "Drive with joysticks"
 
 
+def test_design_only_description_is_rendered_on_the_canvas_immediately(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_command("Teleop Drive")
+    block = next(item for item in window.scene.items() if isinstance(item, ArchitectureBlock))
+    block.setSelected(True)
+
+    window.edit_selected_description("Drive using the joystick.")
+
+    updated = next(item for item in window.scene.items() if isinstance(item, ArchitectureBlock))
+    assert "Drive using the joystick." in updated.summary.toPlainText()
+
+
 def test_name_edit_undo_and_redo(qtbot) -> None:
     create_application([])
     window = MainWindow()

@@ -43,7 +43,7 @@ from frc_arch_modeler.services.change_request_export import ChangeRequestExportS
 from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.services.reconcile_service import ReconciliationResult, ReconciliationService
-from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
+from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock, ArchitectureScene
 from frc_arch_modeler.ui.details_panel import (
     DetailsPanel,
     EditDescriptionCommand,
@@ -682,6 +682,14 @@ class MainWindow(QMainWindow):
             code_only_symbols=self._code_only_symbols(),
         )
 
+    def _render_preserving_selection(self) -> None:
+        """Refresh block text without disrupting the active details context."""
+        selected_ids = {block.element_id for block in self.scene.selected_blocks()}
+        self._render_with_current_scan()
+        for item in self.scene.items():
+            if isinstance(item, ArchitectureBlock) and item.element_id in selected_ids:
+                item.setSelected(True)
+
     def _toggle_command_forms(self, visible: bool) -> None:
         """Keep inline forms in the inventory unless the user explicitly expands the canvas."""
         self.scene.show_command_forms = visible
@@ -1281,7 +1289,7 @@ class MainWindow(QMainWindow):
 
     def _name_changed(self) -> None:
         self._mark_dirty("Name updated")
-        self._update_selected_element()
+        self._render_preserving_selection()
 
     def _requirements_changed(self) -> None:
         self._mark_dirty("Requirements updated")
@@ -1289,7 +1297,7 @@ class MainWindow(QMainWindow):
 
     def _description_changed(self) -> None:
         self._mark_dirty("Description updated")
-        self._update_selected_element()
+        self._render_preserving_selection()
 
     def _prompt_new_project(self) -> None:
         name, accepted = QInputDialog.getText(self, "New model", "Model name:")
