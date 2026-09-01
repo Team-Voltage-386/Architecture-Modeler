@@ -245,6 +245,7 @@ def test_behavior_toolbar_sits_above_the_behavior_canvas_and_starts_disabled(qtb
         window.new_behavior_end_action,
         window.new_behavior_decision_action,
         window.new_behavior_sync_action,
+        window.new_behavior_join_action,
     ):
         assert not action.isEnabled()
 
@@ -256,13 +257,20 @@ def test_behavior_toolbar_sits_above_the_behavior_canvas_and_starts_disabled(qtb
         window.new_behavior_end_action,
         window.new_behavior_decision_action,
         window.new_behavior_sync_action,
+        window.new_behavior_join_action,
     ):
         assert action.isEnabled()
 
 
 @pytest.mark.parametrize(
     ("kind", "label"),
-    [("start", "Start"), ("end", "End"), ("decision", "Decision"), ("synchronization", "Sync")],
+    [
+        ("start", "Start"),
+        ("end", "End"),
+        ("decision", "Decision"),
+        ("synchronization", "Sync"),
+        ("join", "Join"),
+    ],
 )
 def test_behavior_palette_buttons_add_the_matching_pseudostate(qtbot, kind, label) -> None:
     create_application([])
@@ -450,6 +458,50 @@ def test_behavior_diagram_survives_save_and_reopen(qtbot, tmp_path) -> None:
         item for item in reopened_window.behavior_scene.items() if isinstance(item, StateBlock)
     ]
     assert len(reopened_blocks) == 5
+
+
+def test_recent_model_action_is_hidden_until_a_model_has_been_saved_or_opened(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.open_recent_model_action.isVisible() is False
+
+
+def test_saving_a_model_reveals_the_recent_model_action(qtbot, tmp_path) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+
+    window.save_project(tmp_path)
+
+    assert window.open_recent_model_action.isVisible() is True
+    assert tmp_path.name in window.open_recent_model_action.text()
+    assert window.recent_model_store.load() == tmp_path
+
+
+def test_recent_model_action_survives_a_fresh_main_window_and_reopens_the_model(
+    qtbot, tmp_path
+) -> None:
+    """A relaunch of the app (a new MainWindow) should still see the last model saved
+    by a previous run, since it's tracked on disk rather than in memory."""
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.save_project(tmp_path)
+
+    reopened_window = MainWindow()
+    qtbot.addWidget(reopened_window)
+
+    assert reopened_window.open_recent_model_action.isVisible() is True
+
+    reopened_window._open_recent_model()
+
+    assert reopened_window.project is not None
+    assert reopened_window.project.name == "Competition Robot"
+    assert reopened_window.model_root == tmp_path
 
 
 def test_behavior_model_browser_replaces_inventory_dock_on_behavior_tab(qtbot) -> None:

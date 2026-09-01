@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from frc_arch_modeler.domain.model import ArchitectureProject, Command, ComparisonState, Subsystem
 from frc_arch_modeler.importers.base import ScannedSymbol, ScanResult
+from frc_arch_modeler.ui import edge_routing
 from frc_arch_modeler.ui.theme import MUTED_TEXT, PANEL_BLACK, VOLTAGE_BLUE, VOLTAGE_YELLOW
 
 BLOCK_WIDTH = 210
@@ -737,9 +738,11 @@ class ArchitectureScene(QGraphicsScene):
         source_rect = source.sceneBoundingRect()
         target_rect = target.sceneBoundingRect()
         if shape == "arrow":
-            tip = self._clip_to_rect(target_rect, source_rect.center())
-            direction = target_rect.center() - source_rect.center()
-            marker.setPolygon(self._arrow_polygon(tip, direction))
+            # Read the tip/direction off the edge's actual (possibly routed-around-an-
+            # obstacle) path rather than the straight line between centers, so the
+            # arrowhead still points the way the line actually approaches the target.
+            before, tip = edge_routing.last_segment_endpoints(edge.path())
+            marker.setPolygon(self._arrow_polygon(tip, tip - before))
         else:
             base = self._clip_to_rect(source_rect, target_rect.center())
             marker.setPolygon(self._diamond_polygon(base))
@@ -790,26 +793,40 @@ class ArchitectureScene(QGraphicsScene):
             ]
         )
 
-    @classmethod
+    def _obstacle_rects(self, exclude: set[ArchitectureBlock]) -> list[QRectF]:
+        """Bounding rects of every other visible block, for routing lines around them."""
+        return [
+            item.sceneBoundingRect()
+            for item in self.items()
+            if isinstance(item, ArchitectureBlock) and item not in exclude and item.isVisible()
+        ]
+
     def _requirement_path(
-        cls, command: ArchitectureBlock, subsystem: ArchitectureBlock
+        self, command: ArchitectureBlock, subsystem: ArchitectureBlock
     ) -> QPainterPath:
-        return cls._anchored_line(command.sceneBoundingRect(), subsystem.sceneBoundingRect())
+        return self._anchored_line(
+            command.sceneBoundingRect(),
+            subsystem.sceneBoundingRect(),
+            self._obstacle_rects({command, subsystem}),
+        )
 
-    @classmethod
     def _design_relationship_path(
-        cls, source: ArchitectureBlock, target: ArchitectureBlock
+        self, source: ArchitectureBlock, target: ArchitectureBlock
     ) -> QPainterPath:
-        return cls._anchored_line(source.sceneBoundingRect(), target.sceneBoundingRect())
+        return self._anchored_line(
+            source.sceneBoundingRect(),
+            target.sceneBoundingRect(),
+            self._obstacle_rects({source, target}),
+        )
 
     @classmethod
-    def _anchored_line(cls, source_rect: QRectF, target_rect: QRectF) -> QPainterPath:
-        """Draw straight between the two near-side points, whichever way blocks are arranged."""
+    def _anchored_line(
+        cls, source_rect: QRectF, target_rect: QRectF, obstacles: list[QRectF] | None = None
+    ) -> QPainterPath:
+        """Straight between the two near-side points, routed around other blocks if in the way."""
         start = cls._clip_to_rect(source_rect, target_rect.center())
         end = cls._clip_to_rect(target_rect, source_rect.center())
-        path = QPainterPath(start)
-        path.lineTo(end)
-        return path
+        return edge_routing.route_edge(start, end, obstacles or [])
 
     def _update_edge_paths(self) -> None:
         """Rebuild curves from their endpoints after a block position changes."""

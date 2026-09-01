@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from frc_arch_modeler.domain.model import BehaviorDiagram
+from frc_arch_modeler.ui import edge_routing
 from frc_arch_modeler.ui.architecture_scene import ArchitectureScene, ConnectorHandle
 from frc_arch_modeler.ui.theme import MUTED_TEXT, OFF_WHITE, PANEL_BLACK, VOLTAGE_YELLOW
 
@@ -33,6 +34,7 @@ PSEUDOSTATE_DIAMETER = 30
 DECISION_SIZE = 56
 SYNC_WIDTH = 90
 SYNC_HEIGHT = 14
+JOIN_DIAMETER = 18
 HORIZONTAL_GAP = 70
 ROW_GAP = 130
 STATES_PER_ROW = 3
@@ -45,6 +47,7 @@ _NODE_DIMENSIONS: dict[str, tuple[float, float]] = {
     "end": (PSEUDOSTATE_DIAMETER, PSEUDOSTATE_DIAMETER),
     "decision": (DECISION_SIZE, DECISION_SIZE),
     "synchronization": (SYNC_WIDTH, SYNC_HEIGHT),
+    "join": (JOIN_DIAMETER, JOIN_DIAMETER),
 }
 
 
@@ -65,7 +68,7 @@ class StateBlock(QGraphicsRectItem):
         if kind == "start":
             self.setBrush(QColor(VOLTAGE_YELLOW))
             self.setPen(QPen(QColor(VOLTAGE_YELLOW), 1))
-        elif kind == "synchronization":
+        elif kind in ("synchronization", "join"):
             self.setBrush(QColor(OFF_WHITE))
             self.setPen(QPen(QColor(OFF_WHITE), 1))
         else:
@@ -76,9 +79,10 @@ class StateBlock(QGraphicsRectItem):
             self.title.setDefaultTextColor(QColor("#F4F6FA"))
             self.title.setTextWidth(width - 16)
             self.title.setPos(8, height / 2 - 14)
-        elif kind == "decision":
+        elif kind in ("decision", "join"):
             # The diamond's guard condition is expressed by its outgoing transition
-            # labels, not a caption on the node itself.
+            # labels, not a caption on the node itself; a join is a bare merge point
+            # with no caption at all.
             self.title = None
         else:
             # Pseudostate shapes are too small to hold text; caption sits below instead.
@@ -95,11 +99,11 @@ class StateBlock(QGraphicsRectItem):
         painter.setBrush(self.brush())
         if self.kind == "state":
             painter.drawRoundedRect(self.rect(), 16, 16)
-        elif self.kind in ("start", "synchronization"):
-            if self.kind == "start":
-                painter.drawEllipse(self.rect())
-            else:
+        elif self.kind in ("start", "synchronization", "join"):
+            if self.kind == "synchronization":
                 painter.drawRect(self.rect())
+            else:
+                painter.drawEllipse(self.rect())
         elif self.kind == "end":
             painter.drawEllipse(self.rect())
             painter.setBrush(QColor(VOLTAGE_YELLOW))
@@ -131,10 +135,22 @@ class TransitionEdge(QGraphicsPathItem):
     attributes keep real references and sidestep the conversion entirely.
     """
 
-    def __init__(self, transition_id: object, source_id: UUID, target_id: UUID) -> None:
+    def __init__(
+        self,
+        transition_id: object,
+        source_id: UUID,
+        target_id: UUID,
+        source_anchor: str | None = None,
+        target_anchor: str | None = None,
+    ) -> None:
         super().__init__()
         self.transition_id = transition_id
         self.endpoint_ids: tuple[UUID, UUID] = (source_id, target_id)
+        # A manually-dropped endpoint on a decision diamond fixes it to one of the
+        # diamond's four points, overriding the automatic direction-based choice.
+        # None means "no override -- pick automatically" (the norm for every other kind).
+        self.source_anchor = source_anchor
+        self.target_anchor = target_anchor
         self.base_pen: QPen | None = None
         self.marker: QGraphicsPolygonItem | None = None
         self.label: QGraphicsTextItem | None = None
@@ -174,6 +190,7 @@ class BehaviorScene(QGraphicsScene):
     state_double_clicked = Signal(object)
     transition_delete_requested = Signal(object)
     transition_reattach_requested = Signal(object, str, object)
+    transition_anchor_changed = Signal()
 
     def __init__(self, parent: object | None = None) -> None:
         super().__init__(parent)
@@ -355,7 +372,12 @@ class BehaviorScene(QGraphicsScene):
         self._reattach_line.setPath(path)
 
     def _finish_reattach_drag(self, scene_pos: QPointF) -> None:
-        """Drop the dragged endpoint onto a state to rewire it, unless that's a no-op self-loop."""
+        """Drop the dragged endpoint onto a state to rewire it, unless that's a no-op self-loop.
+
+        Dropping onto a decision diamond also fixes the line to whichever of its four
+        points is nearest the drop, instead of the automatic direction-based point, so
+        the chosen corner sticks even as other blocks move around later.
+        """
         handle = self._reattach_handle
         self._reattach_handle = None
         if self._reattach_line is not None:
@@ -372,9 +394,35 @@ class BehaviorScene(QGraphicsScene):
         fixed_id = target_id if handle.end == "source" else source_id
         if target.state_id == fixed_id:
             return
+        dragged_id = source_id if handle.end == "source" else target_id
+        anchor = (
+            self._nearest_diamond_anchor(target.sceneBoundingRect(), scene_pos)
+            if target.kind == "decision"
+            else None
+        )
+        if handle.end == "source":
+            handle.edge.source_anchor = anchor
+        else:
+            handle.edge.target_anchor = anchor
+        if target.state_id == dragged_id and target.kind == "decision":
+            # Repositioning within the same diamond: just move the connection point,
+            # not a rewire, so it doesn't need its own undo-stack entry.
+            self._update_edge_paths()
+            self.transition_anchor_changed.emit()
+            return
         self.transition_reattach_requested.emit(
             handle.edge.transition_id, handle.end, target.state_id
         )
+
+    @staticmethod
+    def _nearest_diamond_anchor(rect: QRectF, point: QPointF) -> str:
+        """Which of the diamond's four points is closest to a manually dropped endpoint."""
+
+        def distance_squared(anchor: str) -> float:
+            candidate = BehaviorScene._diamond_anchor_point(rect, anchor)
+            return (candidate.x() - point.x()) ** 2 + (candidate.y() - point.y()) ** 2
+
+        return min(("top", "right", "bottom", "left"), key=distance_squared)
 
     def render_diagram(
         self, diagram: BehaviorDiagram | None, layout: dict[str, dict[str, Any]] | None = None
@@ -405,19 +453,47 @@ class BehaviorScene(QGraphicsScene):
             source = blocks.get(transition.source_state_id)
             target = blocks.get(transition.target_state_id)
             if source is not None and target is not None:
-                self._add_transition_edge(source, target, transition.trigger_label, transition.id)
+                edge_layout = layout.get(str(transition.id), {})
+                self._add_transition_edge(
+                    source,
+                    target,
+                    transition.trigger_label,
+                    transition.id,
+                    source_anchor=edge_layout.get("source_anchor"),
+                    target_anchor=edge_layout.get("target_anchor"),
+                )
+        content_rect = QRectF()
+        for block in blocks.values():
+            content_rect = content_rect.united(block.sceneBoundingRect())
+        title_item = QGraphicsTextItem(diagram.name)
+        title_item.setDefaultTextColor(QColor(OFF_WHITE))
+        title_font = title_item.font()
+        title_font.setPointSize(title_font.pointSize() + 4)
+        title_font.setBold(True)
+        title_item.setFont(title_font)
+        title_x = content_rect.left() if not content_rect.isNull() else 0.0
+        title_y = (content_rect.top() if not content_rect.isNull() else 0.0) - 40
+        title_item.setPos(title_x, title_y)
+        self.addItem(title_item)
         self.setSceneRect(self.itemsBoundingRect().adjusted(-80, -80, 80, 80))
 
     def selected_blocks(self) -> list[StateBlock]:
         return [item for item in self.selectedItems() if isinstance(item, StateBlock)]
 
     def layout_state(self) -> dict[str, dict[str, Any]]:
-        """Return independently persistable presentation state for all state nodes."""
-        return {
+        """Return independently persistable presentation state for states and transitions."""
+        state: dict[str, dict[str, Any]] = {
             str(item.state_id): {"x": item.pos().x(), "y": item.pos().y()}
             for item in self.items()
             if isinstance(item, StateBlock)
         }
+        for edge in self._edges:
+            if edge.source_anchor is not None or edge.target_anchor is not None:
+                state[str(edge.transition_id)] = {
+                    "source_anchor": edge.source_anchor,
+                    "target_anchor": edge.target_anchor,
+                }
+        return state
 
     def apply_block_positions(self, positions: dict[UUID, QPointF]) -> None:
         """Apply persisted/undoable positions without recreating the behavior scene."""
@@ -427,10 +503,18 @@ class BehaviorScene(QGraphicsScene):
         self._update_edge_paths()
 
     def _add_transition_edge(
-        self, source: StateBlock, target: StateBlock, trigger_label: str, transition_id: object
+        self,
+        source: StateBlock,
+        target: StateBlock,
+        trigger_label: str,
+        transition_id: object,
+        source_anchor: str | None = None,
+        target_anchor: str | None = None,
     ) -> None:
-        edge = TransitionEdge(transition_id, source.state_id, target.state_id)
-        edge.setPath(self._transition_path(source, target))
+        edge = TransitionEdge(
+            transition_id, source.state_id, target.state_id, source_anchor, target_anchor
+        )
+        edge.setPath(self._transition_path(edge, source, target))
         pen = QPen(QColor(MUTED_TEXT), 1.5, Qt.PenStyle.SolidLine)
         edge.setPen(pen)
         edge.base_pen = pen
@@ -469,12 +553,12 @@ class BehaviorScene(QGraphicsScene):
     def _position_transition_decorations(
         self, edge: TransitionEdge, source: StateBlock, target: StateBlock
     ) -> None:
-        source_rect = source.sceneBoundingRect()
-        target_rect = target.sceneBoundingRect()
         if edge.marker is not None:
-            tip = self._clip_for(target, target_rect, source_rect.center())
-            direction = target_rect.center() - source_rect.center()
-            edge.marker.setPolygon(ArchitectureScene._arrow_polygon(tip, direction))
+            # Read the tip/direction off the edge's actual (possibly routed-around-an-
+            # obstacle) path rather than the straight line between centers, so the
+            # arrowhead still points the way the line actually approaches the target.
+            before, tip = edge_routing.last_segment_endpoints(edge.path())
+            edge.marker.setPolygon(ArchitectureScene._arrow_polygon(tip, tip - before))
         if edge.label is not None:
             midpoint = edge.path().pointAtPercent(0.5)
             label_width = edge.label.boundingRect().width()
@@ -486,16 +570,32 @@ class BehaviorScene(QGraphicsScene):
                 handle.setPos(edge.path().pointAtPercent(percent))
 
     @staticmethod
-    def _clip_for(block: StateBlock, rect: QRectF, towards: QPointF) -> QPointF:
+    def _clip_for(
+        block: StateBlock,
+        rect: QRectF,
+        towards: QPointF,
+        is_incoming: bool = True,
+        anchor: str | None = None,
+    ) -> QPointF:
         """Clip to the node's actual SysML shape, not just its bounding rectangle.
 
         A rectangle clip would land outside a decision diamond's slanted edges or a
         start/end circle's curve, leaving a visible gap between the line and the shape.
+        The decision diamond and the split/merge bar go further and expose specific
+        connection targets -- one of the diamond's four points, or one of the bar's two
+        long sides -- rather than a point anywhere along their boundary. ``is_incoming``
+        says whether this clip point is for a line arriving at ``block`` (True) or
+        leaving it (False); only the split/merge bar cares, so it can keep incoming and
+        outgoing wires on separate sides. ``anchor`` is a manually-chosen diamond point
+        ("top"/"right"/"bottom"/"left") that overrides the automatic direction-based
+        pick once the user has dragged an endpoint onto a specific corner.
         """
-        if block.kind in ("start", "end"):
+        if block.kind in ("start", "end", "join"):
             return BehaviorScene._clip_ellipse(rect, towards)
         if block.kind == "decision":
-            return BehaviorScene._clip_diamond(rect, towards)
+            return BehaviorScene._clip_diamond(rect, towards, anchor)
+        if block.kind == "synchronization":
+            return BehaviorScene._clip_sync_bar(rect, towards, is_incoming)
         return ArchitectureScene._clip_to_rect(rect, towards)
 
     @staticmethod
@@ -511,28 +611,72 @@ class BehaviorScene(QGraphicsScene):
         return QPointF(center.x() + dx / denom, center.y() + dy / denom)
 
     @staticmethod
-    def _clip_diamond(rect: QRectF, towards: QPointF) -> QPointF:
+    def _diamond_anchor_point(rect: QRectF, anchor: str) -> QPointF:
+        center = rect.center()
+        return {
+            "top": QPointF(center.x(), rect.top()),
+            "right": QPointF(rect.right(), center.y()),
+            "bottom": QPointF(center.x(), rect.bottom()),
+            "left": QPointF(rect.left(), center.y()),
+        }[anchor]
+
+    @staticmethod
+    def _clip_diamond(rect: QRectF, towards: QPointF, anchor: str | None = None) -> QPointF:
+        """Snap to whichever of the diamond's four points is nearest ``towards``, or to
+        ``anchor`` directly once the user has manually dragged an endpoint onto one.
+
+        Cameo treats a decision node's top/right/bottom/left points as its only
+        connection targets, so lines converging from similar directions share the
+        same point instead of spreading along an edge at whatever angle they happen
+        to approach from.
+        """
+        if anchor is not None:
+            return BehaviorScene._diamond_anchor_point(rect, anchor)
         center = rect.center()
         dx = towards.x() - center.x()
         dy = towards.y() - center.y()
         if dx == 0 and dy == 0:
-            return center
+            return QPointF(rect.right(), center.y())
         half_width = rect.width() / 2
         half_height = rect.height() / 2
-        denom = abs(dx) / half_width + abs(dy) / half_height
-        scale = 1 / denom if denom else 0.0
-        return QPointF(center.x() + dx * scale, center.y() + dy * scale)
+        if abs(dx) * half_height >= abs(dy) * half_width:
+            return QPointF(rect.right() if dx >= 0 else rect.left(), center.y())
+        return QPointF(center.x(), rect.bottom() if dy >= 0 else rect.top())
 
-    @classmethod
-    def _transition_path(cls, source: StateBlock, target: StateBlock) -> QPainterPath:
-        """Draw straight between the two near-side points, whichever way states are arranged."""
+    @staticmethod
+    def _clip_sync_bar(rect: QRectF, towards: QPointF, is_incoming: bool) -> QPointF:
+        """Fan lines along the bar's top edge (incoming) or bottom edge (outgoing).
+
+        A fork/join bar otherwise clips to whichever edge is geometrically nearest, so
+        incoming and outgoing wires end up mixed on both long edges. Fixing incoming
+        flows to the top and outgoing flows to the bottom keeps the two fans visually
+        separate, the way Cameo draws a split/merge bar.
+        """
+        y = rect.top() if is_incoming else rect.bottom()
+        x = min(max(towards.x(), rect.left()), rect.right())
+        return QPointF(x, y)
+
+    def _obstacle_rects(self, exclude: set[StateBlock]) -> list[QRectF]:
+        """Bounding rects of every other state, for routing transition lines around them."""
+        return [
+            item.sceneBoundingRect()
+            for item in self.items()
+            if isinstance(item, StateBlock) and item not in exclude
+        ]
+
+    def _transition_path(
+        self, edge: TransitionEdge, source: StateBlock, target: StateBlock
+    ) -> QPainterPath:
+        """Straight between the two near-side points, routed around other states if in the way."""
         source_rect = source.sceneBoundingRect()
         target_rect = target.sceneBoundingRect()
-        start = cls._clip_for(source, source_rect, target_rect.center())
-        end = cls._clip_for(target, target_rect, source_rect.center())
-        path = QPainterPath(start)
-        path.lineTo(end)
-        return path
+        start = self._clip_for(
+            source, source_rect, target_rect.center(), is_incoming=False, anchor=edge.source_anchor
+        )
+        end = self._clip_for(
+            target, target_rect, source_rect.center(), is_incoming=True, anchor=edge.target_anchor
+        )
+        return edge_routing.route_edge(start, end, self._obstacle_rects({source, target}))
 
     def _update_edge_paths(self) -> None:
         blocks = {item.state_id: item for item in self.items() if isinstance(item, StateBlock)}
@@ -541,7 +685,7 @@ class BehaviorScene(QGraphicsScene):
             target = blocks.get(edge.endpoint_ids[1])
             if source is None or target is None:
                 continue
-            edge.setPath(self._transition_path(source, target))
+            edge.setPath(self._transition_path(edge, source, target))
             self._position_transition_decorations(edge, source, target)
 
     def selected_transition_ids(self) -> list[object]:

@@ -80,6 +80,42 @@ def test_requirement_edge_runs_horizontally_when_blocks_are_arranged_side_by_sid
     assert abs(end.x() - start.x()) > abs(end.y() - start.y())
 
 
+def test_requirement_edge_routes_around_a_block_placed_between_endpoints(qapp) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    command = Command(name=FieldValue(design="Teleop Drive"), requirement_ids=[drive.id])
+    blocker = Subsystem(name=FieldValue(design="Blocker"))
+    scene = ArchitectureScene()
+    scene.render_project(
+        ArchitectureProject(name="Robot", commands=[command], subsystems=[drive, blocker])
+    )
+    blocker_block = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.element_id == blocker.id
+    )
+
+    # Command, blocker, and subsystem in a single horizontal row: the blocker sits
+    # squarely on the straight line the requirement edge would otherwise take.
+    scene.apply_block_positions(
+        {command.id: QPointF(0, 0), blocker.id: QPointF(300, 0), drive.id: QPointF(600, 0)}
+    )
+
+    edge = next(
+        item
+        for item in scene.items()
+        if isinstance(item, QGraphicsPathItem) and item.toolTip() == "Designed requirement"
+    )
+    path = edge.path()
+    assert path.elementCount() > 2
+    blocker_rect = blocker_block.sceneBoundingRect()
+    points = [
+        QPointF(path.elementAt(i).x, path.elementAt(i).y) for i in range(path.elementCount())
+    ]
+    for p1, p2 in zip(points, points[1:]):
+        midpoint = QPointF((p1.x() + p2.x()) / 2, (p1.y() + p2.y()) / 2)
+        assert not blocker_rect.contains(midpoint)
+
+
 def test_requirement_edge_follows_block_positions(qapp) -> None:
     drive = Subsystem(name=FieldValue(design="Drive"))
     command = Command(name=FieldValue(design="Teleop Drive"), requirement_ids=[drive.id])

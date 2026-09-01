@@ -50,6 +50,7 @@ from frc_arch_modeler.importers.base import ScanResult
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.persistence.draft_store import DraftStore
 from frc_arch_modeler.persistence.layout_store import LayoutStore
+from frc_arch_modeler.persistence.recent_model_store import RecentModelStore
 from frc_arch_modeler.services.change_request_export import ChangeRequestExportService
 from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.project_service import ProjectService
@@ -208,6 +209,7 @@ class MainWindow(QMainWindow):
         self._git_revision_text: str | None = None
         self.is_dirty = False
         self.project_service = ProjectService()
+        self.recent_model_store = RecentModelStore()
         self.export_service = ArchitectureExportService()
         self.change_request_export_service = ChangeRequestExportService()
         self.undo_stack = QUndoStack(self)
@@ -226,6 +228,7 @@ class MainWindow(QMainWindow):
         self.behavior_scene.transition_reattach_requested.connect(
             self._reattach_behavior_transition
         )
+        self.behavior_scene.transition_anchor_changed.connect(self._behavior_layout_changed)
         self._build_toolbar()
         self._build_canvas()
         self._build_details_dock()
@@ -342,7 +345,7 @@ class MainWindow(QMainWindow):
         """Replace a wrapping action strip with compact, named action groups."""
         toolbar.clear()
 
-        def add_group(label: str, actions: list) -> None:  # type: ignore[no-untyped-def]
+        def add_group(label: str, actions: list) -> QMenu:  # type: ignore[no-untyped-def]
             button = QToolButton(toolbar)
             button.setText(label)
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
@@ -351,8 +354,16 @@ class MainWindow(QMainWindow):
             menu.addActions(actions)
             button.setMenu(menu)
             toolbar.addWidget(button)
+            return menu
 
-        add_group("Model", [self.new_model_action, self.open_model_action, self.save_model_action])
+        model_menu = add_group(
+            "Model", [self.new_model_action, self.open_model_action, self.save_model_action]
+        )
+        model_menu.addSeparator()
+        self.open_recent_model_action = model_menu.addAction(
+            "Recent", self._open_recent_model
+        )
+        self._refresh_recent_model_action()
         add_group(
             "Code",
             [
@@ -497,12 +508,16 @@ class MainWindow(QMainWindow):
         self.new_behavior_sync_action = toolbar.addAction(
             "Split/Merge Bar", lambda: self._add_behavior_pseudostate("synchronization")
         )
+        self.new_behavior_join_action = toolbar.addAction(
+            "Join", lambda: self._add_behavior_pseudostate("join")
+        )
         self._behavior_creation_actions = [
             self.new_behavior_state_action,
             self.new_behavior_start_action,
             self.new_behavior_end_action,
             self.new_behavior_decision_action,
             self.new_behavior_sync_action,
+            self.new_behavior_join_action,
         ]
         for action in self._behavior_creation_actions:
             action.setEnabled(False)
@@ -581,6 +596,8 @@ class MainWindow(QMainWindow):
         self.scene.render_project(project, loaded_layout, self.last_scan)
         self.behavior_scene.render_diagram(self._active_behavior_diagram(), loaded_layout)
         self._restore_ui_preferences(layout_store.load_ui())
+        self.recent_model_store.save(self.model_root)
+        self._refresh_recent_model_action()
         if recovered:
             self.is_dirty = True
             self.statusBar().showMessage(f"Recovered unsaved draft: {project.name}")
@@ -602,6 +619,8 @@ class MainWindow(QMainWindow):
         DraftStore(self.model_root).discard()
         self.is_dirty = False
         self.undo_stack.setClean()
+        self.recent_model_store.save(self.model_root)
+        self._refresh_recent_model_action()
         self.statusBar().showMessage(f"Saved design model: {saved_path}")
         self._update_status_indicators()
         return saved_path
@@ -1152,12 +1171,13 @@ class MainWindow(QMainWindow):
         )
 
     def _add_behavior_pseudostate(self, kind: str) -> None:
-        """Drop a SysML start/end/decision/synchronization node onto the behavior diagram."""
+        """Drop a SysML start/end/decision/synchronization/join node onto the behavior diagram."""
         default_labels = {
             "start": "Start",
             "end": "End",
             "decision": "Decision",
             "synchronization": "Sync",
+            "join": "Join",
         }
         self.add_behavior_state(default_labels[kind], kind=kind)
 
@@ -1330,6 +1350,10 @@ class MainWindow(QMainWindow):
         self.undo_stack.push(
             MoveBlocksCommand(self.behavior_scene, before, after, self._layout_changed)
         )
+
+    def _behavior_layout_changed(self) -> None:
+        """A transition's connection point moved without changing the entity it connects to."""
+        self._mark_dirty("Canvas layout updated")
 
     def _confirm_delete_selected(self) -> None:
         if self.diagram_tabs.currentWidget() is self._behavior_tab:
@@ -1761,6 +1785,23 @@ class MainWindow(QMainWindow):
                 self.open_project(Path(root))
             except ValueError as error:
                 QMessageBox.critical(self, "Could not open model", str(error))
+
+    def _open_recent_model(self) -> None:
+        recent_path = self.recent_model_store.load()
+        if recent_path is None:
+            return
+        try:
+            self.open_project(recent_path)
+        except ValueError as error:
+            QMessageBox.critical(self, "Could not open model", str(error))
+
+    def _refresh_recent_model_action(self) -> None:
+        """Reflect the last-opened model (if any) on the Model menu's Recent entry."""
+        recent_path = self.recent_model_store.load()
+        self.open_recent_model_action.setVisible(recent_path is not None)
+        if recent_path is not None:
+            self.open_recent_model_action.setText(f"Recent: {recent_path.name}")
+            self.open_recent_model_action.setToolTip(str(recent_path))
 
     def _prompt_save_project(self) -> None:
         if self.model_root is None:

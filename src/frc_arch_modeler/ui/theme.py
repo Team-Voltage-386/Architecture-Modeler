@@ -78,6 +78,14 @@ def apply_voltage_theme(app: QApplication) -> None:
         }}
         QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {{ color: {MUTED_TEXT}; }}
         QComboBox QAbstractItemView {{ background: {PANEL_BLACK}; color: {OFF_WHITE}; }}
+        QTreeWidget {{ background: {PANEL_BLACK}; color: {OFF_WHITE}; }}
+        QTreeWidget::item {{ padding: 3px 2px; }}
+        QTreeWidget::item:hover {{ background: #232935; }}
+        QTreeWidget::item:selected, QTreeWidget::item:selected:!active {{
+            background: #303846;
+            color: {VOLTAGE_YELLOW};
+            border-left: 3px solid {VOLTAGE_YELLOW};
+        }}
         QPushButton {{ border: 1px solid #4A5568; border-radius: 4px; padding: 6px 10px; }}
         QPushButton:hover {{ border-color: {VOLTAGE_YELLOW}; }}
         """

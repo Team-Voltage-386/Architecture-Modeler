@@ -276,9 +276,12 @@ class Relationship:
 
 
 #: SysML-style pseudostates supported alongside a plain named state. "start"/"end" are the
-#: initial/final markers, "decision" branches on a guard condition, and "synchronization" is a
-#: fork/join bar for concurrent flows.
-BEHAVIOR_STATE_KINDS = frozenset({"state", "start", "end", "decision", "synchronization"})
+#: initial/final markers, "decision" branches on a guard condition, "synchronization" is a
+#: fork/join bar for concurrent flows, and "join" is an unlabeled circular merge point that
+#: simply lets multiple incoming flows converge onto one outgoing line.
+BEHAVIOR_STATE_KINDS = frozenset(
+    {"state", "start", "end", "decision", "synchronization", "join"}
+)
 
 
 @dataclass(slots=True)
