@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from PySide6.QtCore import QPointF, Qt, Signal
-from PySide6.QtGui import QColor, QKeyEvent, QPainterPath, QPen
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QKeyEvent, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import (
+    QGraphicsEllipseItem,
     QGraphicsPathItem,
+    QGraphicsPolygonItem,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsTextItem,
@@ -22,11 +24,39 @@ from frc_arch_modeler.ui.theme import MUTED_TEXT, PANEL_BLACK, VOLTAGE_BLUE, VOL
 BLOCK_WIDTH = 210
 BLOCK_HEIGHT = 116
 HORIZONTAL_GAP = 42
+VERTICAL_GAP = 40
 COMMAND_Y = 0
 SUBSYSTEM_Y = 250
 MATCHED_GREEN = "#35C759"
 MODIFIED_AMBER = "#FFAA33"
 UNRESOLVED_MAGENTA = "#E75BCB"
+
+# UML-flavored notation for authored relationship types: (marker shape, filled).
+RELATIONSHIP_MARKERS: dict[str, tuple[str, bool]] = {
+    "calls": ("arrow", False),
+    "triggers": ("arrow", True),
+    "contains": ("diamond", False),
+    "owns_device": ("diamond", True),
+}
+
+
+class ConnectorHandle(QGraphicsEllipseItem):
+    """Small drag source enabling Visio-style click-and-drag connection drawing."""
+
+    RADIUS = 5.0
+
+    def __init__(self, owner: ArchitectureBlock) -> None:
+        super().__init__(-self.RADIUS, -self.RADIUS, self.RADIUS * 2, self.RADIUS * 2, owner)
+        self.owner = owner
+        self.setBrush(QColor(VOLTAGE_YELLOW))
+        self.setPen(QPen(QColor(PANEL_BLACK), 1))
+        self.setZValue(5)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setToolTip("Drag to draw a relationship")
+
+    def reposition(self) -> None:
+        rect = self.owner.rect()
+        self.setPos(rect.width(), rect.height() / 2)
 
 
 class ArchitectureBlock(QGraphicsRectItem):
@@ -56,6 +86,7 @@ class ArchitectureBlock(QGraphicsRectItem):
             ComparisonState.MATCHED: MATCHED_GREEN,
             ComparisonState.MODIFIED: MODIFIED_AMBER,
             ComparisonState.DESIGN_ONLY: VOLTAGE_YELLOW,
+            ComparisonState.CODE_ONLY: VOLTAGE_BLUE,
             ComparisonState.UNRESOLVED: UNRESOLVED_MAGENTA,
             ComparisonState.AMBIGUOUS: UNRESOLVED_MAGENTA,
             ComparisonState.SCAN_ERROR: "#FF5C5C",
@@ -81,12 +112,20 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.title.setDefaultTextColor(QColor("#F4F6FA"))
         self.title.setTextWidth(BLOCK_WIDTH - 24)
         self.title.setPos(12, 12)
+        title_bottom = self.title.pos().y() + self.title.boundingRect().height()
+
         self.summary = QGraphicsTextItem(self)
         self.summary.setDefaultTextColor(QColor(MUTED_TEXT))
         self.summary.setTextWidth(BLOCK_WIDTH - 24)
         compact_lines = [line for line in (detail_lines or []) if line][:3]
         self.summary.setPlainText("\n".join(compact_lines))
-        self.summary.setPos(12, 36)
+        self.summary.setPos(12, title_bottom + 4)
+        summary_bottom = (
+            self.summary.pos().y() + self.summary.boundingRect().height()
+            if compact_lines
+            else title_bottom
+        )
+
         status_labels = {
             ComparisonState.MATCHED: "✓ MATCHED",
             ComparisonState.MODIFIED: "Δ MODIFIED",
@@ -99,14 +138,30 @@ class ArchitectureBlock(QGraphicsRectItem):
         caption = status_labels.get(comparison_state, "IMPORTED" if imported else "")
         self.caption = QGraphicsTextItem(caption, self)
         self.caption.setDefaultTextColor(QColor(accent))
-        self.caption.setPos(12, 94 if compact_lines else 58)
+        caption_y = summary_bottom + 8
+        self.caption.setPos(12, caption_y)
+
+        # Size the block to fully contain wrapped title/summary/caption text
+        # instead of relying on a fixed height that mechanism text can overflow.
+        self.expanded_height = max(
+            BLOCK_HEIGHT, caption_y + self.caption.boundingRect().height() + 12
+        )
+        self.setRect(0, 0, BLOCK_WIDTH, self.expanded_height)
+
+        # Imported code facts are read-only evidence, not valid relationship endpoints.
+        self.connector_handle: ConnectorHandle | None = None
+        if not imported:
+            self.connector_handle = ConnectorHandle(self)
+            self.connector_handle.reposition()
 
     def set_minimized(self, minimized: bool) -> None:
         """Collapse optional detail while retaining an identifiable canvas block."""
         self.minimized = minimized
-        self.setRect(0, 0, BLOCK_WIDTH, 42 if minimized else BLOCK_HEIGHT)
+        self.setRect(0, 0, BLOCK_WIDTH, 42 if minimized else self.expanded_height)
         self.caption.setVisible(not minimized)
         self.summary.setVisible(not minimized)
+        if self.connector_handle is not None:
+            self.connector_handle.reposition()
 
 
 class ArchitectureScene(QGraphicsScene):
@@ -116,6 +171,7 @@ class ArchitectureScene(QGraphicsScene):
     layout_move_completed = Signal(object, object)
     block_double_clicked = Signal()
     delete_requested = Signal()
+    connection_requested = Signal(object, object, QPointF)
 
     def __init__(self, parent: object | None = None) -> None:
         super().__init__(parent)
@@ -124,9 +180,18 @@ class ArchitectureScene(QGraphicsScene):
         self.show_command_forms = False
         self._search_query = ""
         self._visible_states = set(ComparisonState)
+        self._connection_source: ArchitectureBlock | None = None
+        self._connection_line: QGraphicsPathItem | None = None
+        self._context_menu: QMenu | None = None
         self.selectionChanged.connect(self._update_edge_visibility)
 
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        if event.button() == Qt.MouseButton.LeftButton and self.views():
+            hit = self.itemAt(event.scenePos(), self.views()[0].transform())
+            if isinstance(hit, ConnectorHandle):
+                self._begin_connection_drag(hit.owner, event.scenePos())
+                event.accept()
+                return
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_start_positions = {
                 block.element_id: QPointF(block.pos()) for block in self.selected_blocks()
@@ -134,6 +199,10 @@ class ArchitectureScene(QGraphicsScene):
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        if self._connection_source is not None:
+            self._finish_connection_drag(event.scenePos())
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
         self._update_edge_paths()
         moved_blocks = {
@@ -151,9 +220,49 @@ class ArchitectureScene(QGraphicsScene):
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         """Keep relationship paths visually attached while a selected block is dragged."""
+        if self._connection_source is not None:
+            self._update_connection_drag(event.scenePos())
+            event.accept()
+            return
         super().mouseMoveEvent(event)
         if self._drag_start_positions:
             self._update_edge_paths()
+
+    def _begin_connection_drag(self, source: ArchitectureBlock, scene_pos: QPointF) -> None:
+        """Start a temporary rubber line from a connector handle, Visio-style."""
+        self._connection_source = source
+        self._connection_line = QGraphicsPathItem()
+        self._connection_line.setPen(QPen(QColor(VOLTAGE_YELLOW), 1.5, Qt.PenStyle.DashLine))
+        self._connection_line.setZValue(10)
+        self.addItem(self._connection_line)
+        self._update_connection_drag(scene_pos)
+
+    def _update_connection_drag(self, scene_pos: QPointF) -> None:
+        if self._connection_line is None or self._connection_source is None:
+            return
+        path = QPainterPath(self._connection_source.sceneBoundingRect().center())
+        path.lineTo(scene_pos)
+        self._connection_line.setPath(path)
+
+    def _finish_connection_drag(self, scene_pos: QPointF) -> None:
+        """Emit a connection request only when dropped on a valid, distinct design block."""
+        source = self._connection_source
+        self._connection_source = None
+        if self._connection_line is not None:
+            self.removeItem(self._connection_line)
+            self._connection_line = None
+        if source is None:
+            return
+        target = self.itemAt(scene_pos, self.views()[0].transform()) if self.views() else None
+        while target is not None and not isinstance(target, ArchitectureBlock):
+            target = target.parentItem()
+        if (
+            isinstance(target, ArchitectureBlock)
+            and target is not source
+            and not source.imported
+            and not target.imported
+        ):
+            self.connection_requested.emit(source, target, scene_pos)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Move selected blocks from the keyboard through the normal undoable layout path."""
@@ -205,7 +314,15 @@ class ArchitectureScene(QGraphicsScene):
             menu = QMenu()
             delete_action = menu.addAction("Delete Selected")
             delete_action.triggered.connect(self.delete_requested.emit)
-            menu.exec(event.screenPos())
+            # menu.exec() opens its own nested event loop synchronously, on the same
+            # native call stack as the right-click that's still being dispatched. On
+            # Windows this can leave the mouse grab in a bad state -- the menu never
+            # appears, and a *later* click re-enters our own event handlers while that
+            # stale nested loop is still unwinding underneath, corrupting the process.
+            # popup() shows the menu without blocking, avoiding that reentrancy. Keep a
+            # reference so the menu isn't garbage-collected while still on screen.
+            self._context_menu = menu
+            menu.popup(event.screenPos())
             event.accept()
             return
         super().contextMenuEvent(event)
@@ -219,8 +336,11 @@ class ArchitectureScene(QGraphicsScene):
         code_only_symbols: set[str] | None = None,
     ) -> None:
         """Replace scene contents with a deterministic initial model layout."""
-        self.clear()
+        # Reset the edge cache before clear() destroys the items it points to: deleting a
+        # selected item can fire selectionChanged synchronously, and a handler reacting to
+        # that mid-clear() must not walk stale entries pointing at deleted C++ objects.
         self._edges = []
+        self.clear()
         if project is None:
             if scan is not None:
                 self._add_imported_code(scan, 0, 0)
@@ -247,12 +367,13 @@ class ArchitectureScene(QGraphicsScene):
                 ],
             )
             blocks[command.id] = block
+        subsystem_row_y = self._subsystem_row_y(list(blocks.values()))
         for index, subsystem in enumerate(project.subsystems):
             block = self._add_block(
                 subsystem,
                 "subsystem",
                 index,
-                SUBSYSTEM_Y,
+                subsystem_row_y,
                 layout,
                 statuses,
                 [
@@ -278,10 +399,22 @@ class ArchitectureScene(QGraphicsScene):
                 self._add_design_relationship_edge(source, target, relationship.relationship_type)
         if scan is not None:
             self._add_imported_code(
-                scan, len(project.commands), len(project.subsystems), code_only_symbols
+                scan,
+                len(project.commands),
+                len(project.subsystems),
+                code_only_symbols,
+                subsystem_row_y,
             )
         self.setSceneRect(self.itemsBoundingRect().adjusted(-80, -80, 80, 80))
         self._apply_filters()
+
+    @staticmethod
+    def _subsystem_row_y(command_blocks: list[ArchitectureBlock]) -> float:
+        """Push the subsystem row down when command blocks grow taller than usual."""
+        if not command_blocks:
+            return SUBSYSTEM_Y
+        tallest_bottom = max(block.pos().y() + block.rect().height() for block in command_blocks)
+        return max(SUBSYSTEM_Y, tallest_bottom + VERTICAL_GAP)
 
     def _add_block(
         self,
@@ -325,6 +458,7 @@ class ArchitectureScene(QGraphicsScene):
         command_offset: int,
         subsystem_offset: int,
         code_only_symbols: set[str] | None = None,
+        subsystem_row_y: float = SUBSYSTEM_Y,
     ) -> None:
         code_only_symbols = code_only_symbols or set()
         imported_by_symbol: dict[str, ArchitectureBlock] = {}
@@ -360,10 +494,13 @@ class ArchitectureScene(QGraphicsScene):
             ]
             for symbol in imported_commands
         }
+        imported_command_blocks: list[ArchitectureBlock] = []
         for kind, symbols, offset, y_position in (
             ("command", imported_commands, command_offset, COMMAND_Y),
-            ("subsystem", subsystem_symbols, subsystem_offset, SUBSYSTEM_Y),
+            ("subsystem", subsystem_symbols, subsystem_offset, subsystem_row_y),
         ):
+            if kind == "subsystem":
+                y_position = max(y_position, self._subsystem_row_y(imported_command_blocks))
             for index, symbol in enumerate(symbols):
                 block = self._add_imported_block(
                     symbol,
@@ -381,6 +518,8 @@ class ArchitectureScene(QGraphicsScene):
                 imported_by_symbol[symbol.anchor.qualified_symbol] = block
                 if kind == "subsystem":
                     imported_subsystems[symbol.name.casefold()] = block
+                else:
+                    imported_command_blocks.append(block)
         for relationship in scan.relationships:
             if relationship.kind != "requires":
                 continue
@@ -496,7 +635,11 @@ class ArchitectureScene(QGraphicsScene):
                     visible_ids.add(item.element_id)
         for edge in self._edges:
             endpoint_ids = edge.data(0)
-            edge.setVisible(endpoint_ids <= visible_ids)
+            visible = endpoint_ids <= visible_ids
+            edge.setVisible(visible)
+            marker = edge.data(4)
+            if marker is not None:
+                marker.setVisible(visible)
 
     @staticmethod
     def _block_state(block: ArchitectureBlock) -> ComparisonState:
@@ -516,13 +659,17 @@ class ArchitectureScene(QGraphicsScene):
         for edge in self._edges:
             endpoint_ids = edge.data(0)
             is_connected = bool(selected_ids & endpoint_ids)
-            edge.setOpacity(1.0 if not selected_ids or is_connected else 0.16)
+            opacity = 1.0 if not selected_ids or is_connected else 0.16
+            edge.setOpacity(opacity)
             edge.setPen(edge.data(1))
             if selected_ids and is_connected:
                 active_pen = QPen(edge.data(1))
                 active_pen.setStyle(Qt.PenStyle.SolidLine)
                 active_pen.setWidthF(2.5)
                 edge.setPen(active_pen)
+            marker = edge.data(4)
+            if marker is not None:
+                marker.setOpacity(opacity)
 
     def _add_requirement_edge(
         self,
@@ -547,7 +694,7 @@ class ArchitectureScene(QGraphicsScene):
     def _add_design_relationship_edge(
         self, source: ArchitectureBlock, target: ArchitectureBlock, relationship_type: str
     ) -> None:
-        """Render an explicit authored relationship without confusing it with requires."""
+        """Render an explicit authored relationship with UML-flavored typed notation."""
         edge = QGraphicsPathItem(self._design_relationship_path(source, target))
         pen = QPen(QColor(MUTED_TEXT), 1.25, Qt.PenStyle.DotLine)
         edge.setPen(pen)
@@ -555,29 +702,113 @@ class ArchitectureScene(QGraphicsScene):
         edge.setData(1, pen)
         edge.setData(2, "design_relationship")
         edge.setData(3, (source.element_id, target.element_id))
+        edge.setData(5, relationship_type)
         edge.setToolTip(f"Designed {relationship_type.replace('_', ' ')} relationship")
         edge.setZValue(-1)
         self.addItem(edge)
         self._edges.append(edge)
+        marker = self._create_relationship_marker(relationship_type)
+        edge.setData(4, marker)
+        if marker is not None:
+            marker.setZValue(2)
+            self.addItem(marker)
+            self._position_relationship_marker(edge, source, target)
 
     @staticmethod
-    def _requirement_path(command: ArchitectureBlock, subsystem: ArchitectureBlock) -> QPainterPath:
-        start = command.sceneBoundingRect().bottomLeft() + QPointF(BLOCK_WIDTH / 2, 0)
-        end = subsystem.sceneBoundingRect().topLeft() + QPointF(BLOCK_WIDTH / 2, 0)
-        path = QPainterPath(start)
-        midpoint = (start.y() + end.y()) / 2
-        path.cubicTo(QPointF(start.x(), midpoint), QPointF(end.x(), midpoint), end)
-        return path
+    def _create_relationship_marker(relationship_type: str) -> QGraphicsPolygonItem | None:
+        """Give calls/triggers/contains/owns-device edges distinct arrow or diamond notation."""
+        notation = RELATIONSHIP_MARKERS.get(relationship_type)
+        if notation is None:
+            return None
+        _, filled = notation
+        marker = QGraphicsPolygonItem()
+        marker.setPen(QPen(QColor(MUTED_TEXT), 1.25))
+        if filled:
+            marker.setBrush(QColor(MUTED_TEXT))
+        return marker
+
+    def _position_relationship_marker(
+        self, edge: QGraphicsPathItem, source: ArchitectureBlock, target: ArchitectureBlock
+    ) -> None:
+        marker = edge.data(4)
+        if marker is None:
+            return
+        shape, _ = RELATIONSHIP_MARKERS[edge.data(5)]
+        source_rect = source.sceneBoundingRect()
+        target_rect = target.sceneBoundingRect()
+        if shape == "arrow":
+            tip = self._clip_to_rect(target_rect, source_rect.center())
+            direction = target_rect.center() - source_rect.center()
+            marker.setPolygon(self._arrow_polygon(tip, direction))
+        else:
+            base = self._clip_to_rect(source_rect, target_rect.center())
+            marker.setPolygon(self._diamond_polygon(base))
 
     @staticmethod
-    def _design_relationship_path(
-        source: ArchitectureBlock, target: ArchitectureBlock
+    def _clip_to_rect(rect: QRectF, towards: QPointF) -> QPointF:
+        """Find where a ray from a rect's center toward a point exits the rect's border.
+
+        This is what makes connectors leave from whichever side actually faces the
+        other endpoint, instead of a side fixed at creation time that looks wrong
+        once a block is dragged elsewhere.
+        """
+        center = rect.center()
+        dx = towards.x() - center.x()
+        dy = towards.y() - center.y()
+        if dx == 0 and dy == 0:
+            return center
+        half_width = rect.width() / 2
+        half_height = rect.height() / 2
+        scale_x = half_width / abs(dx) if dx != 0 else float("inf")
+        scale_y = half_height / abs(dy) if dy != 0 else float("inf")
+        scale = min(scale_x, scale_y)
+        return QPointF(center.x() + dx * scale, center.y() + dy * scale)
+
+    @staticmethod
+    def _arrow_polygon(tip: QPointF, direction: QPointF, size: float = 8.0) -> QPolygonF:
+        """Build a triangle pointing along `direction`, so it reads correctly at any angle."""
+        length = (direction.x() ** 2 + direction.y() ** 2) ** 0.5 or 1.0
+        unit_x, unit_y = direction.x() / length, direction.y() / length
+        perp_x, perp_y = -unit_y, unit_x
+        back_x, back_y = tip.x() - unit_x * size, tip.y() - unit_y * size
+        return QPolygonF(
+            [
+                tip,
+                QPointF(back_x + perp_x * size * 0.6, back_y + perp_y * size * 0.6),
+                QPointF(back_x - perp_x * size * 0.6, back_y - perp_y * size * 0.6),
+            ]
+        )
+
+    @staticmethod
+    def _diamond_polygon(center: QPointF, size: float = 7.0) -> QPolygonF:
+        return QPolygonF(
+            [
+                QPointF(center.x() - size, center.y()),
+                QPointF(center.x(), center.y() - size * 0.6),
+                QPointF(center.x() + size, center.y()),
+                QPointF(center.x(), center.y() + size * 0.6),
+            ]
+        )
+
+    @classmethod
+    def _requirement_path(
+        cls, command: ArchitectureBlock, subsystem: ArchitectureBlock
     ) -> QPainterPath:
-        start = source.sceneBoundingRect().center()
-        end = target.sceneBoundingRect().center()
+        return cls._anchored_line(command.sceneBoundingRect(), subsystem.sceneBoundingRect())
+
+    @classmethod
+    def _design_relationship_path(
+        cls, source: ArchitectureBlock, target: ArchitectureBlock
+    ) -> QPainterPath:
+        return cls._anchored_line(source.sceneBoundingRect(), target.sceneBoundingRect())
+
+    @classmethod
+    def _anchored_line(cls, source_rect: QRectF, target_rect: QRectF) -> QPainterPath:
+        """Draw straight between the two near-side points, whichever way blocks are arranged."""
+        start = cls._clip_to_rect(source_rect, target_rect.center())
+        end = cls._clip_to_rect(target_rect, source_rect.center())
         path = QPainterPath(start)
-        midpoint = (start.x() + end.x()) / 2
-        path.cubicTo(QPointF(midpoint, start.y()), QPointF(midpoint, end.y()), end)
+        path.lineTo(end)
         return path
 
     def _update_edge_paths(self) -> None:
@@ -599,3 +830,4 @@ class ArchitectureScene(QGraphicsScene):
                 edge.setPath(self._requirement_path(source, target))
             else:
                 edge.setPath(self._design_relationship_path(source, target))
+                self._position_relationship_marker(edge, source, target)

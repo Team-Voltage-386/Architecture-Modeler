@@ -275,6 +275,126 @@ class Relationship:
         )
 
 
+#: SysML-style pseudostates supported alongside a plain named state. "start"/"end" are the
+#: initial/final markers, "decision" branches on a guard condition, and "synchronization" is a
+#: fork/join bar for concurrent flows.
+BEHAVIOR_STATE_KINDS = frozenset({"state", "start", "end", "decision", "synchronization"})
+
+
+@dataclass(slots=True)
+class BehaviorState:
+    """One node in an authored robot-mode state diagram (a behavioral, not structural, view)."""
+
+    name: FieldValue
+    id: UUID = field(default_factory=uuid4)
+    description: FieldValue = field(default_factory=FieldValue)
+    kind: str = "state"
+
+    def __post_init__(self) -> None:
+        if not (self.name.effective or "").strip():
+            raise ValueError("Behavior states need an effective name.")
+        if self.kind not in BEHAVIOR_STATE_KINDS:
+            raise ValueError(f"Unsupported behavior state kind: {self.kind}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": str(self.id),
+            "name": self.name.to_dict(),
+            "description": self.description.to_dict(),
+            "kind": self.kind,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BehaviorState:
+        return cls(
+            id=UUID(data["id"]),
+            name=FieldValue.from_dict(data["name"]),
+            description=FieldValue.from_dict(data.get("description", {})),
+            kind=data.get("kind", "state"),
+        )
+
+
+@dataclass(slots=True)
+class BehaviorTransition:
+    """An authored, directed edge between two behavior states and its triggering event.
+
+    The label may be empty: transitions leaving a start pseudostate or crossing a
+    synchronization bar are conventionally unlabeled in SysML/UML notation.
+    """
+
+    source_state_id: UUID
+    target_state_id: UUID
+    trigger_label: str
+    id: UUID = field(default_factory=uuid4)
+    command_id: UUID | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": str(self.id),
+            "sourceStateId": str(self.source_state_id),
+            "targetStateId": str(self.target_state_id),
+            "triggerLabel": self.trigger_label,
+            "commandId": str(self.command_id) if self.command_id else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BehaviorTransition:
+        command_id = data.get("commandId")
+        return cls(
+            id=UUID(data["id"]),
+            source_state_id=UUID(data["sourceStateId"]),
+            target_state_id=UUID(data["targetStateId"]),
+            trigger_label=str(data["triggerLabel"]),
+            command_id=UUID(command_id) if command_id else None,
+        )
+
+
+@dataclass(slots=True)
+class BehaviorDiagram:
+    """A SysML-inspired state diagram, editable separately from the structural model."""
+
+    name: str
+    states: list[BehaviorState] = field(default_factory=list)
+    transitions: list[BehaviorTransition] = field(default_factory=list)
+    owner_command_id: UUID | None = None
+    id: UUID = field(default_factory=uuid4)
+
+    def __post_init__(self) -> None:
+        if not self.name.strip():
+            raise ValueError("Behavior diagrams need a name.")
+        state_ids = {state.id for state in self.states}
+        if len(state_ids) != len(self.states):
+            raise ValueError("Behavior states must have unique IDs within a diagram.")
+        if any(
+            transition.source_state_id not in state_ids
+            or transition.target_state_id not in state_ids
+            for transition in self.transitions
+        ):
+            raise ValueError("Behavior transitions must connect states in the same diagram.")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "states": [state.to_dict() for state in self.states],
+            "transitions": [transition.to_dict() for transition in self.transitions],
+            "ownerCommandId": str(self.owner_command_id) if self.owner_command_id else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BehaviorDiagram:
+        owner_command_id = data.get("ownerCommandId")
+        return cls(
+            id=UUID(data["id"]),
+            name=str(data["name"]),
+            states=[BehaviorState.from_dict(item) for item in data.get("states", [])],
+            transitions=[
+                BehaviorTransition.from_dict(item) for item in data.get("transitions", [])
+            ],
+            owner_command_id=UUID(owner_command_id) if owner_command_id else None,
+        )
+
+
 @dataclass(slots=True)
 class ArchitectureProject:
     """Persisted user-authored model, deliberately separate from scan snapshots."""
@@ -285,6 +405,7 @@ class ArchitectureProject:
     devices: list[Device] = field(default_factory=list)
     triggers: list[TriggerBinding] = field(default_factory=list)
     relationships: list[Relationship] = field(default_factory=list)
+    behavior_diagrams: list[BehaviorDiagram] = field(default_factory=list)
     id: UUID = field(default_factory=uuid4)
     schema_version: int = SCHEMA_VERSION
     unknown_fields: dict[str, Any] = field(default_factory=dict)
@@ -302,6 +423,13 @@ class ArchitectureProject:
                 *self.devices,
                 *self.triggers,
                 *self.relationships,
+                *self.behavior_diagrams,
+                *[state for diagram in self.behavior_diagrams for state in diagram.states],
+                *[
+                    transition
+                    for diagram in self.behavior_diagrams
+                    for transition in diagram.transitions
+                ],
             ]
         ]
         if len(element_ids) != len(set(element_ids)):
@@ -318,6 +446,17 @@ class ArchitectureProject:
             for relationship in self.relationships
         ):
             raise ValueError("Relationships must connect entities in the project.")
+        if any(
+            transition.command_id is not None and transition.command_id not in command_ids
+            for diagram in self.behavior_diagrams
+            for transition in diagram.transitions
+        ):
+            raise ValueError("Behavior transitions must reference a command in the project.")
+        if any(
+            diagram.owner_command_id is not None and diagram.owner_command_id not in command_ids
+            for diagram in self.behavior_diagrams
+        ):
+            raise ValueError("Behavior diagrams must reference a command in the project.")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -330,6 +469,7 @@ class ArchitectureProject:
             "devices": [item.to_dict() for item in self.devices],
             "triggers": [item.to_dict() for item in self.triggers],
             "relationships": [item.to_dict() for item in self.relationships],
+            "behaviorDiagrams": [item.to_dict() for item in self.behavior_diagrams],
         }
 
     @classmethod
@@ -343,6 +483,7 @@ class ArchitectureProject:
             "devices",
             "triggers",
             "relationships",
+            "behaviorDiagrams",
         }
         return cls(
             schema_version=int(data["schemaVersion"]),
@@ -353,5 +494,8 @@ class ArchitectureProject:
             devices=[Device.from_dict(item) for item in data.get("devices", [])],
             triggers=[TriggerBinding.from_dict(item) for item in data.get("triggers", [])],
             relationships=[Relationship.from_dict(item) for item in data.get("relationships", [])],
+            behavior_diagrams=[
+                BehaviorDiagram.from_dict(item) for item in data.get("behaviorDiagrams", [])
+            ],
             unknown_fields={key: value for key, value in data.items() if key not in known_keys},
         )

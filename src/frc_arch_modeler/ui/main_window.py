@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread
 from PySide6.QtGui import (
     QCloseEvent,
+    QCursor,
     QIcon,
     QKeySequence,
     QPainter,
@@ -27,14 +30,22 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QStackedWidget,
+    QTabWidget,
     QToolBar,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
-from frc_arch_modeler.domain.model import ArchitectureProject, ComparisonState, SourceAnchor
+from frc_arch_modeler.domain.model import (
+    ArchitectureProject,
+    BehaviorDiagram,
+    ComparisonState,
+    SourceAnchor,
+)
 from frc_arch_modeler.importers.base import ScanResult
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.persistence.draft_store import DraftStore
@@ -43,7 +54,15 @@ from frc_arch_modeler.services.change_request_export import ChangeRequestExportS
 from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.services.reconcile_service import ReconciliationResult, ReconciliationService
-from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock, ArchitectureScene
+from frc_arch_modeler.ui.architecture_scene import (
+    MATCHED_GREEN,
+    MODIFIED_AMBER,
+    UNRESOLVED_MAGENTA,
+    ArchitectureBlock,
+    ArchitectureScene,
+)
+from frc_arch_modeler.ui.behavior_model_browser import BehaviorModelBrowser
+from frc_arch_modeler.ui.behavior_scene import BehaviorScene
 from frc_arch_modeler.ui.details_panel import (
     DetailsPanel,
     EditDescriptionCommand,
@@ -52,6 +71,7 @@ from frc_arch_modeler.ui.details_panel import (
 )
 from frc_arch_modeler.ui.scan_worker import JavaScanWorker
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
+from frc_arch_modeler.ui.theme import OFF_WHITE, VOLTAGE_BLUE, VOLTAGE_YELLOW
 
 DETAILS_DOCK_BREAKPOINT = 1280
 
@@ -120,6 +140,52 @@ class RemoveDesignEntityCommand(QUndoCommand):
         self.on_change()
 
 
+class EditTransitionEndpointsCommand(QUndoCommand):
+    """Undoable rewire of a behavior transition's source or target state."""
+
+    def __init__(
+        self,
+        transition: object,
+        source_state_id: object,
+        target_state_id: object,
+        on_change: Callable[[], None],
+    ) -> None:
+        super().__init__("Reconnect transition")
+        self.transition = transition
+        self.previous = (transition.source_state_id, transition.target_state_id)
+        self.next = (source_state_id, target_state_id)
+        self.on_change = on_change
+
+    def redo(self) -> None:
+        self.transition.source_state_id, self.transition.target_state_id = self.next
+        self.on_change()
+
+    def undo(self) -> None:
+        self.transition.source_state_id, self.transition.target_state_id = self.previous
+        self.on_change()
+
+
+class RenameBehaviorDiagramCommand(QUndoCommand):
+    """Undoable rename of a behavior diagram (plain str name, unlike FieldValue-backed entities)."""
+
+    def __init__(
+        self, diagram: BehaviorDiagram, name: str, on_change: Callable[[], None]
+    ) -> None:
+        super().__init__("Rename behavior diagram")
+        self.diagram = diagram
+        self.previous = diagram.name
+        self.name = name
+        self.on_change = on_change
+
+    def redo(self) -> None:
+        self.diagram.name = self.name
+        self.on_change()
+
+    def undo(self) -> None:
+        self.diagram.name = self.previous
+        self.on_change()
+
+
 class MainWindow(QMainWindow):
     """Initial shell that reserves the plan's primary UI regions."""
 
@@ -137,6 +203,9 @@ class MainWindow(QMainWindow):
         self._pending_scan_root: Path | None = None
         self._pending_scan_action = "Connected"
         self._inventory_symbols: dict[str, object] = {}
+        self._selected_behavior_diagram_id: object = None
+        self._last_scan_time: str | None = None
+        self._git_revision_text: str | None = None
         self.is_dirty = False
         self.project_service = ProjectService()
         self.export_service = ArchitectureExportService()
@@ -147,11 +216,22 @@ class MainWindow(QMainWindow):
         self.scene.layout_move_completed.connect(self._record_layout_move)
         self.scene.block_double_clicked.connect(self._open_compact_details)
         self.scene.delete_requested.connect(self._confirm_delete_selected)
+        self.scene.connection_requested.connect(self._handle_connection_requested)
+        self.behavior_scene = BehaviorScene(self)
+        self.behavior_scene.layout_move_completed.connect(self._record_behavior_layout_move)
+        self.behavior_scene.delete_requested.connect(self._confirm_delete_selected)
+        self.behavior_scene.connection_requested.connect(self._handle_behavior_connection_requested)
+        self.behavior_scene.state_double_clicked.connect(self._prompt_rename_behavior_state)
+        self.behavior_scene.transition_delete_requested.connect(self._delete_behavior_transition)
+        self.behavior_scene.transition_reattach_requested.connect(
+            self._reattach_behavior_transition
+        )
         self._build_toolbar()
         self._build_canvas()
         self._build_details_dock()
         self._build_inventory_dock()
         self._build_legend_dock()
+        self._build_status_bar()
         self.statusBar().showMessage("No robot project connected")
 
     def resizeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
@@ -372,11 +452,61 @@ class MainWindow(QMainWindow):
         self.canvas.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.canvas.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.canvas.setBackgroundBrush(Qt.GlobalColor.black)
-        self.setCentralWidget(self.canvas)
         self.scene.selectionChanged.connect(self._update_selected_element)
         self.scene.selectionChanged.connect(self._update_bind_selected_action)
         self.scene.selectionChanged.connect(self._update_delete_selected_action)
         self.scene.selectionChanged.connect(self._update_link_selected_action)
+
+        self.behavior_canvas = QGraphicsView(self.behavior_scene, self)
+        self.behavior_canvas.setAccessibleName("Behavior canvas")
+        self.behavior_canvas.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.behavior_canvas.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.behavior_canvas.setBackgroundBrush(Qt.GlobalColor.black)
+        self._build_behavior_toolbar()
+
+        self._behavior_tab = QWidget(self)
+        behavior_layout = QVBoxLayout(self._behavior_tab)
+        behavior_layout.setContentsMargins(0, 0, 0, 0)
+        behavior_layout.setSpacing(0)
+        behavior_layout.addWidget(self.behavior_toolbar)
+        behavior_layout.addWidget(self.behavior_canvas)
+
+        self.diagram_tabs = QTabWidget(self)
+        self.diagram_tabs.addTab(self.canvas, "Structure")
+        self.diagram_tabs.addTab(self._behavior_tab, "Behavior")
+        self.diagram_tabs.currentChanged.connect(self._update_delete_selected_action)
+        self.behavior_scene.selectionChanged.connect(self._update_delete_selected_action)
+        self.setCentralWidget(self.diagram_tabs)
+
+    def _build_behavior_toolbar(self) -> None:
+        """A palette of SysML-style node buttons scoped to the Behavior tab, Cameo-style."""
+        toolbar = QToolBar("Behavior palette", self)
+        toolbar.setMovable(False)
+        self.new_behavior_state_action = toolbar.addAction(
+            "New State", self._prompt_new_behavior_state
+        )
+        self.new_behavior_start_action = toolbar.addAction(
+            "Start", lambda: self._add_behavior_pseudostate("start")
+        )
+        self.new_behavior_end_action = toolbar.addAction(
+            "End", lambda: self._add_behavior_pseudostate("end")
+        )
+        self.new_behavior_decision_action = toolbar.addAction(
+            "Decision", lambda: self._add_behavior_pseudostate("decision")
+        )
+        self.new_behavior_sync_action = toolbar.addAction(
+            "Split/Merge Bar", lambda: self._add_behavior_pseudostate("synchronization")
+        )
+        self._behavior_creation_actions = [
+            self.new_behavior_state_action,
+            self.new_behavior_start_action,
+            self.new_behavior_end_action,
+            self.new_behavior_decision_action,
+            self.new_behavior_sync_action,
+        ]
+        for action in self._behavior_creation_actions:
+            action.setEnabled(False)
+        self.behavior_toolbar = toolbar
 
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
@@ -384,6 +514,11 @@ class MainWindow(QMainWindow):
         self.scene.render_project(
             project, scan=self.last_scan, statuses=self._comparison_statuses()
         )
+        self._selected_behavior_diagram_id = (
+            project.behavior_diagrams[0].id if project and project.behavior_diagrams else None
+        )
+        self.behavior_model_browser.rebuild(project, self._selected_behavior_diagram_id)
+        self.behavior_scene.render_diagram(self._active_behavior_diagram())
         self.details_panel.set_element(None)
         self._update_compact_details()
         self.new_command_action.setEnabled(project is not None)
@@ -393,6 +528,8 @@ class MainWindow(QMainWindow):
         self.new_relationship_action.setEnabled(
             project is not None and len(project.commands) + len(project.subsystems) > 1
         )
+        for action in self._behavior_creation_actions:
+            action.setEnabled(project is not None)
         self.save_model_action.setEnabled(project is not None)
         self.auto_layout_action.setEnabled(project is not None)
         self.zoom_to_fit_action.setEnabled(project is not None)
@@ -410,6 +547,7 @@ class MainWindow(QMainWindow):
             self.is_dirty = False
             self.undo_stack.clear()
             self.statusBar().showMessage(f"Design model: {project.name}")
+        self._update_status_indicators()
 
     def new_project(self, name: str) -> ArchitectureProject:
         """Create and display an unsaved design-only project."""
@@ -439,7 +577,9 @@ class MainWindow(QMainWindow):
                 recovered = True
         self.set_project(project)
         layout_store = LayoutStore(self.model_root)
-        self.scene.render_project(project, layout_store.load(), self.last_scan)
+        loaded_layout = layout_store.load()
+        self.scene.render_project(project, loaded_layout, self.last_scan)
+        self.behavior_scene.render_diagram(self._active_behavior_diagram(), loaded_layout)
         self._restore_ui_preferences(layout_store.load_ui())
         if recovered:
             self.is_dirty = True
@@ -457,11 +597,13 @@ class MainWindow(QMainWindow):
         if self.model_root is None:
             raise RuntimeError("Choose a folder for the model before saving.")
         saved_path = self.project_service.save(self.model_root, self.project)
-        LayoutStore(self.model_root).save(self.scene.layout_state(), self._ui_preferences())
+        combined_layout = {**self.scene.layout_state(), **self.behavior_scene.layout_state()}
+        LayoutStore(self.model_root).save(combined_layout, self._ui_preferences())
         DraftStore(self.model_root).discard()
         self.is_dirty = False
         self.undo_stack.setClean()
         self.statusBar().showMessage(f"Saved design model: {saved_path}")
+        self._update_status_indicators()
         return saved_path
 
     def export_architecture(self, root: Path | None = None) -> Path:
@@ -507,12 +649,15 @@ class MainWindow(QMainWindow):
         self.robot_project_root = root
         self.last_scan = scan
         self.reconciliation = None
+        self._last_scan_time = datetime.now().strftime("%H:%M:%S")
+        self._git_revision_text = self._git_revision(root)
         self.refresh_code_action.setEnabled(True)
         self.compare_action.setEnabled(self.project is not None)
         self.export_change_request_action.setEnabled(self.project is not None)
         self._render_with_current_scan()
         self._show_scan_inventory()
         self._show_scan_status(action)
+        self._update_status_indicators()
 
     def refresh_robot_project(self) -> ScanResult | None:
         """Refresh the current code-derived inventory while retaining design edits."""
@@ -777,9 +922,31 @@ class MainWindow(QMainWindow):
         )
 
     def _update_delete_selected_action(self) -> None:
+        """Route the single Delete action/shortcut to whichever diagram tab is active."""
+        if self.diagram_tabs.currentWidget() is self._behavior_tab:
+            blocks = self.behavior_scene.selected_blocks()
+            transitions = self.behavior_scene.selected_transition_ids()
+            self.delete_selected_action.setEnabled(
+                self._active_behavior_diagram() is not None
+                and ((len(blocks) == 1) != (len(transitions) == 1))
+            )
+            return
         blocks = self.scene.selected_blocks()
         self.delete_selected_action.setEnabled(
             self.project is not None and len(blocks) == 1 and not blocks[0].imported
+        )
+
+    def _active_behavior_diagram(self) -> BehaviorDiagram | None:
+        """Return the behavior diagram currently selected in the model browser, if any."""
+        if self.project is None:
+            return None
+        return next(
+            (
+                diagram
+                for diagram in self.project.behavior_diagrams
+                if diagram.id == self._selected_behavior_diagram_id
+            ),
+            None,
         )
 
     def _update_link_selected_action(self) -> None:
@@ -887,7 +1054,287 @@ class MainWindow(QMainWindow):
         )
         return True
 
+    def _handle_connection_requested(self, source_block, target_block, drop_pos) -> None:  # type: ignore[no-untyped-def]
+        """Offer relationship types at the drop point, Visio connector-tool style."""
+        if self.project is None:
+            return
+        menu = QMenu(self)
+        actions: dict[object, str] = {}
+        if source_block.kind == "command" and target_block.kind == "subsystem":
+            action = menu.addAction("Requires (scheduler requirement)")
+            actions[action] = "requires"
+            menu.addSeparator()
+        for label, value in (
+            ("Calls", "calls"),
+            ("Contains", "contains"),
+            ("Triggers", "triggers"),
+            ("Owns Device", "owns_device"),
+        ):
+            action = menu.addAction(label)
+            actions[action] = value
+        chosen = menu.exec(QCursor.pos())
+        relationship_type = actions.get(chosen)
+        if relationship_type is not None:
+            self._apply_requested_connection(source_block, target_block, relationship_type)
+
+    def _apply_requested_connection(  # type: ignore[no-untyped-def]
+        self, source_block, target_block, relationship_type: str
+    ) -> None:
+        """Create the connector-drag's chosen relationship through the normal undo paths."""
+        if self.project is None:
+            return
+        if relationship_type == "requires":
+            command = next(
+                (item for item in self.project.commands if item.id == source_block.element_id),
+                None,
+            )
+            if command is None or target_block.element_id in command.requirement_ids:
+                return
+            self.undo_stack.push(
+                EditRequirementsCommand(
+                    command,
+                    [*command.requirement_ids, target_block.element_id],
+                    self._requirements_changed,
+                )
+            )
+            return
+        self.add_relationship(relationship_type, source_block.element_id, target_block.element_id)
+
+    def _handle_behavior_connection_requested(self, source_block, target_block, drop_pos) -> None:  # type: ignore[no-untyped-def]
+        """Prompt for the triggering event, then add the dragged state transition."""
+        if self._active_behavior_diagram() is None:
+            return
+        trigger_label, accepted = QInputDialog.getText(self, "New transition", "Trigger / event:")
+        if accepted:
+            self.add_behavior_transition(
+                source_block.state_id, target_block.state_id, trigger_label.strip()
+            )
+
+    def _prompt_rename_behavior_state(self, block) -> None:  # type: ignore[no-untyped-def]
+        """Rename a behavior state via a lightweight prompt (no dedicated details panel yet)."""
+        diagram = self._active_behavior_diagram()
+        if diagram is None:
+            return
+        state = next((item for item in diagram.states if item.id == block.state_id), None)
+        if state is None:
+            return
+        name, accepted = QInputDialog.getText(
+            self, "Rename state", "State name:", text=state.name.effective or ""
+        )
+        if accepted and name.strip() and name.strip() != state.name.effective:
+            self.undo_stack.push(
+                EditNameCommand(state, name.strip(), self._refresh_behavior_after_edit)
+            )
+
+    def add_behavior_state(self, name: str, kind: str = "state") -> None:
+        """Add a state (or pseudostate) to the active diagram, creating one first if needed."""
+        if self.project is None:
+            return
+        diagram = self._active_behavior_diagram()
+        if diagram is None:
+            diagram = self.project_service.add_behavior_diagram(self.project, "Untitled Diagram")
+            self.project.behavior_diagrams.remove(diagram)
+            self.undo_stack.push(
+                AddDesignEntityCommand(
+                    self.project.behavior_diagrams,
+                    diagram,
+                    "behavior diagram",
+                    self._refresh_behavior_after_edit,
+                )
+            )
+            self._selected_behavior_diagram_id = diagram.id
+        state = self.project_service.add_behavior_state(diagram, name, kind=kind)
+        diagram.states.remove(state)
+        self.undo_stack.push(
+            AddDesignEntityCommand(
+                diagram.states, state, "state", self._refresh_behavior_after_edit
+            )
+        )
+
+    def _add_behavior_pseudostate(self, kind: str) -> None:
+        """Drop a SysML start/end/decision/synchronization node onto the behavior diagram."""
+        default_labels = {
+            "start": "Start",
+            "end": "End",
+            "decision": "Decision",
+            "synchronization": "Sync",
+        }
+        self.add_behavior_state(default_labels[kind], kind=kind)
+
+    def add_behavior_transition(  # type: ignore[no-untyped-def]
+        self, source_state_id, target_state_id, trigger_label: str
+    ) -> None:
+        """Add a transition to the active behavior diagram through the normal undo path."""
+        diagram = self._active_behavior_diagram()
+        if diagram is None:
+            return
+        transition = self.project_service.add_behavior_transition(
+            diagram, source_state_id, target_state_id, trigger_label
+        )
+        diagram.transitions.remove(transition)
+        self.undo_stack.push(
+            AddDesignEntityCommand(
+                diagram.transitions, transition, "transition", self._refresh_behavior_after_edit
+            )
+        )
+
+    def delete_behavior_selected(self) -> bool:
+        """Delete one selected transition, or one state with no transition depending on it."""
+        diagram = self._active_behavior_diagram()
+        if diagram is None:
+            return False
+        blocks = self.behavior_scene.selected_blocks()
+        transition_ids = self.behavior_scene.selected_transition_ids()
+        if len(transition_ids) == 1 and not blocks:
+            self._delete_behavior_transition(transition_ids[0])
+            return True
+        if len(blocks) != 1:
+            return False
+        state_id = blocks[0].state_id
+        state = next((item for item in diagram.states if item.id == state_id), None)
+        if state is None:
+            return False
+        dependent = [
+            transition
+            for transition in diagram.transitions
+            if state_id in {transition.source_state_id, transition.target_state_id}
+        ]
+        if dependent:
+            QMessageBox.warning(
+                self,
+                "Cannot delete selected state",
+                "Remove dependent transition(s) first.",
+            )
+            return False
+        self.undo_stack.push(
+            RemoveDesignEntityCommand(
+                diagram.states, state, "state", self._refresh_behavior_after_edit
+            )
+        )
+        return True
+
+    def _delete_behavior_transition(self, transition_id: object) -> None:
+        """Delete one transition, e.g. from its right-click context menu."""
+        diagram = self._active_behavior_diagram()
+        if diagram is None:
+            return
+        transition = next((item for item in diagram.transitions if item.id == transition_id), None)
+        if transition is None:
+            return
+        self.undo_stack.push(
+            RemoveDesignEntityCommand(
+                diagram.transitions, transition, "transition", self._refresh_behavior_after_edit
+            )
+        )
+
+    def _reattach_behavior_transition(
+        self, transition_id: object, end: str, new_state_id: object
+    ) -> None:
+        """Rewire a transition's dragged endpoint to a different state through undo."""
+        diagram = self._active_behavior_diagram()
+        if diagram is None:
+            return
+        transition = next((item for item in diagram.transitions if item.id == transition_id), None)
+        if transition is None:
+            return
+        new_source_id = new_state_id if end == "source" else transition.source_state_id
+        new_target_id = new_state_id if end == "target" else transition.target_state_id
+        self.undo_stack.push(
+            EditTransitionEndpointsCommand(
+                transition, new_source_id, new_target_id, self._refresh_behavior_after_edit
+            )
+        )
+
+    def _refresh_behavior_after_edit(self) -> None:
+        assert self.project is not None
+        self.behavior_scene.render_diagram(
+            self._active_behavior_diagram(), self.behavior_scene.layout_state()
+        )
+        self.behavior_model_browser.rebuild(self.project, self._selected_behavior_diagram_id)
+        self._mark_dirty(f"Unsaved design model: {self.project.name}")
+
+    def _select_behavior_diagram(self, diagram_id: object) -> None:
+        """Switch which diagram is rendered/edited, driven by the model browser's selection."""
+        self._selected_behavior_diagram_id = diagram_id
+        self.behavior_scene.render_diagram(self._active_behavior_diagram())
+        self._update_delete_selected_action()
+
+    def _add_root_behavior_diagram(self) -> None:
+        self._create_behavior_diagram(owner_command_id=None)
+
+    def _add_command_behavior_diagram(self, command_id: object) -> None:
+        self._create_behavior_diagram(owner_command_id=command_id)
+
+    def _create_behavior_diagram(self, owner_command_id: object) -> None:
+        if self.project is None:
+            return
+        diagram = self.project_service.add_behavior_diagram(
+            self.project, "Untitled Diagram", owner_command_id
+        )
+        self.project.behavior_diagrams.remove(diagram)
+        self.undo_stack.push(
+            AddDesignEntityCommand(
+                self.project.behavior_diagrams,
+                diagram,
+                "behavior diagram",
+                self._refresh_behavior_after_edit,
+            )
+        )
+        self._selected_behavior_diagram_id = diagram.id
+        self._refresh_behavior_after_edit()
+
+    def _rename_behavior_diagram(self, diagram_id: object) -> None:
+        diagram = next(
+            (
+                item
+                for item in (self.project.behavior_diagrams if self.project else [])
+                if item.id == diagram_id
+            ),
+            None,
+        )
+        if diagram is None:
+            return
+        name, accepted = QInputDialog.getText(
+            self, "Rename diagram", "Diagram name:", text=diagram.name
+        )
+        if accepted and name.strip() and name.strip() != diagram.name:
+            self.undo_stack.push(
+                RenameBehaviorDiagramCommand(
+                    diagram, name.strip(), self._refresh_behavior_after_edit
+                )
+            )
+
+    def _delete_behavior_diagram(self, diagram_id: object) -> None:
+        diagram = next(
+            (
+                item
+                for item in (self.project.behavior_diagrams if self.project else [])
+                if item.id == diagram_id
+            ),
+            None,
+        )
+        if diagram is None:
+            return
+        if self._selected_behavior_diagram_id == diagram_id:
+            self._selected_behavior_diagram_id = None
+        self.undo_stack.push(
+            RemoveDesignEntityCommand(
+                self.project.behavior_diagrams,
+                diagram,
+                "behavior diagram",
+                self._refresh_behavior_after_edit,
+            )
+        )
+
+    def _record_behavior_layout_move(self, before, after) -> None:  # type: ignore[no-untyped-def]
+        self.undo_stack.push(
+            MoveBlocksCommand(self.behavior_scene, before, after, self._layout_changed)
+        )
+
     def _confirm_delete_selected(self) -> None:
+        if self.diagram_tabs.currentWidget() is self._behavior_tab:
+            self.delete_behavior_selected()
+            return
         if not self.delete_selected():
             return
 
@@ -952,6 +1399,8 @@ class MainWindow(QMainWindow):
         self.new_relationship_action.setEnabled(
             len(self.project.commands) + len(self.project.subsystems) > 1
         )
+        # Commands can gain/lose their model-browser node here too (e.g. add/delete command).
+        self.behavior_model_browser.rebuild(self.project, self._selected_behavior_diagram_id)
         self._mark_dirty(f"Unsaved design model: {self.project.name}")
 
     def auto_layout(self) -> None:
@@ -979,6 +1428,7 @@ class MainWindow(QMainWindow):
         if self.project is not None and self.model_root is not None:
             DraftStore(self.model_root).save(self.project)
         self.statusBar().showMessage(message)
+        self._update_status_indicators()
 
     def _layout_changed(self) -> None:
         self._mark_dirty("Canvas layout updated")
@@ -1442,6 +1892,13 @@ class MainWindow(QMainWindow):
         if accepted:
             self.add_relationship(relationship_type, source.id, target.id)
 
+    def _prompt_new_behavior_state(self) -> None:
+        if self.project is None:
+            return
+        name, accepted = QInputDialog.getText(self, "New state", "State name:")
+        if accepted and name.strip():
+            self.add_behavior_state(name.strip())
+
     def _prompt_element(self, title: str, create_element: Callable[[str], None]) -> None:
         name, accepted = QInputDialog.getText(self, title, "Name:")
         if accepted and name.strip():
@@ -1566,20 +2023,137 @@ class MainWindow(QMainWindow):
         self.inventory_tree.setObjectName("codeInventoryTree")
         self.inventory_tree.setHeaderLabels(["Symbol", "Source"])
         self.inventory_tree.itemDoubleClicked.connect(self._open_inventory_source)
-        dock.setWidget(self.inventory_tree)
+        self.behavior_model_browser = BehaviorModelBrowser(dock)
+        self.behavior_model_browser.diagram_selected.connect(self._select_behavior_diagram)
+        self.behavior_model_browser.new_root_diagram_requested.connect(
+            self._add_root_behavior_diagram
+        )
+        self.behavior_model_browser.new_command_diagram_requested.connect(
+            self._add_command_behavior_diagram
+        )
+        self.behavior_model_browser.rename_requested.connect(self._rename_behavior_diagram)
+        self.behavior_model_browser.delete_requested.connect(self._delete_behavior_diagram)
+        self._left_dock_stack = QStackedWidget(dock)
+        self._left_dock_stack.addWidget(self.inventory_tree)
+        self._left_dock_stack.addWidget(self.behavior_model_browser)
+        self._left_dock = dock
+        dock.setWidget(self._left_dock_stack)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+        self.diagram_tabs.currentChanged.connect(self._sync_left_dock_to_active_tab)
+        self._sync_left_dock_to_active_tab(self.diagram_tabs.currentIndex())
+
+    def _sync_left_dock_to_active_tab(self, index: int) -> None:
+        """Show the behavior model browser only while the Behavior tab is active."""
+        on_behavior = self.diagram_tabs.currentWidget() is self._behavior_tab
+        self._left_dock_stack.setCurrentWidget(
+            self.behavior_model_browser if on_behavior else self.inventory_tree
+        )
+        self._left_dock.setWindowTitle("Behavior Diagrams" if on_behavior else "Code Inventory")
 
     def _build_legend_dock(self) -> None:
         dock = QDockWidget("Legend", self)
         dock.setObjectName("legendDock")
-        legend = QLabel(
-            "Command: yellow\nSubsystem: blue\n"
-            "Solid: design intent\nDotted: imported code\nGreen: matched design/code",
-            dock,
-        )
+        legend = QLabel(dock)
+        legend.setTextFormat(Qt.TextFormat.RichText)
         legend.setWordWrap(True)
+        legend.setText(
+            "<b>Block accent</b><br>"
+            f"<span style='color:{VOLTAGE_YELLOW}'>&#9632;</span> Command &nbsp; "
+            f"<span style='color:{VOLTAGE_BLUE}'>&#9632;</span> Subsystem"
+            "<hr>"
+            "<b>Status</b> (badge + border, never color alone)<br>"
+            f"<span style='color:{MATCHED_GREEN}'>&#10003; MATCHED</span> — solid border<br>"
+            f"<span style='color:{MODIFIED_AMBER}'>&Delta; MODIFIED</span> — dash-dot border<br>"
+            f"<span style='color:{VOLTAGE_YELLOW}'>+ DESIGN ONLY</span> — dashed border<br>"
+            f"<span style='color:{VOLTAGE_BLUE}'>&#8595; CODE ONLY</span> — dotted border<br>"
+            f"<span style='color:{UNRESOLVED_MAGENTA}'>? UNRESOLVED / AMBIGUOUS</span><br>"
+            "<span style='color:#FF5C5C'>! SCAN ERROR</span><br>"
+            "IMPORTED — dotted border, no design match yet"
+            "<hr>"
+            "<b>Relationship lines</b><br>"
+            "Dashed — design requirement<br>"
+            f"<span style='color:{VOLTAGE_BLUE}'>Dashed</span> — imported requirement (evidence "
+            "on hover)<br>"
+            "Dotted, hollow arrow — calls<br>"
+            "Dotted, filled arrow — triggers<br>"
+            "Dotted, hollow diamond — contains<br>"
+            "Dotted, filled diamond — owns device<br>"
+            "Bright solid — connected to the current selection"
+            "<hr>"
+            "<b>Drawing a relationship</b><br>"
+            "Drag from a block's small yellow handle onto another block, then pick a type."
+            "<hr>"
+            "<b>Behavior tab</b><br>"
+            "A separate state diagram for robot modes (Disabled/Autonomous/Teleop/Test). "
+            "States and transitions are authored the same way: drag from a state's handle "
+            "onto another state to add a transition. Click a transition line to select it and "
+            "reveal its two yellow endpoint handles — drag one onto a different state to "
+            "reconnect it. Right-click a transition for a Delete Transition option."
+            "<hr>"
+            "<b>Behavior palette</b> (toolbar above the Behavior canvas)<br>"
+            f"<span style='color:{VOLTAGE_YELLOW}'>&#9679;</span> Start — filled circle, "
+            "entry point<br>"
+            f"<span style='color:{VOLTAGE_YELLOW}'>&#9678;</span> End — ringed circle, exit "
+            "point<br>"
+            "&#9670; Decision — diamond, branches on a guard condition<br>"
+            f"<span style='color:{OFF_WHITE}'>&#9644;</span> Split/Merge — bar joining or "
+            "forking concurrent flows<br>"
+            "Transition labels may be left blank for start/end/split-merge edges."
+        )
         dock.setWidget(legend)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+
+    def _build_status_bar(self) -> None:
+        """Reserve the plan's persistent status fields alongside transient action messages."""
+        bar = self.statusBar()
+        self.status_project_label = QLabel("No model", self)
+        self.status_scan_label = QLabel("No robot project connected", self)
+        self.status_warnings_label = QLabel("", self)
+        self.status_dirty_label = QLabel("", self)
+        for label in (
+            self.status_project_label,
+            self.status_scan_label,
+            self.status_warnings_label,
+            self.status_dirty_label,
+        ):
+            label.setContentsMargins(8, 0, 8, 0)
+            bar.addPermanentWidget(label)
+        self._update_status_indicators()
+
+    def _update_status_indicators(self) -> None:
+        """Keep the persistent status fields current without disturbing action messages."""
+        self.status_project_label.setText(
+            f"Model: {self.project.name}" if self.project is not None else "No model"
+        )
+        if self.robot_project_root is not None:
+            scan_time = self._last_scan_time or "not scanned yet"
+            revision = f" @ {self._git_revision_text}" if self._git_revision_text else ""
+            self.status_scan_label.setText(
+                f"Robot: {self.robot_project_root.name}{revision} · scanned {scan_time}"
+            )
+        else:
+            self.status_scan_label.setText("No robot project connected")
+        warning_count = len(self.last_scan.diagnostics) if self.last_scan is not None else 0
+        self.status_warnings_label.setText(
+            f"{warning_count} parse warning(s)" if self.last_scan is not None else ""
+        )
+        self.status_dirty_label.setText("● Unsaved" if self.is_dirty else "Saved")
+
+    @staticmethod
+    def _git_revision(root: Path) -> str | None:
+        """Best-effort short revision when Git is available; never blocks on a scan."""
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if result.returncode != 0:
+            return None
+        return result.stdout.strip() or None
 
     def _open_inventory_source(self, item: QTreeWidgetItem, column: int) -> None:
         symbol_name = item.data(0, Qt.ItemDataRole.UserRole)

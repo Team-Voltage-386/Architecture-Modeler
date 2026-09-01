@@ -47,6 +47,20 @@ def apply_voltage_theme(app: QApplication) -> None:
             color: {VOLTAGE_YELLOW};
         }}
         QStatusBar {{ color: {MUTED_TEXT}; background: {PANEL_BLACK}; }}
+        QTabWidget::pane {{ border: 1px solid #303846; background: {NEAR_BLACK}; }}
+        QTabBar::tab {{
+            background: {PANEL_BLACK};
+            color: {OFF_WHITE};
+            padding: 6px 16px;
+            border: 1px solid #303846;
+            border-bottom: none;
+        }}
+        QTabBar::tab:selected {{
+            background: {NEAR_BLACK};
+            color: {VOLTAGE_YELLOW};
+            border-color: {VOLTAGE_YELLOW};
+        }}
+        QTabBar::tab:!selected:hover {{ background: #303846; color: {OFF_WHITE}; }}
         QLabel {{ color: {OFF_WHITE}; }}
         QLabel:disabled {{ color: {MUTED_TEXT}; }}
         QDialog {{ background: {NEAR_BLACK}; color: {OFF_WHITE}; }}

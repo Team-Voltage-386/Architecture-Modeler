@@ -2,13 +2,14 @@ from pathlib import Path
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QKeyEvent
-from PySide6.QtWidgets import QGraphicsPathItem
+from PySide6.QtWidgets import QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsView
 
 from frc_arch_modeler.domain.model import (
     ArchitectureProject,
     Command,
     ComparisonState,
     FieldValue,
+    Relationship,
     SourceAnchor,
     Subsystem,
 )
@@ -57,6 +58,28 @@ def test_scene_round_trips_block_layout_and_minimized_state(qapp) -> None:
     assert restored_block.minimized
 
 
+def test_requirement_edge_runs_horizontally_when_blocks_are_arranged_side_by_side(qapp) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    command = Command(name=FieldValue(design="Teleop Drive"), requirement_ids=[drive.id])
+    scene = ArchitectureScene()
+    scene.render_project(ArchitectureProject(name="Robot", commands=[command], subsystems=[drive]))
+    command_block = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.kind == "command"
+    )
+
+    # Move the subsystem beside the command instead of the default row-below layout.
+    scene.apply_block_positions(
+        {drive.id: QPointF(command_block.pos().x() + 400, command_block.pos().y())}
+    )
+
+    edge = next(item for item in scene.items() if isinstance(item, QGraphicsPathItem))
+    start = edge.path().pointAtPercent(0)
+    end = edge.path().currentPosition()
+    assert abs(end.x() - start.x()) > abs(end.y() - start.y())
+
+
 def test_requirement_edge_follows_block_positions(qapp) -> None:
     drive = Subsystem(name=FieldValue(design="Drive"))
     command = Command(name=FieldValue(design="Teleop Drive"), requirement_ids=[drive.id])
@@ -73,9 +96,17 @@ def test_requirement_edge_follows_block_positions(qapp) -> None:
         for item in scene.items()
         if isinstance(item, ArchitectureBlock) and item.element_id == drive.id
     )
-    assert edge.path().currentPosition() == drive_block.sceneBoundingRect().topLeft() + QPointF(
-        105, 0
+    command_block = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.element_id == command.id
     )
+    # The edge should now leave from whichever side of the moved block faces the command,
+    # not a side fixed at creation time.
+    expected_end = ArchitectureScene._clip_to_rect(
+        drive_block.sceneBoundingRect(), command_block.sceneBoundingRect().center()
+    )
+    assert edge.path().currentPosition() == expected_end
 
 
 def test_selected_blocks_can_move_by_keyboard_and_emit_layout_change(qapp) -> None:
@@ -256,6 +287,90 @@ def test_modified_status_has_non_color_caption_and_border_style(qapp) -> None:
 
     assert block.caption.toPlainText() == "Δ MODIFIED"
     assert block.pen().style() == Qt.PenStyle.DashDotLine
+
+
+def test_connector_handle_drag_emits_connection_requested_for_valid_drop(qapp) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    command = Command(name=FieldValue(design="Teleop Drive"))
+    scene = ArchitectureScene()
+    view = QGraphicsView(scene)
+    scene.render_project(ArchitectureProject(name="Robot", commands=[command], subsystems=[drive]))
+    command_block = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.kind == "command"
+    )
+    subsystem_block = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.kind == "subsystem"
+    )
+    assert view.scene() is scene
+    assert command_block.connector_handle is not None
+    received = []
+    scene.connection_requested.connect(
+        lambda source, target, pos: received.append((source, target))
+    )
+
+    scene._begin_connection_drag(command_block, command_block.sceneBoundingRect().center())
+    assert scene._connection_line is not None
+    scene._finish_connection_drag(subsystem_block.sceneBoundingRect().center())
+
+    assert scene._connection_line is None
+    assert received == [(command_block, subsystem_block)]
+
+
+def test_connector_handle_drag_ignores_same_block_and_imported_targets(qapp, tmp_path) -> None:
+    command = Command(name=FieldValue(design="Teleop Drive"))
+    scene = ArchitectureScene()
+    view = QGraphicsView(scene)
+    scan = ScanResult(
+        tmp_path,
+        symbols=[
+            ScannedSymbol(
+                "subsystem", "Drive", SourceAnchor("Drive.java", "frc.robot.Drive", 1, 1)
+            )
+        ],
+    )
+    scene.render_project(ArchitectureProject(name="Robot", commands=[command]), scan=scan)
+    command_block = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.kind == "command"
+    )
+    imported_block = next(
+        item for item in scene.items() if isinstance(item, ArchitectureBlock) and item.imported
+    )
+    assert view.scene() is scene
+    assert imported_block.connector_handle is None
+    received = []
+    scene.connection_requested.connect(lambda *args: received.append(args))
+
+    scene._begin_connection_drag(command_block, command_block.sceneBoundingRect().center())
+    scene._finish_connection_drag(command_block.sceneBoundingRect().center())
+    assert received == []
+
+    scene._begin_connection_drag(command_block, command_block.sceneBoundingRect().center())
+    scene._finish_connection_drag(imported_block.sceneBoundingRect().center())
+    assert received == []
+
+
+def test_relationship_types_render_distinct_arrow_or_diamond_markers(qapp) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    intake = Subsystem(name=FieldValue(design="Intake"))
+    scene = ArchitectureScene()
+    scene.render_project(
+        ArchitectureProject(
+            name="Robot",
+            subsystems=[drive, intake],
+            relationships=[Relationship("contains", drive.id, intake.id)],
+        )
+    )
+    edge = next(item for item in scene.items() if isinstance(item, QGraphicsPathItem))
+    marker = edge.data(4)
+    assert isinstance(marker, QGraphicsPolygonItem)
+    assert marker.polygon().count() == 4
+    assert marker.brush().style() == Qt.BrushStyle.NoBrush
 
 
 def test_status_filter_hides_blocks_outside_the_selected_state(qapp) -> None:

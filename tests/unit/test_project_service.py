@@ -15,6 +15,73 @@ def test_create_save_and_open_project(tmp_path) -> None:
     assert reopened.to_dict() == created.to_dict()
 
 
+def test_create_seeds_the_standard_robot_mode_behavior_diagram() -> None:
+    project = ProjectService().create("Competition Robot")
+
+    assert len(project.behavior_diagrams) == 1
+    diagram = project.behavior_diagrams[0]
+    assert diagram.name == "Robot Modes"
+    assert {state.name.effective for state in diagram.states} == {
+        "Disabled",
+        "Autonomous",
+        "Teleop",
+        "Test",
+    }
+    assert len(diagram.transitions) == 5
+
+
+def test_add_behavior_state_defaults_to_plain_state_kind() -> None:
+    service = ProjectService()
+    project = service.create("Competition Robot")
+    diagram = project.behavior_diagrams[0]
+
+    state = service.add_behavior_state(diagram, "Climb")
+
+    assert state.kind == "state"
+    assert state in diagram.states
+
+
+def test_add_behavior_state_accepts_a_pseudostate_kind() -> None:
+    service = ProjectService()
+    project = service.create("Competition Robot")
+    diagram = project.behavior_diagrams[0]
+
+    decision = service.add_behavior_state(diagram, "Ball Detected?", kind="decision")
+
+    assert decision.kind == "decision"
+    assert decision in diagram.states
+
+
+def test_add_behavior_diagram_accepts_owner_command_id() -> None:
+    service = ProjectService()
+    project = service.create("Competition Robot")
+    command = service.add_command(project, "Score Coral")
+
+    diagram = service.add_behavior_diagram(project, "Scoring Sequence", command.id)
+
+    assert diagram.owner_command_id == command.id
+    assert diagram in project.behavior_diagrams
+
+
+def test_add_behavior_diagram_defaults_to_root_level() -> None:
+    service = ProjectService()
+    project = service.create("Competition Robot")
+
+    diagram = service.add_behavior_diagram(project, "Extra Diagram")
+
+    assert diagram.owner_command_id is None
+
+
+def test_rename_behavior_diagram_updates_name() -> None:
+    service = ProjectService()
+    project = service.create("Competition Robot")
+    diagram = project.behavior_diagrams[0]
+
+    service.rename_behavior_diagram(diagram, "Match Modes")
+
+    assert diagram.name == "Match Modes"
+
+
 def test_add_design_elements() -> None:
     service = ProjectService()
     project = service.create("Competition Robot")

@@ -3,11 +3,18 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence, QPalette
-from PySide6.QtWidgets import QDockWidget, QGraphicsPathItem, QMessageBox, QToolButton
+from PySide6.QtWidgets import (
+    QDockWidget,
+    QGraphicsPathItem,
+    QInputDialog,
+    QMessageBox,
+    QToolButton,
+)
 
 from frc_arch_modeler.app import create_application
 from frc_arch_modeler.domain.model import ComparisonState
 from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock
+from frc_arch_modeler.ui.behavior_scene import StateBlock
 from frc_arch_modeler.ui.main_window import MainWindow
 from frc_arch_modeler.ui.theme import MUTED_TEXT, OFF_WHITE
 
@@ -24,6 +31,10 @@ def test_main_window_has_planned_regions(qtbot) -> None:
     assert f"QToolBar QToolButton {{\n            color: {OFF_WHITE};" in app.styleSheet()
     input_selector = "QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QComboBox {"
     assert input_selector in app.styleSheet()
+    assert "QTabBar::tab {" in app.styleSheet()
+    assert "QTabBar::tab:selected {" in app.styleSheet()
+    assert window.diagram_tabs.tabText(0) == "Structure"
+    assert window.diagram_tabs.tabText(1) == "Behavior"
     assert app.palette().color(QPalette.ColorRole.PlaceholderText).name() == MUTED_TEXT.lower()
     assert window.search_field.accessibleName() == "Search architecture evidence"
     assert window.canvas.accessibleName() == "Architecture canvas"
@@ -162,6 +173,424 @@ def test_selected_command_and_subsystem_can_be_linked_as_a_requirement(qtbot) ->
     assert window.project.subsystems[0].id in window.project.commands[0].requirement_ids
     edges = [item for item in window.scene.items() if isinstance(item, QGraphicsPathItem)]
     assert any(item.toolTip() == "Designed requirement" for item in edges)
+
+
+def test_drag_connection_between_command_and_subsystem_offers_requires(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    window.add_command("Teleop Drive")
+    assert window.project is not None
+
+    blocks = [item for item in window.scene.items() if isinstance(item, ArchitectureBlock)]
+    command_block = next(block for block in blocks if block.kind == "command")
+    subsystem_block = next(block for block in blocks if block.kind == "subsystem")
+
+    window._apply_requested_connection(command_block, subsystem_block, "requires")
+
+    assert window.project.subsystems[0].id in window.project.commands[0].requirement_ids
+
+
+def test_drag_connection_creates_typed_relationship(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    window.add_subsystem("Intake")
+    assert window.project is not None
+
+    blocks = [item for item in window.scene.items() if isinstance(item, ArchitectureBlock)]
+    drive_block, intake_block = blocks[0], blocks[1]
+
+    window._apply_requested_connection(drive_block, intake_block, "contains")
+
+    assert len(window.project.relationships) == 1
+    relationship = window.project.relationships[0]
+    assert relationship.relationship_type == "contains"
+    assert relationship.source_id == drive_block.element_id
+    assert relationship.target_id == intake_block.element_id
+
+
+def test_new_project_seeds_and_renders_the_robot_mode_behavior_diagram(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.new_project("Competition Robot")
+
+    assert len(window.project.behavior_diagrams) == 1
+    blocks = [item for item in window.behavior_scene.items() if isinstance(item, StateBlock)]
+    assert {block.title.toPlainText() for block in blocks} == {
+        "Disabled",
+        "Autonomous",
+        "Teleop",
+        "Test",
+    }
+    assert window.new_behavior_state_action.isEnabled()
+
+
+def test_behavior_toolbar_sits_above_the_behavior_canvas_and_starts_disabled(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.behavior_toolbar.parent() is window._behavior_tab
+    assert window.diagram_tabs.widget(1) is window._behavior_tab
+    for action in (
+        window.new_behavior_state_action,
+        window.new_behavior_start_action,
+        window.new_behavior_end_action,
+        window.new_behavior_decision_action,
+        window.new_behavior_sync_action,
+    ):
+        assert not action.isEnabled()
+
+    window.new_project("Competition Robot")
+
+    for action in (
+        window.new_behavior_state_action,
+        window.new_behavior_start_action,
+        window.new_behavior_end_action,
+        window.new_behavior_decision_action,
+        window.new_behavior_sync_action,
+    ):
+        assert action.isEnabled()
+
+
+@pytest.mark.parametrize(
+    ("kind", "label"),
+    [("start", "Start"), ("end", "End"), ("decision", "Decision"), ("synchronization", "Sync")],
+)
+def test_behavior_palette_buttons_add_the_matching_pseudostate(qtbot, kind, label) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+
+    window._add_behavior_pseudostate(kind)
+
+    diagram = window.project.behavior_diagrams[0]
+    added = next(state for state in diagram.states if state.kind == kind)
+    assert added.name.effective == label
+    block = next(
+        item
+        for item in window.behavior_scene.items()
+        if isinstance(item, StateBlock) and item.state_id == added.id
+    )
+    assert block.kind == kind
+
+
+def test_behavior_transition_from_start_pseudostate_allows_blank_trigger(
+    qtbot, monkeypatch
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window._add_behavior_pseudostate("start")
+    diagram = window.project.behavior_diagrams[0]
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: ("", True))
+
+    blocks = {
+        block.title.toPlainText(): block
+        for block in window.behavior_scene.items()
+        if isinstance(block, StateBlock)
+    }
+    window._handle_behavior_connection_requested(blocks["Start"], blocks["Disabled"], QPointF(0, 0))
+
+    assert any(
+        transition.trigger_label == ""
+        and transition.source_state_id == blocks["Start"].state_id
+        and transition.target_state_id == blocks["Disabled"].state_id
+        for transition in diagram.transitions
+    )
+
+
+def test_behavior_transition_created_via_connector_drag_prompts_for_trigger(
+    qtbot, monkeypatch
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    diagram = window.project.behavior_diagrams[0]
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: ("Match starts", True))
+
+    blocks = {
+        block.title.toPlainText(): block
+        for block in window.behavior_scene.items()
+        if isinstance(block, StateBlock)
+    }
+    window._handle_behavior_connection_requested(
+        blocks["Disabled"], blocks["Teleop"], QPointF(0, 0)
+    )
+
+    assert any(
+        transition.trigger_label == "Match starts"
+        and transition.source_state_id == blocks["Disabled"].state_id
+        and transition.target_state_id == blocks["Teleop"].state_id
+        for transition in diagram.transitions
+    )
+
+
+def test_behavior_state_rename_and_dependency_blocked_delete(qtbot, monkeypatch) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    diagram = window.project.behavior_diagrams[0]
+    disabled_state = next(state for state in diagram.states if state.name.effective == "Disabled")
+
+    block = next(
+        item
+        for item in window.behavior_scene.items()
+        if isinstance(item, StateBlock) and item.state_id == disabled_state.id
+    )
+    monkeypatch.setattr(
+        QInputDialog, "getText", lambda *args, **kwargs: ("Robot Disabled", True)
+    )
+    window._prompt_rename_behavior_state(block)
+    assert disabled_state.name.effective == "Robot Disabled"
+
+    # Renaming re-renders the scene, so the state's block is a fresh instance now.
+    block = next(
+        item
+        for item in window.behavior_scene.items()
+        if isinstance(item, StateBlock) and item.state_id == disabled_state.id
+    )
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *args, **kwargs: warnings.append(args) or None
+    )
+    block.setSelected(True)
+    assert not window.delete_behavior_selected()
+    assert warnings
+
+
+def test_behavior_transition_line_deleted_via_right_click_style_signal(qtbot) -> None:
+    """The scene's context menu emits transition_delete_requested; verify the window handles it."""
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    diagram = window.project.behavior_diagrams[0]
+    transition = diagram.transitions[0]
+
+    window.behavior_scene.transition_delete_requested.emit(transition.id)
+
+    assert transition not in diagram.transitions
+    window.undo_stack.undo()
+    assert transition in diagram.transitions
+
+
+def test_selecting_a_transition_line_enables_delete_selected(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.diagram_tabs.setCurrentIndex(1)
+    edge = window.behavior_scene._edges[0]
+
+    assert not window.delete_selected_action.isEnabled()
+
+    edge.setSelected(True)
+    transition_id = edge.transition_id
+
+    assert window.delete_selected_action.isEnabled()
+    assert window.delete_behavior_selected()
+    assert transition_id not in {t.id for t in window.project.behavior_diagrams[0].transitions}
+
+
+def test_dragging_a_transition_endpoint_onto_a_new_state_reconnects_it(qtbot) -> None:
+    """The scene's transition_reattach_requested signal is what an endpoint drag emits."""
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    diagram = window.project.behavior_diagrams[0]
+    transition = next(
+        t for t in diagram.transitions if t.trigger_label == "Autonomous period starts"
+    )
+    original_target_id = transition.target_state_id
+    climb_state = window.project_service.add_behavior_state(diagram, "Climb")
+    window._refresh_behavior_after_edit()
+
+    window.behavior_scene.transition_reattach_requested.emit(
+        transition.id, "target", climb_state.id
+    )
+
+    assert transition.target_state_id == climb_state.id
+    window.undo_stack.undo()
+    assert transition.target_state_id == original_target_id
+
+
+def test_behavior_diagram_survives_save_and_reopen(qtbot, tmp_path) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_behavior_state("Climb")
+    window.save_project(tmp_path)
+
+    reopened_window = MainWindow()
+    qtbot.addWidget(reopened_window)
+    reopened_project = reopened_window.open_project(tmp_path)
+
+    assert {state.name.effective for state in reopened_project.behavior_diagrams[0].states} == {
+        "Disabled",
+        "Autonomous",
+        "Teleop",
+        "Test",
+        "Climb",
+    }
+    reopened_blocks = [
+        item for item in reopened_window.behavior_scene.items() if isinstance(item, StateBlock)
+    ]
+    assert len(reopened_blocks) == 5
+
+
+def test_behavior_model_browser_replaces_inventory_dock_on_behavior_tab(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+
+    assert window._left_dock_stack.currentWidget() is window.inventory_tree
+
+    window.diagram_tabs.setCurrentIndex(1)
+    assert window._left_dock_stack.currentWidget() is window.behavior_model_browser
+
+    window.diagram_tabs.setCurrentIndex(0)
+    assert window._left_dock_stack.currentWidget() is window.inventory_tree
+
+
+def test_model_browser_shows_root_and_command_scoped_diagrams(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_command("Auto Routine")
+    command = window.project.commands[0]
+    window._add_command_behavior_diagram(command.id)
+
+    root_header = window.behavior_model_browser.topLevelItem(0)
+    commands_header = window.behavior_model_browser.topLevelItem(1)
+    assert root_header.text(0) == "Root Diagrams"
+    assert commands_header.text(0) == "Commands"
+    assert root_header.child(0).text(0) == "Robot Modes"
+    command_item = next(
+        commands_header.child(i)
+        for i in range(commands_header.childCount())
+        if commands_header.child(i).data(0, Qt.ItemDataRole.UserRole) == ("command", command.id)
+    )
+    assert command_item.child(0).text(0) == "Untitled Diagram"
+
+
+def test_selecting_a_diagram_in_the_tree_renders_it_on_the_behavior_canvas(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window._add_root_behavior_diagram()
+    second_diagram_id = window.project.behavior_diagrams[1].id
+    first_diagram_id = window.project.behavior_diagrams[0].id
+
+    window._select_behavior_diagram(second_diagram_id)
+    assert window._active_behavior_diagram().id == second_diagram_id
+    assert not any(
+        isinstance(item, StateBlock) for item in window.behavior_scene.items()
+    )
+
+    window._select_behavior_diagram(first_diagram_id)
+    assert window._active_behavior_diagram().id == first_diagram_id
+    assert any(isinstance(item, StateBlock) for item in window.behavior_scene.items())
+
+
+def test_new_root_diagram_action_creates_and_selects_a_diagram(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+
+    window._add_root_behavior_diagram()
+
+    assert len(window.project.behavior_diagrams) == 2
+    new_diagram = window.project.behavior_diagrams[1]
+    assert new_diagram.owner_command_id is None
+    assert window._selected_behavior_diagram_id == new_diagram.id
+
+    window.undo_stack.undo()
+    assert len(window.project.behavior_diagrams) == 1
+
+
+def test_new_command_diagram_action_ties_diagram_to_command(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_command("Auto Routine")
+    command = window.project.commands[0]
+
+    window._add_command_behavior_diagram(command.id)
+
+    new_diagram = window.project.behavior_diagrams[1]
+    assert new_diagram.owner_command_id == command.id
+
+
+def test_rename_behavior_diagram_via_dialog_is_undoable(qtbot, monkeypatch) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    diagram = window.project.behavior_diagrams[0]
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: ("Match Modes", True))
+
+    window._rename_behavior_diagram(diagram.id)
+
+    assert diagram.name == "Match Modes"
+    window.undo_stack.undo()
+    assert diagram.name == "Robot Modes"
+
+
+def test_delete_behavior_diagram_is_undoable_without_confirmation(qtbot, monkeypatch) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    diagram = window.project.behavior_diagrams[0]
+
+    def _fail_if_called(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("Delete must not prompt for confirmation")
+
+    monkeypatch.setattr(QMessageBox, "question", _fail_if_called)
+
+    window._delete_behavior_diagram(diagram.id)
+
+    assert diagram not in window.project.behavior_diagrams
+    assert window._selected_behavior_diagram_id is None
+    window.undo_stack.undo()
+    assert diagram in window.project.behavior_diagrams
+
+
+def test_opening_legacy_project_selects_first_diagram_as_root_level(qtbot, tmp_path) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.save_project(tmp_path)
+    saved_payload = (tmp_path / ".frc-architecture" / "model.json").read_text(encoding="utf-8")
+    assert "ownerCommandId" not in saved_payload or '"ownerCommandId": null' in saved_payload
+
+    reopened_window = MainWindow()
+    qtbot.addWidget(reopened_window)
+    reopened_project = reopened_window.open_project(tmp_path)
+
+    assert reopened_window._selected_behavior_diagram_id == reopened_project.behavior_diagrams[0].id
+    root_header = reopened_window.behavior_model_browser.topLevelItem(0)
+    assert root_header.child(0).text(0) == "Robot Modes"
 
 
 def test_imported_command_details_show_lifecycle_with_inherited_phases(qtbot) -> None:

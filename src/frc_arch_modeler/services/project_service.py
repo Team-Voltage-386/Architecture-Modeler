@@ -7,6 +7,9 @@ from uuid import UUID
 
 from frc_arch_modeler.domain.model import (
     ArchitectureProject,
+    BehaviorDiagram,
+    BehaviorState,
+    BehaviorTransition,
     Command,
     Device,
     FieldValue,
@@ -22,8 +25,10 @@ class ProjectService:
     """Keep model lifecycle behavior independent of the Qt user interface."""
 
     def create(self, name: str) -> ArchitectureProject:
-        """Create an unsaved, design-only project."""
-        return ArchitectureProject(name=name)
+        """Create an unsaved, design-only project with the standard robot-mode behavior view."""
+        project = ArchitectureProject(name=name)
+        self.seed_default_behavior_diagram(project)
+        return project
 
     def open(self, root: Path) -> ArchitectureProject:
         """Open an existing sidecar model from its selected root."""
@@ -90,3 +95,54 @@ class ProjectService:
         relationship = Relationship(relationship_type, source_id, target_id)
         project.relationships.append(relationship)
         return relationship
+
+    def add_behavior_diagram(
+        self, project: ArchitectureProject, name: str, owner_command_id: UUID | None = None
+    ) -> BehaviorDiagram:
+        """Add a separately editable behavioral view, optionally scoped to one command."""
+        diagram = BehaviorDiagram(name=name, owner_command_id=owner_command_id)
+        project.behavior_diagrams.append(diagram)
+        return diagram
+
+    def rename_behavior_diagram(self, diagram: BehaviorDiagram, name: str) -> None:
+        """Rename a behavior diagram in place; caller validates the new name."""
+        diagram.name = name
+
+    def add_behavior_state(
+        self, diagram: BehaviorDiagram, name: str, kind: str = "state"
+    ) -> BehaviorState:
+        """Add a design-only state (or start/end/decision/synchronization pseudostate)."""
+        state = BehaviorState(name=FieldValue(design=name), kind=kind)
+        diagram.states.append(state)
+        return state
+
+    def add_behavior_transition(
+        self,
+        diagram: BehaviorDiagram,
+        source_state_id: UUID,
+        target_state_id: UUID,
+        trigger_label: str,
+        command_id: UUID | None = None,
+    ) -> BehaviorTransition:
+        """Add a directed, triggered edge between two states in the same diagram."""
+        transition = BehaviorTransition(
+            source_state_id, target_state_id, trigger_label, command_id=command_id
+        )
+        diagram.transitions.append(transition)
+        return transition
+
+    def seed_default_behavior_diagram(self, project: ArchitectureProject) -> BehaviorDiagram:
+        """Seed the standard FRC match-mode state machine so the behavior view starts populated."""
+        diagram = self.add_behavior_diagram(project, "Robot Modes")
+        disabled = self.add_behavior_state(diagram, "Disabled")
+        autonomous = self.add_behavior_state(diagram, "Autonomous")
+        teleop = self.add_behavior_state(diagram, "Teleop")
+        test = self.add_behavior_state(diagram, "Test")
+        self.add_behavior_transition(
+            diagram, disabled.id, autonomous.id, "Autonomous period starts"
+        )
+        self.add_behavior_transition(diagram, autonomous.id, teleop.id, "Teleop period starts")
+        self.add_behavior_transition(diagram, teleop.id, disabled.id, "Match ends")
+        self.add_behavior_transition(diagram, disabled.id, test.id, "Test mode enabled")
+        self.add_behavior_transition(diagram, test.id, disabled.id, "Test mode disabled")
+        return diagram

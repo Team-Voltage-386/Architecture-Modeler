@@ -562,6 +562,10 @@ The MVP is successful when a student can:
 8. Refresh after a code change and verify that implemented differences become matched.
 9. Complete these tasks on both a large monitor and a laptop-size display.
 
+## Additional Features
+
+FRC project scope is small enough to capture in one structure diagram, but multiple activity diagrams will be needed. When Behavior tab is active, replace the code inventory with a model browser where we can create multiple named activity diagrams. We should be able to have activity diagrams at the root/top level of the model but also tied to specific commands (tree view)
+
 ## 12. Decisions to confirm after the first spike
 
 The plan can proceed with the following defaults; they do not need to block Phase 0:
