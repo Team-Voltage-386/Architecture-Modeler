@@ -25,8 +25,10 @@ from frc_arch_modeler.domain.model import (
     Subsystem,
 )
 from frc_arch_modeler.importers.base import ScannedSymbol, ScanResult
+from frc_arch_modeler.services.allocation_service import AllocationFinding, other_device_ids
 from frc_arch_modeler.ui import edge_routing
 from frc_arch_modeler.ui.theme import (
+    ALERT_RED,
     MUTED_TEXT,
     NEAR_BLACK,
     OFF_WHITE,
@@ -176,6 +178,26 @@ class DeviceCountChip(QGraphicsRectItem):
         self.setToolTip("Show or hide this subsystem's devices on the canvas")
 
 
+class DeviceAlertBadge(QGraphicsEllipseItem):
+    """A small red dot marking a device with an allocation-conflict finding.
+
+    Clicking it selects the *other* device(s) named in the finding rather than this
+    one, so a duplicate CAN ID can be chased to its twin in one click.
+    """
+
+    RADIUS = 4.0
+
+    def __init__(self, owner: DeviceBlock, findings: tuple[AllocationFinding, ...]) -> None:
+        super().__init__(-self.RADIUS, -self.RADIUS, self.RADIUS * 2, self.RADIUS * 2, owner)
+        self.owner = owner
+        self.findings = findings
+        self.setBrush(QColor(ALERT_RED))
+        self.setPen(QPen(QColor(PANEL_BLACK), 1))
+        self.setZValue(6)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("\n".join(finding.message for finding in findings))
+
+
 class ArchitectureBlock(CanvasBlock):
     """Movable visual representation of one command or subsystem."""
 
@@ -292,6 +314,7 @@ class DeviceBlock(CanvasBlock):
         badge: str = "",
         comparison_state: ComparisonState | None = None,
         search_text: str = "",
+        findings: tuple[AllocationFinding, ...] = (),
     ) -> None:
         super().__init__(
             device_id,
@@ -323,6 +346,11 @@ class DeviceBlock(CanvasBlock):
         self.badge = self._text(badge, VOLTAGE_YELLOW, 7, mono=True)
         self.badge.setPos(DEVICE_BLOCK_WIDTH - 7 - self.badge.boundingRect().width(), 21)
         self.badge.setVisible(bool(badge))
+        self.alert_findings = findings
+        self.alert_badge: DeviceAlertBadge | None = None
+        if findings:
+            self.alert_badge = DeviceAlertBadge(self, findings)
+            self.alert_badge.setPos(DEVICE_BLOCK_WIDTH - 6, 6)
 
     def _text(
         self,
@@ -378,6 +406,10 @@ class ArchitectureScene(QGraphicsScene):
                 self._begin_connection_drag(hit.owner, event.scenePos())
                 event.accept()
                 return
+            if isinstance(hit, DeviceAlertBadge):
+                self._select_other_devices(hit)
+                event.accept()
+                return
             chip = self._chip_at(hit)
             if chip is not None:
                 self.toggle_subsystem_devices(chip.owner.element_id)
@@ -396,6 +428,19 @@ class ArchitectureScene(QGraphicsScene):
         while hit is not None and not isinstance(hit, (DeviceCountChip, CanvasBlock)):
             hit = hit.parentItem()  # type: ignore[attr-defined]
         return hit if isinstance(hit, DeviceCountChip) else None
+
+    def _select_other_devices(self, badge: DeviceAlertBadge) -> None:
+        """Jump from a device's alert badge to whichever device(s) it conflicts with.
+
+        Only currently rendered blocks can be selected; a conflicting device hidden
+        inside a collapsed subsystem group is silently skipped.
+        """
+        device_id = badge.owner.element_id
+        target_ids = set(other_device_ids(device_id, badge.findings)) or {device_id}
+        self.clearSelection()
+        for item in self.items():
+            if isinstance(item, DeviceBlock) and item.element_id in target_ids:
+                item.setSelected(True)
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._connection_source is not None:
@@ -533,6 +578,7 @@ class ArchitectureScene(QGraphicsScene):
         scan: ScanResult | None = None,
         statuses: dict[UUID, ComparisonState] | None = None,
         code_only_symbols: set[str] | None = None,
+        allocation_findings: dict[UUID, list[AllocationFinding]] | None = None,
     ) -> None:
         """Replace scene contents with a deterministic initial model layout."""
         # Reset the edge cache before clear() destroys the items it points to: deleting a
@@ -585,7 +631,7 @@ class ArchitectureScene(QGraphicsScene):
                 subsystem.id in self.expanded_device_subsystems,
             )
             blocks[subsystem.id] = block
-        self._add_device_tier(project, blocks, layout, statuses)
+        self._add_device_tier(project, blocks, layout, statuses, allocation_findings or {})
         for command in project.commands:
             command_block = blocks[command.id]
             for subsystem_id in command.requirement_ids:
@@ -715,6 +761,7 @@ class ArchitectureScene(QGraphicsScene):
         blocks: dict[UUID, ArchitectureBlock],
         layout: dict[str, dict[str, Any]],
         statuses: dict[UUID, ComparisonState],
+        allocation_findings: dict[UUID, list[AllocationFinding]],
     ) -> None:
         """Lay visible devices out on a third row, grouped under the subsystem owning them.
 
@@ -739,7 +786,7 @@ class ArchitectureScene(QGraphicsScene):
                 continue
             group_x = max(cursor_x, owner_block.pos().x())
             for index, device in enumerate(devices):
-                block = self._add_device_block(device, subsystem, statuses)
+                block = self._add_device_block(device, subsystem, statuses, allocation_findings)
                 item_layout = layout.get(str(device.id), {})
                 block.setPos(
                     float(
@@ -779,6 +826,7 @@ class ArchitectureScene(QGraphicsScene):
         device: Device,
         owner: Subsystem,
         statuses: dict[UUID, ComparisonState],
+        allocation_findings: dict[UUID, list[AllocationFinding]],
     ) -> DeviceBlock:
         badge = " ".join(
             part for part in (device.bus.effective, device.address.effective) if part
@@ -804,6 +852,7 @@ class ArchitectureScene(QGraphicsScene):
                     ],
                 )
             ),
+            findings=tuple(allocation_findings.get(device.id, [])),
         )
         self.addItem(block)
         return block

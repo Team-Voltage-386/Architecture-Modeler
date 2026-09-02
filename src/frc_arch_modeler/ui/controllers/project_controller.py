@@ -55,7 +55,12 @@ class ProjectController:
         window.set_project(project)
         layout_store = LayoutStore(window.model_root)
         loaded_layout = layout_store.load()
-        window.scene.render_project(project, loaded_layout, window.last_scan)
+        window.scene.render_project(
+            project,
+            loaded_layout,
+            window.last_scan,
+            allocation_findings=window._allocation_findings(),
+        )
         window.canvas_controller.update_device_view_action()
         window.behavior_scene.render_diagram(window._active_behavior_diagram(), loaded_layout)
         self.restore_ui_preferences(layout_store.load_ui())

@@ -319,7 +319,11 @@ class ElementController:
     def refresh_after_edit(self) -> None:
         window = self.window
         assert window.project is not None
-        window.scene.render_project(window.project, scan=window.last_scan)
+        window.scene.render_project(
+            window.project,
+            scan=window.last_scan,
+            allocation_findings=window._allocation_findings(),
+        )
         window.new_device_action.setEnabled(bool(window.project.subsystems))
         window.new_trigger_action.setEnabled(bool(window.project.commands))
         window.new_relationship_action.setEnabled(

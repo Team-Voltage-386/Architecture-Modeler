@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
+    QHeaderView,
     QLineEdit,
     QTableWidget,
     QTableWidgetItem,
@@ -17,26 +18,36 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from frc_arch_modeler.services.allocation_service import (
+    AllocationFinding,
+    AllocationService,
+    findings_by_device,
+    other_device_ids,
+)
 from frc_arch_modeler.ui import toolbars
 from frc_arch_modeler.ui.architecture_scene import DeviceBlock
 from frc_arch_modeler.ui.details_panel import EditEntityFieldsCommand
 from frc_arch_modeler.ui.entity_dialogs import DeviceDialog
-from frc_arch_modeler.ui.theme import MUTED_TEXT
+from frc_arch_modeler.ui.theme import ALERT_RED, MUTED_TEXT
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from frc_arch_modeler.ui.main_window import MainWindow
 
-COL_SUBSYSTEM = 0
-COL_NAME = 1
-COL_TYPE = 2
-COL_BUS = 3
-COL_ADDRESS = 4
-COL_BREAKER = 5
-COL_MASS = 6
-COL_MODE = 7
-COL_NOTES = 8
+COL_ALERT = 0
+COL_SUBSYSTEM = 1
+COL_NAME = 2
+COL_TYPE = 3
+COL_BUS = 4
+COL_ADDRESS = 5
+COL_BREAKER = 6
+COL_MASS = 7
+COL_MODE = 8
+COL_NOTES = 9
 
 _HEADERS = [
+    "",
     "Subsystem",
     "Name",
     "Type",
@@ -80,6 +91,7 @@ class HardwareController:
         self._filter_text = ""
         self._sort_column = COL_SUBSYSTEM
         self._sort_ascending = True
+        self._findings_by_device: dict[UUID, list[AllocationFinding]] = {}
 
     # -- construction -------------------------------------------------------
 
@@ -100,8 +112,11 @@ class HardwareController:
         table.horizontalHeader().setSortIndicatorShown(True)
         table.horizontalHeader().setSortIndicator(COL_SUBSYSTEM, Qt.SortOrder.AscendingOrder)
         table.horizontalHeader().sectionClicked.connect(window._hardware_column_header_clicked)
+        table.horizontalHeader().setSectionResizeMode(COL_ALERT, QHeaderView.ResizeMode.Fixed)
+        table.setColumnWidth(COL_ALERT, 24)
         table.itemChanged.connect(window._hardware_cell_changed)
         table.itemSelectionChanged.connect(window._sync_canvas_to_hardware_selection)
+        table.cellClicked.connect(window._hardware_alert_cell_clicked)
         window.hardware_table = table
 
         toolbar = QToolBar("Hardware actions", window)
@@ -149,7 +164,9 @@ class HardwareController:
             table.setRowCount(0)
             project = window.project
             if project is None:
+                self._findings_by_device = {}
                 return
+            self._findings_by_device = findings_by_device(AllocationService().check(project))
             devices = sorted(
                 project.devices, key=self._sort_key, reverse=not self._sort_ascending
             )
@@ -169,6 +186,8 @@ class HardwareController:
         table = window.hardware_table
         project = window.project
         assert project is not None
+
+        self._set_alert_item(row, device.id)
 
         subsystem_combo = QComboBox(table)
         for subsystem in project.subsystems:
@@ -221,6 +240,28 @@ class HardwareController:
         if not value:
             item.setForeground(QColor(MUTED_TEXT))
         self.window.hardware_table.setItem(row, column, item)
+
+    def _set_alert_item(self, row: int, device_id: object) -> None:
+        findings = self._findings_by_device.get(device_id, [])
+        item = QTableWidgetItem("⚠" if findings else "")
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        item.setForeground(QColor(ALERT_RED))
+        if findings:
+            item.setToolTip("\n".join(finding.message for finding in findings))
+        self.window.hardware_table.setItem(row, COL_ALERT, item)
+
+    def alert_cell_clicked(self, row: int, column: int) -> None:
+        """Clicking a device's alert badge selects the other device in its conflict."""
+        if column != COL_ALERT:
+            return
+        device_id = self._row_device_id(row)
+        if device_id is None:
+            return
+        findings = self._findings_by_device.get(device_id, [])
+        target_ids = other_device_ids(device_id, findings)
+        if not target_ids:
+            return
+        self._select_row_for_device(target_ids[0])
 
     # -- sorting ----------------------------------------------------------
 

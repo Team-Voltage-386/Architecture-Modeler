@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QDialog
 from frc_arch_modeler.app import create_application
 from frc_arch_modeler.ui.architecture_scene import DeviceBlock
 from frc_arch_modeler.ui.controllers.hardware_controller import (
+    COL_ALERT,
     COL_BREAKER,
     COL_MASS,
     COL_MODE,
@@ -13,7 +14,7 @@ from frc_arch_modeler.ui.controllers.hardware_controller import (
 )
 from frc_arch_modeler.ui.entity_dialogs import DeviceDialog
 from frc_arch_modeler.ui.main_window import MainWindow
-from frc_arch_modeler.ui.theme import MUTED_TEXT
+from frc_arch_modeler.ui.theme import ALERT_RED, MUTED_TEXT
 
 
 def _new_robot_with_two_devices(qtbot):  # type: ignore[no-untyped-def]
@@ -247,3 +248,53 @@ def test_clicking_a_column_header_resorts_the_table(qtbot) -> None:
 
     names = [table.item(row, COL_NAME).text() for row in range(table.rowCount())]
     assert names == ["Left motor", "Flywheel motor"]
+
+
+def _new_robot_with_a_duplicate_can_id(qtbot):  # type: ignore[no-untyped-def]
+    """Two devices on the same subsystem sharing a bus and CAN ID."""
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    assert window.project is not None
+    (drive,) = window.project.subsystems
+    window.add_device(drive.id, "Left motor", "SparkMax", "REAL", "canivore", "5")
+    window.add_device(drive.id, "Right motor", "SparkMax", "REAL", "canivore", "5")
+    return window
+
+
+def test_a_device_with_an_allocation_finding_shows_a_red_alert_badge_in_the_table(
+    qtbot,
+) -> None:
+    window = _new_robot_with_a_duplicate_can_id(qtbot)
+    device = next(d for d in window.project.devices if d.name.effective == "Left motor")
+    row = _row_for_device(window, device.id)
+
+    alert_item = window.hardware_table.item(row, COL_ALERT)
+
+    assert alert_item.text() != ""
+    assert alert_item.foreground().color().name().upper() == ALERT_RED
+    assert "CAN ID" in alert_item.toolTip()
+
+
+def test_a_device_with_no_allocation_finding_shows_no_alert_badge_in_the_table(qtbot) -> None:
+    window = _new_robot_with_two_devices(qtbot)
+    device = next(d for d in window.project.devices if d.name.effective == "Left motor")
+    row = _row_for_device(window, device.id)
+
+    assert window.hardware_table.item(row, COL_ALERT).text() == ""
+
+
+def test_clicking_a_devices_alert_badge_selects_the_conflicting_device_in_the_table(
+    qtbot,
+) -> None:
+    window = _new_robot_with_a_duplicate_can_id(qtbot)
+    left = next(d for d in window.project.devices if d.name.effective == "Left motor")
+    right = next(d for d in window.project.devices if d.name.effective == "Right motor")
+    row = _row_for_device(window, left.id)
+
+    window.hardware_table.cellClicked.emit(row, COL_ALERT)
+
+    selected_rows = {index.row() for index in window.hardware_table.selectedIndexes()}
+    assert selected_rows == {_row_for_device(window, right.id)}

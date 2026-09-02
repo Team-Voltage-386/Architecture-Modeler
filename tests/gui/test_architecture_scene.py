@@ -22,11 +22,13 @@ from frc_arch_modeler.domain.model import (
 )
 from frc_arch_modeler.importers.base import ScannedDevice, ScannedSymbol, ScanResult
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
+from frc_arch_modeler.services.allocation_service import AllocationService, findings_by_device
 from frc_arch_modeler.ui.architecture_scene import (
     SUBSYSTEM_Y,
     ArchitectureBlock,
     ArchitectureScene,
     ConnectorHandle,
+    DeviceAlertBadge,
     DeviceBlock,
     DeviceCountChip,
 )
@@ -695,3 +697,84 @@ def test_clicking_a_count_chip_toggles_only_that_subsystems_devices(qapp) -> Non
     _click_scene(scene, chip.sceneBoundingRect().center())
     assert toggles == [True, True]
     assert scene.expanded_device_subsystems == set()
+
+
+def _robot_with_a_duplicate_can_id() -> tuple[ArchitectureProject, Device, Device]:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    left = Device(
+        name=FieldValue(design="Left motor"),
+        device_type=FieldValue(design="SparkMax"),
+        owner_subsystem_id=drive.id,
+        bus=FieldValue(design="canivore"),
+        address=FieldValue(design="5"),
+    )
+    right = Device(
+        name=FieldValue(design="Right motor"),
+        device_type=FieldValue(design="SparkMax"),
+        owner_subsystem_id=drive.id,
+        bus=FieldValue(design="canivore"),
+        address=FieldValue(design="5"),
+    )
+    project = ArchitectureProject(name="Robot", subsystems=[drive], devices=[left, right])
+    return project, left, right
+
+
+def test_a_device_with_an_allocation_finding_shows_a_red_alert_badge(qapp) -> None:
+    project, left, _ = _robot_with_a_duplicate_can_id()
+    scene = ArchitectureScene()
+    scene.device_view_state = "expanded"
+
+    scene.render_project(
+        project, allocation_findings=findings_by_device(AllocationService().check(project))
+    )
+
+    blocks = {
+        item.element_id: item for item in scene.items() if isinstance(item, DeviceBlock)
+    }
+    assert blocks[left.id].alert_badge is not None
+    assert blocks[left.id].alert_badge.isVisible()
+
+
+def test_a_device_with_no_allocation_finding_shows_no_alert_badge(qapp) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    solenoid = Device(
+        name=FieldValue(design="Shifter"),
+        device_type=FieldValue(design="Solenoid"),
+        owner_subsystem_id=drive.id,
+        bus=FieldValue(design="pdh"),
+        address=FieldValue(design="1"),
+    )
+    project = ArchitectureProject(name="Robot", subsystems=[drive], devices=[solenoid])
+    scene = ArchitectureScene()
+    scene.device_view_state = "expanded"
+
+    scene.render_project(
+        project, allocation_findings=findings_by_device(AllocationService().check(project))
+    )
+
+    blocks = [item for item in scene.items() if isinstance(item, DeviceBlock)]
+    assert blocks and all(block.alert_badge is None for block in blocks)
+
+
+def test_clicking_a_devices_alert_badge_selects_the_conflicting_device(qapp) -> None:
+    project, left, right = _robot_with_a_duplicate_can_id()
+    scene = ArchitectureScene()
+    view = QGraphicsView(scene)
+    scene.device_view_state = "expanded"
+    scene.render_project(
+        project, allocation_findings=findings_by_device(AllocationService().check(project))
+    )
+    assert view.scene() is scene
+    blocks = {
+        item.element_id: item for item in scene.items() if isinstance(item, DeviceBlock)
+    }
+    left_badge = next(
+        item
+        for item in blocks[left.id].childItems()
+        if isinstance(item, DeviceAlertBadge)
+    )
+
+    _click_scene(scene, left_badge.sceneBoundingRect().center())
+
+    assert blocks[right.id].isSelected()
+    assert not blocks[left.id].isSelected()

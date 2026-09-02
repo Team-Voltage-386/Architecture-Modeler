@@ -11,6 +11,7 @@ NEAR_BLACK = "#111318"
 PANEL_BLACK = "#1A1E26"
 OFF_WHITE = "#F4F6FA"
 MUTED_TEXT = "#AAB5C7"
+ALERT_RED = "#FF5C5C"
 
 
 def apply_voltage_theme(app: QApplication) -> None:

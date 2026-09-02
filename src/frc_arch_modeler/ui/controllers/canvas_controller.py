@@ -8,10 +8,17 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QGraphicsView, QTabWidget, QVBoxLayout, QWidget
 
+from frc_arch_modeler.services.allocation_service import (
+    AllocationFinding,
+    AllocationService,
+    findings_by_device,
+)
 from frc_arch_modeler.ui.architecture_scene import CanvasBlock
 from frc_arch_modeler.ui.undo_commands import MoveBlocksCommand
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from frc_arch_modeler.ui.main_window import MainWindow
 
 
@@ -96,7 +103,15 @@ class CanvasController:
             scan=window.last_scan,
             statuses=window._comparison_statuses(),
             code_only_symbols=window._code_only_symbols(),
+            allocation_findings=self.allocation_findings(),
         )
+
+    def allocation_findings(self) -> dict[UUID, list[AllocationFinding]]:
+        """Hardware allocation findings for the current project, grouped by device."""
+        window = self.window
+        if window.project is None:
+            return {}
+        return findings_by_device(AllocationService().check(window.project))
 
     def render_preserving_selection(self) -> None:
         """Refresh block text without disrupting the active details context."""

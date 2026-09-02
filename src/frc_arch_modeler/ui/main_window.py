@@ -190,6 +190,9 @@ class MainWindow(QMainWindow):
     def _comparison_statuses(self) -> dict:
         return self.scan_controller.comparison_statuses()
 
+    def _allocation_findings(self) -> dict:
+        return self.canvas_controller.allocation_findings()
+
     def _code_only_symbols(self) -> set[str]:
         return self.scan_controller.code_only_symbols()
 
@@ -407,6 +410,9 @@ class MainWindow(QMainWindow):
     def _hardware_cell_changed(self, item) -> None:  # type: ignore[no-untyped-def]
         self.hardware_controller.cell_changed(item)
 
+    def _hardware_alert_cell_clicked(self, row: int, column: int) -> None:
+        self.hardware_controller.alert_cell_clicked(row, column)
+
     def _hardware_subsystem_cell_changed(self, device_id, combo) -> None:  # type: ignore[no-untyped-def]
         self.hardware_controller.subsystem_cell_changed(device_id, combo)
 
@@ -456,7 +462,10 @@ class MainWindow(QMainWindow):
         """Display a project with the deterministic initial canvas layout."""
         self.project = project
         self.scene.render_project(
-            project, scan=self.last_scan, statuses=self._comparison_statuses()
+            project,
+            scan=self.last_scan,
+            statuses=self._comparison_statuses(),
+            allocation_findings=self._allocation_findings(),
         )
         self._selected_behavior_diagram_id = (
             project.behavior_diagrams[0].id if project and project.behavior_diagrams else None
