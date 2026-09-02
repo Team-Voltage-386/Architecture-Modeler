@@ -1262,3 +1262,196 @@ def test_close_without_a_worker_accepts_immediately(qtbot) -> None:
     window.closeEvent(event)
 
     assert event.isAccepted()
+
+
+def _select_block(window, title: str) -> ArchitectureBlock:
+    block = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock) and item.title.toPlainText() == title
+    )
+    block.setSelected(True)
+    return block
+
+
+def test_selected_subsystem_lists_its_devices_and_a_command_lists_its_triggers(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Shooter")
+    window.add_command("Score Coral")
+    assert window.project is not None
+    window.add_device(window.project.subsystems[0].id, "Left motor", "SparkMax")
+    window.add_trigger(window.project.commands[0].id, "Driver A", "onTrue")
+    window.add_relationship(
+        "calls", window.project.commands[0].id, window.project.subsystems[0].id
+    )
+    panel = window.details_panel
+
+    _select_block(window, "Shooter")
+
+    assert [
+        panel._owned_lists["device"].item(index).text()
+        for index in range(panel._owned_lists["device"].count())
+    ] == ["Left motor (SparkMax)"]
+    assert panel._owned_rows["device"].isVisibleTo(panel)
+    assert not panel._owned_rows["trigger"].isVisibleTo(panel)
+    assert panel._owned_lists["relationship"].count() == 1
+
+    window.scene.clearSelection()
+    _select_block(window, "Score Coral")
+
+    assert [
+        panel._owned_lists["trigger"].item(index).text()
+        for index in range(panel._owned_lists["trigger"].count())
+    ] == ["Driver A · onTrue"]
+    assert not panel._owned_rows["device"].isVisibleTo(panel)
+
+
+def test_a_device_can_be_renamed_from_its_subsystem_details_panel(qtbot, monkeypatch) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Shooter")
+    assert window.project is not None
+    window.add_device(window.project.subsystems[0].id, "Left motor", "SparkMax")
+    device = window.project.devices[0]
+
+    def fake_exec(self):
+        self.name_edit.setText("Feeder motor")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(DeviceDialog, "exec", fake_exec)
+    _select_block(window, "Shooter")
+    window.details_panel._owned_lists["device"].setCurrentRow(0)
+    window.details_panel._owned_buttons["device"]["edit"].click()
+
+    assert device.name.effective == "Feeder motor"
+    window.undo_stack.undo()
+    assert device.name.effective == "Left motor"
+
+
+def test_editing_a_device_leaves_its_scanned_fact_untouched(qtbot, monkeypatch) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Shooter")
+    assert window.project is not None
+    window.add_device(window.project.subsystems[0].id, "Left motor", "SparkMax")
+    device = window.project.devices[0]
+    device.name.scanned = "leftMotor"
+
+    monkeypatch.setattr(
+        DeviceDialog,
+        "exec",
+        lambda self: (self.name_edit.setText("Feeder motor"), QDialog.DialogCode.Accepted)[1],
+    )
+    _select_block(window, "Shooter")
+    window.details_panel._owned_lists["device"].setCurrentRow(0)
+    window.details_panel._owned_buttons["device"]["edit"].click()
+
+    assert device.name.design == "Feeder motor"
+    assert device.name.scanned == "leftMotor"
+
+
+def test_a_device_can_be_deleted_from_its_subsystem_details_panel(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Shooter")
+    assert window.project is not None
+    window.add_device(window.project.subsystems[0].id, "Left motor", "SparkMax")
+
+    _select_block(window, "Shooter")
+    window.details_panel._owned_lists["device"].setCurrentRow(0)
+    window.details_panel._owned_buttons["device"]["remove"].click()
+
+    assert not window.project.devices
+    window.undo_stack.undo()
+    assert [device.name.effective for device in window.project.devices] == ["Left motor"]
+
+
+def test_deleting_a_subsystem_removes_its_dependents_in_one_confirmed_step(
+    qtbot, monkeypatch
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Shooter")
+    window.add_command("Score Coral")
+    assert window.project is not None
+    subsystem = window.project.subsystems[0]
+    window.add_device(subsystem.id, "Left motor", "SparkMax")
+    window.add_device(subsystem.id, "Right motor", "SparkMax")
+    window.add_trigger(window.project.commands[0].id, "Driver A", "onTrue")
+    window.add_relationship("calls", window.project.commands[0].id, subsystem.id)
+    prompts = []
+
+    def fake_question(parent, title, text, *args):
+        prompts.append(text)
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "question", fake_question)
+    _select_block(window, "Shooter")
+
+    assert window.delete_selected()
+    assert prompts == ["Delete Shooter and its 2 devices and 1 relationship?"]
+    assert not window.project.subsystems
+    assert not window.project.devices
+    assert not window.project.relationships
+    assert len(window.project.triggers) == 1
+
+    window.undo_stack.undo()
+
+    assert [item.name.effective for item in window.project.subsystems] == ["Shooter"]
+    assert [device.name.effective for device in window.project.devices] == [
+        "Left motor",
+        "Right motor",
+    ]
+    assert len(window.project.relationships) == 1
+
+
+def test_declining_the_cascade_confirmation_deletes_nothing(qtbot, monkeypatch) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Shooter")
+    assert window.project is not None
+    window.add_device(window.project.subsystems[0].id, "Left motor", "SparkMax")
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *args: QMessageBox.StandardButton.No
+    )
+    _select_block(window, "Shooter")
+
+    assert not window.delete_selected()
+    assert window.project.subsystems
+    assert window.project.devices
+
+
+def test_deleting_a_subsystem_a_command_requires_is_still_refused(qtbot, monkeypatch) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Shooter")
+    window.add_command("Score Coral")
+    assert window.project is not None
+    window.project.commands[0].requirement_ids = [window.project.subsystems[0].id]
+    warnings = []
+
+    def fake_warning(parent, title, text, *args):
+        warnings.append(text)
+        return QMessageBox.StandardButton.Ok
+
+    monkeypatch.setattr(QMessageBox, "warning", fake_warning)
+    _select_block(window, "Shooter")
+
+    assert not window.delete_selected()
+    assert warnings == ["Shooter is still required by Score Coral. Clear that requirement first."]
+    assert window.project.subsystems

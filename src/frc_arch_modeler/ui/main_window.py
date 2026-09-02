@@ -67,6 +67,7 @@ from frc_arch_modeler.ui.behavior_scene import BehaviorScene
 from frc_arch_modeler.ui.details_panel import (
     DetailsPanel,
     EditDescriptionCommand,
+    EditEntityFieldsCommand,
     EditNameCommand,
     EditRequirementsCommand,
 )
@@ -1364,7 +1365,7 @@ class MainWindow(QMainWindow):
             return
 
     def delete_selected(self) -> bool:
-        """Delete one authored block only when no other design fact depends on it."""
+        """Delete one authored block, cascading its owned dependents as one undo entry."""
         if self.project is None:
             return False
         blocks = self.scene.selected_blocks()
@@ -1381,40 +1382,83 @@ class MainWindow(QMainWindow):
         )
         if element is None:
             return False
-        dependencies = [
-            *[
-                "command requirement"
-                for command in self.project.commands
-                if element_id in command.requirement_ids
-            ],
-            *[
-                "device"
-                for device in self.project.devices
-                if device.owner_subsystem_id == element_id
-            ],
-            *["trigger" for trigger in self.project.triggers if trigger.command_id == element_id],
-            *[
-                "relationship"
-                for relationship in self.project.relationships
-                if element_id in {relationship.source_id, relationship.target_id}
-            ],
-        ]
-        if dependencies:
+        # A command still requiring this subsystem is a real modelling error rather than an
+        # ownership relation, so it stays a refusal — but one that names the commands.
+        requiring = sorted(
+            command.name.effective or "Unnamed"
+            for command in self.project.commands
+            if element_id in command.requirement_ids
+        )
+        if requiring:
             QMessageBox.warning(
                 self,
                 "Cannot delete selected element",
-                "Remove dependent " + ", ".join(sorted(set(dependencies))) + " entries first.",
+                f"{element.name.effective} is still required by "
+                + ", ".join(requiring)
+                + ". Clear that requirement first.",
             )
             return False
+        devices = [
+            device for device in self.project.devices if device.owner_subsystem_id == element_id
+        ]
+        triggers = [
+            trigger for trigger in self.project.triggers if trigger.command_id == element_id
+        ]
+        relationships = [
+            relationship
+            for relationship in self.project.relationships
+            if element_id in {relationship.source_id, relationship.target_id}
+        ]
+        summary = self._dependent_summary(
+            [
+                (len(devices), "device"),
+                (len(triggers), "trigger"),
+                (len(relationships), "relationship"),
+            ]
+        )
+        if summary is not None:
+            choice = QMessageBox.question(
+                self,
+                "Delete element and its dependents",
+                f"Delete {element.name.effective} and its {summary}?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if choice != QMessageBox.StandardButton.Yes:
+                return False
         collection = (
             self.project.commands if element in self.project.commands else self.project.subsystems
         )
+        label = type(element).__name__.lower()
+        self.undo_stack.beginMacro(f"Delete {label}")
+        for kind, dependents in (
+            ("device", devices),
+            ("trigger", triggers),
+            ("relationship", relationships),
+        ):
+            for dependent in dependents:
+                self.undo_stack.push(
+                    RemoveDesignEntityCommand(
+                        self._owned_collection(kind), dependent, kind, self._refresh_after_edit
+                    )
+                )
         self.undo_stack.push(
-            RemoveDesignEntityCommand(
-                collection, element, type(element).__name__.lower(), self._refresh_after_edit
-            )
+            RemoveDesignEntityCommand(collection, element, label, self._refresh_after_edit)
         )
+        self.undo_stack.endMacro()
         return True
+
+    @staticmethod
+    def _dependent_summary(counts: list[tuple[int, str]]) -> str | None:
+        """Phrase the cascade as "2 devices, 1 trigger and 1 relationship"."""
+        parts = [
+            f"{count} {label if count == 1 else f'{label}s'}" for count, label in counts if count
+        ]
+        if not parts:
+            return None
+        if len(parts) == 1:
+            return parts[0]
+        return ", ".join(parts[:-1]) + f" and {parts[-1]}"
 
     def _refresh_after_edit(self) -> None:
         assert self.project is not None
@@ -1509,6 +1553,7 @@ class MainWindow(QMainWindow):
             *self._matched_code_details(element.id) if element is not None else (),
             subsystem_options=self._subsystem_options(),
             design_context=self._design_structure(element.id) if element is not None else None,
+            owned_objects=self._owned_objects(element),
         )
         self._update_compact_details()
 
@@ -1688,6 +1733,171 @@ class MainWindow(QMainWindow):
             lines.append("Relationships: " + ", ".join(links))
         return "\n".join(lines) or None
 
+    def _element_names(self) -> dict:  # type: ignore[type-arg]
+        if self.project is None:
+            return {}
+        return {
+            item.id: item.name.effective or "Unnamed"
+            for item in [*self.project.commands, *self.project.subsystems]
+        }
+
+    def _owned_objects(self, element) -> dict:  # type: ignore[no-untyped-def, type-arg]
+        """List, per kind, what the given element owns so its details panel can manage it."""
+        if self.project is None or element is None:
+            return {}
+        element_id = element.id
+        names = self._element_names()
+        return {
+            "device": [
+                (device.id, f"{device.name.effective} ({device.device_type.effective})")
+                for device in self.project.devices
+                if device.owner_subsystem_id == element_id
+            ],
+            "trigger": [
+                (trigger.id, f"{trigger.expression.effective} · {trigger.activation.effective}")
+                for trigger in self.project.triggers
+                if trigger.command_id == element_id
+            ],
+            "relationship": [
+                (
+                    relationship.id,
+                    f"{names.get(relationship.source_id, 'Unknown')} — "
+                    f"{relationship.relationship_type.replace('_', ' ')} → "
+                    f"{names.get(relationship.target_id, 'Unknown')}",
+                )
+                for relationship in self.project.relationships
+                if element_id in {relationship.source_id, relationship.target_id}
+            ],
+        }
+
+    def _selected_design_element(self):  # type: ignore[no-untyped-def]
+        """Return the single authored element currently selected on the structure canvas."""
+        selected = self.scene.selected_blocks()
+        if self.project is None or len(selected) != 1 or selected[0].imported:
+            return None
+        return next(
+            (
+                item
+                for item in [*self.project.commands, *self.project.subsystems]
+                if item.id == selected[0].element_id
+            ),
+            None,
+        )
+
+    def _reselect_element(self, element_id) -> None:  # type: ignore[no-untyped-def]
+        """Keep the details panel on its element after an edit rebuilt the canvas."""
+        for item in self.scene.items():
+            if isinstance(item, ArchitectureBlock) and item.element_id == element_id:
+                item.setSelected(True)
+        self._update_selected_element()
+
+    def _owned_collection(self, kind: str) -> list:  # type: ignore[type-arg]
+        assert self.project is not None
+        return {
+            "device": self.project.devices,
+            "trigger": self.project.triggers,
+            "relationship": self.project.relationships,
+        }[kind]
+
+    def _owned_entity(self, kind: str, entity_id):  # type: ignore[no-untyped-def]
+        return next(
+            (item for item in self._owned_collection(kind) if item.id == entity_id), None
+        )
+
+    def add_owned_object(self, kind: str) -> None:
+        """Create a device, trigger, or relationship owned by the selected element."""
+        element = self._selected_design_element()
+        if self.project is None or element is None:
+            return
+        if kind == "device":
+            dialog = DeviceDialog(self.project, parent=self)
+            self._preselect(dialog.owner_combo, element.id)
+            self._run_entity_dialog(dialog, self.add_device)
+        elif kind == "trigger":
+            dialog = TriggerDialog(self.project, parent=self)
+            self._preselect(dialog.command_combo, element.id)
+            self._run_entity_dialog(dialog, self.add_trigger)
+        else:
+            dialog = RelationshipDialog(self.project, parent=self)
+            self._preselect(dialog.source_combo, element.id)
+            self._run_entity_dialog(dialog, self.add_relationship)
+        self._reselect_element(element.id)
+
+    def edit_owned_object(self, kind: str, entity_id) -> None:  # type: ignore[no-untyped-def]
+        """Edit an owned entity in place through the undo stack."""
+        element = self._selected_design_element()
+        entity = self._owned_entity(kind, entity_id) if self.project is not None else None
+        if self.project is None or entity is None:
+            return
+        if kind == "device":
+            dialog = DeviceDialog(self.project, entity, parent=self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            owner_id, name, device_type, mode = dialog.values()
+            fields = {
+                "owner_subsystem_id": owner_id,
+                "name": name,
+                "device_type": device_type,
+                "mode": mode,
+            }
+        elif kind == "trigger":
+            dialog = TriggerDialog(self.project, entity, parent=self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            command_id, expression, activation = dialog.values()
+            fields = {
+                "command_id": command_id,
+                "expression": expression,
+                "activation": activation,
+            }
+        else:
+            dialog = RelationshipDialog(self.project, entity, parent=self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            relationship_type, source_id, target_id = dialog.values()
+            fields = {
+                "relationship_type": relationship_type,
+                "source_id": source_id,
+                "target_id": target_id,
+            }
+        self.undo_stack.push(
+            EditEntityFieldsCommand(entity, fields, kind, self._refresh_after_edit)
+        )
+        if element is not None:
+            self._reselect_element(element.id)
+
+    def remove_owned_object(self, kind: str, entity_id) -> None:  # type: ignore[no-untyped-def]
+        """Delete an owned entity from its owning element's details panel."""
+        element = self._selected_design_element()
+        entity = self._owned_entity(kind, entity_id) if self.project is not None else None
+        if entity is None:
+            return
+        self.undo_stack.push(
+            RemoveDesignEntityCommand(
+                self._owned_collection(kind), entity, kind, self._refresh_after_edit
+            )
+        )
+        if element is not None:
+            self._reselect_element(element.id)
+
+    @staticmethod
+    def _preselect(combo, value) -> None:  # type: ignore[no-untyped-def]
+        """Point a dialog's owner/source picker at the element the panel is managing."""
+        index = combo.findData(value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+
+    def _run_entity_dialog(self, dialog, create_entity) -> None:  # type: ignore[no-untyped-def]
+        """Run one create dialog, honouring its "Add another" button without reopening it."""
+        while True:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            create_entity(*dialog.values())
+            if not dialog.add_another_clicked:
+                return
+            dialog.add_another_clicked = False
+            dialog.reset_for_another()
+
     @staticmethod
     def _normalized(value: str) -> str:
         return "".join(character for character in value.casefold() if character.isalnum())
@@ -1845,41 +2055,19 @@ class MainWindow(QMainWindow):
     def _prompt_new_device(self) -> None:
         if self.project is None or not self.project.subsystems:
             return
-        dialog = DeviceDialog(self.project, parent=self)
-        while True:
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                return
-            self.add_device(*dialog.values())
-            if not dialog.add_another_clicked:
-                return
-            dialog.add_another_clicked = False
-            dialog.reset_for_another()
+        self._run_entity_dialog(DeviceDialog(self.project, parent=self), self.add_device)
 
     def _prompt_new_trigger(self) -> None:
         if self.project is None or not self.project.commands:
             return
-        dialog = TriggerDialog(self.project, parent=self)
-        while True:
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                return
-            self.add_trigger(*dialog.values())
-            if not dialog.add_another_clicked:
-                return
-            dialog.add_another_clicked = False
-            dialog.reset_for_another()
+        self._run_entity_dialog(TriggerDialog(self.project, parent=self), self.add_trigger)
 
     def _prompt_new_relationship(self) -> None:
         if self.project is None or len(self.project.commands) + len(self.project.subsystems) < 2:
             return
-        dialog = RelationshipDialog(self.project, parent=self)
-        while True:
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                return
-            self.add_relationship(*dialog.values())
-            if not dialog.add_another_clicked:
-                return
-            dialog.add_another_clicked = False
-            dialog.reset_for_another()
+        self._run_entity_dialog(
+            RelationshipDialog(self.project, parent=self), self.add_relationship
+        )
 
     def _prompt_new_behavior_state(self) -> None:
         if self.project is None:
@@ -1902,6 +2090,9 @@ class MainWindow(QMainWindow):
             self.edit_selected_name,
             self.edit_selected_requirements,
             self._open_source_anchor,
+            self.add_owned_object,
+            self.edit_owned_object,
+            self.remove_owned_object,
         )
         dock.setWidget(self.details_panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
@@ -1947,6 +2138,9 @@ class MainWindow(QMainWindow):
                 self.edit_selected_name,
                 self.edit_selected_requirements,
                 self._open_source_anchor,
+                self.add_owned_object,
+                self.edit_owned_object,
+                self.remove_owned_object,
             )
             layout = QVBoxLayout(dialog)
             layout.addWidget(panel)
@@ -1995,6 +2189,7 @@ class MainWindow(QMainWindow):
             *self._matched_code_details(element.id) if element is not None else (),
             subsystem_options=self._subsystem_options(),
             design_context=self._design_structure(element.id) if element is not None else None,
+            owned_objects=self._owned_objects(element),
         )
 
     def _subsystem_options(self) -> list[tuple]:  # type: ignore[type-arg]

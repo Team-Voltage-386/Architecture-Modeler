@@ -93,7 +93,9 @@ def test_relationship_dialog_excludes_source_from_target_choices(qtbot) -> None:
     qtbot.addWidget(dialog)
 
     source_id = dialog.source_combo.currentData()
-    target_ids = [dialog.target_combo.itemData(index) for index in range(dialog.target_combo.count())]
+    target_ids = [
+        dialog.target_combo.itemData(index) for index in range(dialog.target_combo.count())
+    ]
     assert source_id not in target_ids
     assert dialog._ok_button.isEnabled()
 

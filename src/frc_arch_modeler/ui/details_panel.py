@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QUndoCommand
 from PySide6.QtWidgets import (
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -19,10 +20,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from frc_arch_modeler.domain.model import Command, SourceAnchor, Subsystem
+from frc_arch_modeler.domain.model import Command, FieldValue, SourceAnchor, Subsystem
 from frc_arch_modeler.ui.command_flow_widget import CommandFlowWidget
 
 ArchitectureElement = Command | Subsystem
+
+#: Owned-object sections offered beside "Required subsystems", in display order. Each is
+#: shown only for the element kinds that can own that sort of object.
+OWNED_KINDS = ("device", "trigger", "relationship")
+OWNED_LABELS = {
+    "device": "Devices",
+    "trigger": "Triggers",
+    "relationship": "Relationships",
+}
 
 
 class EditDescriptionCommand(QUndoCommand):
@@ -88,6 +98,52 @@ class EditRequirementsCommand(QUndoCommand):
         self.on_change()
 
 
+class EditEntityFieldsCommand(QUndoCommand):
+    """Undoable in-place edit of one owned entity's fields.
+
+    ``fields`` maps an attribute name to its new value. A ``FieldValue`` attribute keeps
+    its scanned fact and evidence untouched: only the design override is snapshotted and
+    replaced, so an in-place edit never overwrites code-derived facts.
+    """
+
+    def __init__(
+        self,
+        entity: object,
+        fields: dict[str, object],
+        label: str,
+        on_change: Callable[[], None],
+    ) -> None:
+        super().__init__(f"Edit {label}")
+        self.entity = entity
+        self.fields = dict(fields)
+        self.previous = {name: self._read(entity, name) for name in self.fields}
+        self.on_change = on_change
+
+    @staticmethod
+    def _read(entity: object, name: str) -> object:
+        current = getattr(entity, name)
+        return current.design if isinstance(current, FieldValue) else current
+
+    @staticmethod
+    def _write(entity: object, name: str, value: object) -> None:
+        current = getattr(entity, name)
+        if isinstance(current, FieldValue):
+            current.design = value  # type: ignore[assignment]
+        else:
+            setattr(entity, name, value)
+
+    def _apply(self, values: dict[str, object]) -> None:
+        for name, value in values.items():
+            self._write(self.entity, name, value)
+        self.on_change()
+
+    def redo(self) -> None:
+        self._apply(self.fields)
+
+    def undo(self) -> None:
+        self._apply(self.previous)
+
+
 class DetailsPanel(QWidget):
     """Shows code evidence beside the editable user-authored description."""
 
@@ -97,11 +153,22 @@ class DetailsPanel(QWidget):
         on_name_edit: Callable[[str | None], None],
         on_requirements_edit: Callable[[list[UUID]], None],
         on_open_source: Callable[[SourceAnchor], None] | None = None,
+        on_owned_add: Callable[[str], None] | None = None,
+        on_owned_edit: Callable[[str, UUID], None] | None = None,
+        on_owned_remove: Callable[[str, UUID], None] | None = None,
     ) -> None:
         super().__init__()
         self._on_description_edit = on_description_edit
         self._on_name_edit = on_name_edit
         self._on_requirements_edit = on_requirements_edit
+        self._on_owned_add = on_owned_add
+        self._on_owned_edit = on_owned_edit
+        self._on_owned_remove = on_owned_remove
+        self._owned_lists: dict[str, QListWidget] = {}
+        self._owned_rows: dict[str, QWidget] = {}
+        self._owned_labels: dict[str, QLabel] = {}
+        self._owned_buttons: dict[str, dict[str, QPushButton]] = {}
+        self._owned_objects: dict[str, list[tuple[UUID, str]]] = {}
         self._element: ArchitectureElement | None = None
         self._source_anchor: SourceAnchor | None = None
         self._code_name: str | None = None
@@ -151,6 +218,10 @@ class DetailsPanel(QWidget):
         form.addRow("Design structure", self.design_context)
         form.addRow("Design / proposed", self.design_description)
         form.addRow("Required subsystems", self.requirements)
+        for kind in OWNED_KINDS:
+            label = QLabel(OWNED_LABELS[kind], self)
+            self._owned_labels[kind] = label
+            form.addRow(label, self._build_owned_section(kind))
         layout.addWidget(self.title)
         layout.addLayout(form)
         layout.addWidget(self.save_button)
@@ -167,6 +238,37 @@ class DetailsPanel(QWidget):
         self.revert_name_button.clicked.connect(self._revert_name)
         self.open_source_button.clicked.connect(self._open_source)
         self._set_editing_enabled(False)
+        self._set_owned_objects(None, {})
+
+    def _build_owned_section(self, kind: str) -> QWidget:
+        """Build one owned-object list with the Add / Edit / Remove management buttons."""
+        container = QWidget(self)
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        list_widget = QListWidget(container)
+        list_widget.setObjectName(f"owned{kind.capitalize()}s")
+        list_widget.setAccessibleName(f"Owned {kind}s of the selected element")
+        container_layout.addWidget(list_widget)
+        button_row = QHBoxLayout()
+        buttons: dict[str, QPushButton] = {}
+        for action, handler in (
+            ("add", self._add_owned),
+            ("edit", self._edit_owned),
+            ("remove", self._remove_owned),
+        ):
+            button = QPushButton(action.capitalize(), container)
+            button.setObjectName(f"{action}{kind.capitalize()}Button")
+            button.clicked.connect(lambda _checked=False, k=kind, h=handler: h(k))
+            button_row.addWidget(button)
+            buttons[action] = button
+        container_layout.addLayout(button_row)
+        list_widget.itemSelectionChanged.connect(
+            lambda k=kind: self._update_owned_buttons(k)
+        )
+        self._owned_lists[kind] = list_widget
+        self._owned_rows[kind] = container
+        self._owned_buttons[kind] = buttons
+        return container
 
     def set_element(
         self,
@@ -176,8 +278,10 @@ class DetailsPanel(QWidget):
         code_anchor: SourceAnchor | None = None,
         subsystem_options: list[tuple[UUID, str]] | None = None,
         design_context: str | None = None,
+        owned_objects: dict[str, list[tuple[UUID, str]]] | None = None,
     ) -> None:
         self._element = element
+        self._owned_objects = dict(owned_objects or {})
         self._source_anchor = code_anchor
         self._code_name = code_name
         self._code_description = code_description
@@ -195,6 +299,7 @@ class DetailsPanel(QWidget):
             self.lifecycle_diagram.set_phases([])
             self.design_context.clear()
             self.design_context.setVisible(False)
+            self._set_owned_objects(None, {})
             self._set_editing_enabled(False)
             self.open_source_button.setEnabled(False)
             self.adopt_name_button.setEnabled(False)
@@ -216,6 +321,7 @@ class DetailsPanel(QWidget):
         self.design_context.setText(design_context or "")
         self.design_context.setVisible(bool(design_context))
         self._set_requirement_options(element, subsystem_options or [])
+        self._set_owned_objects(element, self._owned_objects)
         self._set_editing_enabled(True)
         self.open_source_button.setEnabled(
             code_anchor is not None and self._on_open_source is not None
@@ -279,6 +385,8 @@ class DetailsPanel(QWidget):
         self.design_context.setVisible(False)
         self.requirements.clear()
         self.requirements.setVisible(False)
+        self._owned_objects = {}
+        self._set_owned_objects(None, {})
         self._set_editing_enabled(False)
         self.open_source_button.setEnabled(self._on_open_source is not None)
         self.adopt_name_button.setEnabled(False)
@@ -293,7 +401,7 @@ class DetailsPanel(QWidget):
             self._on_open_source(anchor)
 
     def refresh(self) -> None:
-        self.set_element(self._element)
+        self.set_element(self._element, owned_objects=self._owned_objects)
 
     def _set_editing_enabled(self, enabled: bool) -> None:
         self.design_name.setEnabled(enabled)
@@ -317,6 +425,54 @@ class DetailsPanel(QWidget):
             item.setCheckState(
                 Qt.CheckState.Checked if subsystem_id in selected else Qt.CheckState.Unchecked
             )
+
+    def _set_owned_objects(
+        self,
+        element: ArchitectureElement | None,
+        owned_objects: dict[str, list[tuple[UUID, str]]],
+    ) -> None:
+        """List what the selected element owns, hiding sections it cannot own."""
+        manageable = self._on_owned_add is not None
+        owns = {
+            "device": isinstance(element, Subsystem),
+            "trigger": isinstance(element, Command),
+            "relationship": element is not None,
+        }
+        for kind in OWNED_KINDS:
+            list_widget = self._owned_lists[kind]
+            list_widget.clear()
+            for entity_id, label in owned_objects.get(kind, []):
+                item = QListWidgetItem(label, list_widget)
+                item.setData(Qt.ItemDataRole.UserRole, str(entity_id))
+            visible = manageable and owns[kind]
+            self._owned_labels[kind].setVisible(visible)
+            self._owned_rows[kind].setVisible(visible)
+            self._update_owned_buttons(kind)
+
+    def _update_owned_buttons(self, kind: str) -> None:
+        buttons = self._owned_buttons[kind]
+        has_selection = self._owned_lists[kind].currentItem() is not None
+        buttons["add"].setEnabled(self._element is not None)
+        buttons["edit"].setEnabled(has_selection)
+        buttons["remove"].setEnabled(has_selection)
+
+    def _selected_owned_id(self, kind: str) -> UUID | None:
+        item = self._owned_lists[kind].currentItem()
+        return None if item is None else UUID(item.data(Qt.ItemDataRole.UserRole))
+
+    def _add_owned(self, kind: str) -> None:
+        if self._element is not None and self._on_owned_add is not None:
+            self._on_owned_add(kind)
+
+    def _edit_owned(self, kind: str) -> None:
+        entity_id = self._selected_owned_id(kind)
+        if entity_id is not None and self._on_owned_edit is not None:
+            self._on_owned_edit(kind, entity_id)
+
+    def _remove_owned(self, kind: str) -> None:
+        entity_id = self._selected_owned_id(kind)
+        if entity_id is not None and self._on_owned_remove is not None:
+            self._on_owned_remove(kind, entity_id)
 
     def _apply_description(self) -> None:
         if self._element is not None:

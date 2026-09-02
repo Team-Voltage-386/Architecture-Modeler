@@ -22,7 +22,9 @@
   existing ones are `AddDesignEntityCommand`, `RemoveDesignEntityCommand`,
   `MoveBlocksCommand`, `EditTransitionEndpointsCommand`, `RenameBehaviorDiagramCommand`
   in `ui/main_window.py`, and `EditNameCommand`, `EditDescriptionCommand`,
-  `EditRequirementsCommand` in `ui/details_panel.py`.
+  `EditRequirementsCommand`, `EditEntityFieldsCommand` in `ui/details_panel.py`.
+  A cascading delete groups its child removals with `undo_stack.beginMacro()` /
+  `endMacro()` so one Ctrl+Z restores the whole cascade.
 - Any change to the saved model shape bumps `SCHEMA_VERSION` in `domain/model.py` and
   ships a tested migration in `persistence/migrations.py`. Unknown fields must keep
   round-tripping through `ArchitectureProject.unknown_fields`.
