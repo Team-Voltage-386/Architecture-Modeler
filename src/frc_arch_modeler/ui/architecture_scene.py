@@ -118,7 +118,10 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.summary = QGraphicsTextItem(self)
         self.summary.setDefaultTextColor(QColor(MUTED_TEXT))
         self.summary.setTextWidth(BLOCK_WIDTH - 24)
-        compact_lines = [line for line in (detail_lines or []) if line][:3]
+        filtered_lines = [line for line in (detail_lines or []) if line]
+        compact_lines = filtered_lines[:3]
+        if len(filtered_lines) > 3:
+            compact_lines.append(f"+{len(filtered_lines) - 3} more")
         self.summary.setPlainText("\n".join(compact_lines))
         self.summary.setPos(12, title_bottom + 4)
         summary_bottom = (

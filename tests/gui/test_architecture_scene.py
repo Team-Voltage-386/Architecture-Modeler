@@ -8,6 +8,7 @@ from frc_arch_modeler.domain.model import (
     ArchitectureProject,
     Command,
     ComparisonState,
+    Device,
     FieldValue,
     Relationship,
     SourceAnchor,
@@ -36,6 +37,27 @@ def test_scene_places_commands_and_subsystems_and_draws_requirements(qapp) -> No
     edges = [item for item in scene.items() if isinstance(item, QGraphicsPathItem)]
     assert len(edges) == 1
     assert edges[0].toolTip() == "Designed requirement"
+
+
+def test_subsystem_block_shows_a_more_line_when_devices_are_dropped_past_the_cap(qapp) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    devices = [
+        Device(
+            name=FieldValue(design=f"Motor {index}"),
+            device_type=FieldValue(design="SparkMax"),
+            owner_subsystem_id=drive.id,
+        )
+        for index in range(5)
+    ]
+    project = ArchitectureProject(name="Robot", subsystems=[drive], devices=devices)
+    scene = ArchitectureScene()
+
+    scene.render_project(project)
+
+    block = next(item for item in scene.items() if isinstance(item, ArchitectureBlock))
+    summary_lines = block.summary.toPlainText().splitlines()
+    assert len(summary_lines) == 4
+    assert summary_lines[-1] == "+2 more"
 
 
 def test_scene_round_trips_block_layout_and_minimized_state(qapp) -> None:
