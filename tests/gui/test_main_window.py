@@ -4,6 +4,7 @@ import pytest
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence, QPalette
 from PySide6.QtWidgets import (
+    QDialog,
     QDockWidget,
     QGraphicsPathItem,
     QInputDialog,
@@ -15,6 +16,7 @@ from frc_arch_modeler.app import create_application
 from frc_arch_modeler.domain.model import ComparisonState
 from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock
 from frc_arch_modeler.ui.behavior_scene import StateBlock
+from frc_arch_modeler.ui.entity_dialogs import DeviceDialog
 from frc_arch_modeler.ui.main_window import MainWindow
 from frc_arch_modeler.ui.theme import MUTED_TEXT, OFF_WHITE
 
@@ -135,6 +137,48 @@ def test_design_devices_and_triggers_appear_on_their_canvas_blocks(qtbot) -> Non
     drive.setSelected(False)
     command.setSelected(True)
     assert "Triggers: Driver A · onTrue" in window.details_panel.design_context.text()
+
+
+def test_new_device_dialog_add_another_creates_three_devices_in_one_visit(
+    qtbot, monkeypatch
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    assert window.project is not None
+
+    names = iter(["Left motor", "Right motor", "Back motor"])
+    created_dialogs = []
+    exec_calls = {"count": 0}
+
+    original_init = DeviceDialog.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        created_dialogs.append(self)
+
+    def fake_exec(self):
+        exec_calls["count"] += 1
+        self.type_combo.setCurrentText("SparkMax")
+        self.name_edit.setText(next(names))
+        self.add_another_clicked = exec_calls["count"] < 3
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(DeviceDialog, "__init__", tracking_init)
+    monkeypatch.setattr(DeviceDialog, "exec", fake_exec)
+
+    window._prompt_new_device()
+
+    assert exec_calls["count"] == 3
+    assert len(created_dialogs) == 1
+    assert [device.name.effective for device in window.project.devices] == [
+        "Left motor",
+        "Right motor",
+        "Back motor",
+    ]
+    assert all(device.device_type.effective == "SparkMax" for device in window.project.devices)
 
 
 def test_explicit_design_relationship_is_rendered_with_evidence_tooltip(qtbot) -> None:

@@ -70,6 +70,7 @@ from frc_arch_modeler.ui.details_panel import (
     EditNameCommand,
     EditRequirementsCommand,
 )
+from frc_arch_modeler.ui.entity_dialogs import DeviceDialog, RelationshipDialog, TriggerDialog
 from frc_arch_modeler.ui.scan_worker import JavaScanWorker
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
 from frc_arch_modeler.ui.theme import OFF_WHITE, VOLTAGE_BLUE, VOLTAGE_YELLOW
@@ -1844,94 +1845,41 @@ class MainWindow(QMainWindow):
     def _prompt_new_device(self) -> None:
         if self.project is None or not self.project.subsystems:
             return
-        names = [subsystem.name.effective or "Unnamed" for subsystem in self.project.subsystems]
-        owner_name, accepted = QInputDialog.getItem(
-            self, "New device", "Subsystem:", names, 0, False
-        )
-        if not accepted:
-            return
-        owner = next(
-            subsystem
-            for subsystem in self.project.subsystems
-            if subsystem.name.effective == owner_name
-        )
-        name, accepted = QInputDialog.getText(self, "New device", "Device name:")
-        if not accepted or not name.strip():
-            return
-        device_type, accepted = QInputDialog.getText(self, "New device", "Device type:")
-        if not accepted or not device_type.strip():
-            return
-        mode, accepted = QInputDialog.getItem(
-            self, "New device", "Mode:", ["Unspecified", "REAL", "SIM", "REPLAY"], 0, False
-        )
-        if accepted:
-            self.add_device(
-                owner.id,
-                name.strip(),
-                device_type.strip(),
-                None if mode == "Unspecified" else mode,
-            )
+        dialog = DeviceDialog(self.project, parent=self)
+        while True:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            self.add_device(*dialog.values())
+            if not dialog.add_another_clicked:
+                return
+            dialog.add_another_clicked = False
+            dialog.reset_for_another()
 
     def _prompt_new_trigger(self) -> None:
         if self.project is None or not self.project.commands:
             return
-        names = [command.name.effective or "Unnamed" for command in self.project.commands]
-        command_name, accepted = QInputDialog.getItem(
-            self, "New trigger", "Command:", names, 0, False
-        )
-        if not accepted:
-            return
-        command = next(
-            command
-            for command in self.project.commands
-            if command.name.effective == command_name
-        )
-        expression, accepted = QInputDialog.getText(
-            self, "New trigger", "Controller / trigger expression:"
-        )
-        if not accepted or not expression.strip():
-            return
-        activation, accepted = QInputDialog.getItem(
-            self,
-            "New trigger",
-            "Activation:",
-            ["onTrue", "onFalse", "whileTrue", "whileFalse", "toggleOnTrue", "toggleOnFalse"],
-            0,
-            False,
-        )
-        if accepted:
-            self.add_trigger(command.id, expression.strip(), activation)
+        dialog = TriggerDialog(self.project, parent=self)
+        while True:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            self.add_trigger(*dialog.values())
+            if not dialog.add_another_clicked:
+                return
+            dialog.add_another_clicked = False
+            dialog.reset_for_another()
 
     def _prompt_new_relationship(self) -> None:
-        if self.project is None:
+        if self.project is None or len(self.project.commands) + len(self.project.subsystems) < 2:
             return
-        elements = [*self.project.commands, *self.project.subsystems]
-        if len(elements) < 2:
-            return
-        labels = [f"{type(element).__name__}: {element.name.effective}" for element in elements]
-        source_label, accepted = QInputDialog.getItem(
-            self, "New relationship", "Source:", labels, 0, False
-        )
-        if not accepted:
-            return
-        source = elements[labels.index(source_label)]
-        target_options = [label for label in labels if label != source_label]
-        target_label, accepted = QInputDialog.getItem(
-            self, "New relationship", "Target:", target_options, 0, False
-        )
-        if not accepted:
-            return
-        target = elements[labels.index(target_label)]
-        relationship_type, accepted = QInputDialog.getItem(
-            self,
-            "New relationship",
-            "Type:",
-            ["calls", "contains", "triggers", "owns_device"],
-            0,
-            False,
-        )
-        if accepted:
-            self.add_relationship(relationship_type, source.id, target.id)
+        dialog = RelationshipDialog(self.project, parent=self)
+        while True:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            self.add_relationship(*dialog.values())
+            if not dialog.add_another_clicked:
+                return
+            dialog.add_another_clicked = False
+            dialog.reset_for_another()
 
     def _prompt_new_behavior_state(self) -> None:
         if self.project is None:
