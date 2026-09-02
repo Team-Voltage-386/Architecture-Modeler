@@ -1,6 +1,6 @@
 import pytest
 
-from frc_arch_modeler.domain.model import SourceAnchor
+from frc_arch_modeler.domain.model import ComparisonState, SourceAnchor
 from frc_arch_modeler.services.project_service import ProjectService
 
 
@@ -149,3 +149,46 @@ def test_save_writes_and_open_applies_binding_sidecar(tmp_path) -> None:
     assert '"schemaVersion": 1' in payload
     assert reopened.commands[0].code_binding is not None
     assert reopened.commands[0].code_binding.qualified_symbol == "robot.Score"
+
+
+def test_add_device_stores_the_wiring_and_budget_fields_as_design_values(tmp_path) -> None:
+    service = ProjectService()
+    project = service.create("Competition Robot")
+    drive = service.add_subsystem(project, "Drive")
+
+    device = service.add_device(
+        project,
+        drive.id,
+        "Left front drive",
+        "SparkMax",
+        "REAL",
+        bus="canivore",
+        address="5",
+        breaker_amps="40",
+        mass_kg="0.94",
+        notes="Shares a breaker with the rear motor.",
+    )
+
+    assert device.bus.design == "canivore"
+    assert device.address.design == "5"
+    assert device.breaker_amps.design == "40"
+    assert device.mass_kg.design == "0.94"
+    assert device.notes.design == "Shares a breaker with the rear motor."
+    assert all(
+        value.scanned is None
+        for value in (device.bus, device.address, device.breaker_amps, device.mass_kg)
+    )
+
+
+def test_add_device_leaves_omitted_wiring_fields_unresolved(tmp_path) -> None:
+    service = ProjectService()
+    project = service.create("Competition Robot")
+    drive = service.add_subsystem(project, "Drive")
+
+    device = service.add_device(project, drive.id, "Left front drive", "SparkMax")
+
+    assert device.bus.comparison_state is ComparisonState.UNRESOLVED
+    assert device.address.design is None
+    assert device.breaker_amps.design is None
+    assert device.mass_kg.design is None
+    assert device.notes.design is None

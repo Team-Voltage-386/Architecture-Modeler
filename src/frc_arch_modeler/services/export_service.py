@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from frc_arch_modeler.domain.model import ArchitectureProject, Command, Subsystem
+from frc_arch_modeler.domain.model import ArchitectureProject, Command, Device, Subsystem
 from frc_arch_modeler.importers.base import ScanResult
 from frc_arch_modeler.services.reconcile_service import ReconciliationResult
 
@@ -254,6 +254,31 @@ class ArchitectureExportService:
         return element.description.effective or "_Not specified._"
 
     @staticmethod
+    def _device_details(device: Device) -> str:
+        """Render only the wiring and budget fields that carry a value."""
+        details = [
+            (label, value.effective)
+            for label, value in (
+                ("bus", device.bus),
+                ("address", device.address),
+                ("breaker (A)", device.breaker_amps),
+                ("mass (kg)", device.mass_kg),
+                ("notes", device.notes),
+            )
+        ]
+        rendered = [
+            f"{label}: {ArchitectureExportService._inline(value)}"
+            for label, value in details
+            if value and value.strip()
+        ]
+        return f" [{', '.join(rendered)}]" if rendered else ""
+
+    @staticmethod
+    def _inline(value: str) -> str:
+        """Keep a free-text field on the single Markdown bullet line it belongs to."""
+        return value.strip().replace("\n", "<br>")
+
+    @staticmethod
     def _cell(value: object) -> str:
         """Escape table delimiters while retaining deterministic human-readable Markdown."""
         return str(value).replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>")
@@ -270,6 +295,7 @@ class ArchitectureExportService:
                 mode = f" ({device.mode.effective})" if device.mode.effective else ""
                 lines.append(
                     f"  - {device.name.effective}: {device.device_type.effective}{mode}"
+                    f"{self._device_details(device)}"
                 )
         lines.append("")
         return lines

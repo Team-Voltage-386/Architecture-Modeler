@@ -129,3 +129,41 @@ def test_architecture_export_includes_optional_code_scan_discrepancies(tmp_path)
     assert "## Imported Trigger Bindings" in content
     assert "| driver.a() | onTrue | `new DriveCommand(drive)` |" in content
     assert "Example warning (src/Broken.java)" in content
+
+
+def test_architecture_export_lists_only_the_device_fields_that_have_values() -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    wired = Device(
+        name=FieldValue(design="Left front drive"),
+        device_type=FieldValue(design="SparkMax"),
+        owner_subsystem_id=drive.id,
+        mode=FieldValue(design="REAL"),
+        bus=FieldValue(design="canivore"),
+        address=FieldValue(design="5"),
+        breaker_amps=FieldValue(design="40"),
+        mass_kg=FieldValue(design="0.94"),
+        notes=FieldValue(design="Shares a breaker" + chr(10) + "with the rear motor."),
+    )
+    partly_wired = Device(
+        name=FieldValue(design="Zeroing switch"),
+        device_type=FieldValue(design="DigitalInput"),
+        owner_subsystem_id=drive.id,
+        address=FieldValue(design="1"),
+    )
+    bare = Device(
+        name=FieldValue(design="Angle encoder"),
+        device_type=FieldValue(design="CANcoder"),
+        owner_subsystem_id=drive.id,
+    )
+    project = ArchitectureProject(
+        name="Robot", subsystems=[drive], devices=[wired, partly_wired, bare]
+    )
+
+    content = ArchitectureExportService().render(project)
+
+    assert (
+        "  - Left front drive: SparkMax (REAL) [bus: canivore, address: 5, "
+        "breaker (A): 40, mass (kg): 0.94, notes: Shares a breaker<br>with the rear motor.]"
+    ) in content
+    assert "  - Zeroing switch: DigitalInput [address: 1]" in content
+    assert "  - Angle encoder: CANcoder" + chr(10) in content

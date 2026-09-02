@@ -1,6 +1,9 @@
+import json
+
 import pytest
 
 from frc_arch_modeler.domain.model import (
+    SCHEMA_VERSION,
     ArchitectureProject,
     BehaviorDiagram,
     BehaviorState,
@@ -61,7 +64,7 @@ def test_migration_adds_schema_version_to_legacy_payload() -> None:
 
     migrated = migrate_model_payload(legacy)
 
-    assert migrated["schemaVersion"] == 1
+    assert migrated["schemaVersion"] == SCHEMA_VERSION
     assert migrated["futureField"] == {"value": 1}
 
 
@@ -239,3 +242,153 @@ def test_old_project_payload_without_owner_command_id_loads_as_root_diagram() ->
     reloaded = ArchitectureProject.from_dict(legacy_payload)
 
     assert reloaded.behavior_diagrams[0].owner_command_id is None
+
+
+def _version_one_model_payload() -> dict:
+    """A realistic model.json as it was written before devices gained wiring fields."""
+    return {
+        "schemaVersion": 1,
+        "id": "11111111-1111-4111-8111-111111111111",
+        "name": "Competition Robot",
+        "commands": [
+            {
+                "id": "22222222-2222-4222-8222-222222222222",
+                "name": {
+                    "design": "Teleop Drive",
+                    "scanned": "TeleopDrive",
+                    "evidence": None,
+                    "confidence": "high",
+                },
+                "description": {
+                    "design": "Joystick control during teleop.",
+                    "scanned": None,
+                    "evidence": None,
+                    "confidence": None,
+                },
+                "codeBinding": None,
+                "requirementIds": ["33333333-3333-4333-8333-333333333333"],
+            }
+        ],
+        "subsystems": [
+            {
+                "id": "33333333-3333-4333-8333-333333333333",
+                "name": {
+                    "design": "Drive",
+                    "scanned": "Drive",
+                    "evidence": None,
+                    "confidence": "high",
+                },
+                "description": {
+                    "design": None,
+                    "scanned": None,
+                    "evidence": None,
+                    "confidence": None,
+                },
+                "codeBinding": {
+                    "relativePath": "src/main/java/frc/robot/subsystems/Drive.java",
+                    "qualifiedSymbol": "frc.robot.subsystems.Drive",
+                    "signature": None,
+                    "startLine": 18,
+                    "endLine": 96,
+                    "sourceHash": "abc123",
+                },
+            }
+        ],
+        "devices": [
+            {
+                "id": "44444444-4444-4444-8444-444444444444",
+                "name": {
+                    "design": "Left front drive",
+                    "scanned": None,
+                    "evidence": None,
+                    "confidence": None,
+                },
+                "deviceType": {
+                    "design": "SparkMax",
+                    "scanned": "SparkMax",
+                    "evidence": None,
+                    "confidence": "high",
+                },
+                "ownerSubsystemId": "33333333-3333-4333-8333-333333333333",
+                "mode": {
+                    "design": "REAL",
+                    "scanned": None,
+                    "evidence": None,
+                    "confidence": None,
+                },
+                "codeBinding": None,
+            }
+        ],
+        "triggers": [],
+        "relationships": [],
+        "behaviorDiagrams": [],
+        "teamConventions": {"namingGuide": "subsystem-first"},
+    }
+
+
+def test_migration_gives_a_version_one_device_empty_wiring_and_budget_fields() -> None:
+    migrated = migrate_model_payload(_version_one_model_payload())
+
+    device = migrated["devices"][0]
+    assert migrated["schemaVersion"] == SCHEMA_VERSION
+    assert device["mode"]["design"] == "REAL"
+    for key in ("bus", "address", "breakerAmps", "massKg", "notes"):
+        assert device[key] == {
+            "design": None,
+            "scanned": None,
+            "evidence": None,
+            "confidence": None,
+        }
+    assert migrated["teamConventions"] == {"namingGuide": "subsystem-first"}
+
+
+def test_a_version_one_model_on_disk_opens_and_resaves_at_the_new_version(tmp_path) -> None:
+    model_path = tmp_path / ".frc-architecture" / "model.json"
+    model_path.parent.mkdir(parents=True)
+    model_path.write_text(json.dumps(_version_one_model_payload(), indent=2), encoding="utf-8")
+
+    loaded = ProjectStore(tmp_path).load()
+
+    device = loaded.devices[0]
+    assert loaded.schema_version == SCHEMA_VERSION
+    assert device.mode.effective == "REAL"
+    assert device.bus.effective is None
+    assert device.address.effective is None
+    assert device.breaker_amps.effective is None
+    assert device.mass_kg.effective is None
+    assert device.notes.effective is None
+    assert loaded.unknown_fields == {"teamConventions": {"namingGuide": "subsystem-first"}}
+
+    device.bus.design = "canivore"
+    device.address.design = "5"
+    ProjectStore(tmp_path).save(loaded)
+    reopened = ProjectStore(tmp_path).load()
+
+    assert json.loads(model_path.read_text(encoding="utf-8"))["schemaVersion"] == SCHEMA_VERSION
+    assert reopened.to_dict() == loaded.to_dict()
+    assert reopened.devices[0].bus.effective == "canivore"
+    assert reopened.devices[0].address.effective == "5"
+    assert reopened.commands[0].description.effective == "Joystick control during teleop."
+
+
+def test_device_round_trip_preserves_the_wiring_and_budget_fields(tmp_path) -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    device = Device(
+        name=FieldValue(design="Left front drive"),
+        device_type=FieldValue(design="SparkMax"),
+        owner_subsystem_id=drive.id,
+        mode=FieldValue(design="REAL"),
+        bus=FieldValue(design="canivore"),
+        address=FieldValue(design="5"),
+        breaker_amps=FieldValue(design="40"),
+        mass_kg=FieldValue(design="0.94"),
+        notes=FieldValue(design="Shares a breaker with the rear motor."),
+    )
+    project = ArchitectureProject(name="Robot", subsystems=[drive], devices=[device])
+
+    ProjectStore(tmp_path).save(project)
+    reopened = ProjectStore(tmp_path).load()
+
+    assert reopened.to_dict() == project.to_dict()
+    assert reopened.devices[0].breaker_amps.effective == "40"
+    assert reopened.devices[0].notes.effective == "Shares a breaker with the rear motor."

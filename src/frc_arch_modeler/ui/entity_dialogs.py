@@ -27,6 +27,10 @@ from frc_arch_modeler.importers.java.scanner import DEVICE_PATTERN
 #: DEVICE_PATTERN, offered as suggestions for the (still-editable) device type field.
 DEVICE_TYPES = DEVICE_PATTERN.pattern.split("(?P<type>", 1)[1].split(r")\s*\(", 1)[0].split("|")
 
+#: Common FRC bus names offered as suggestions; the field stays editable because teams
+#: name CANivore buses themselves.
+DEVICE_BUSES = ["rio", "canivore", "rio-pwm", "rio-dio", "rio-analog"]
+
 TRIGGER_ACTIVATIONS = [
     "onTrue",
     "onFalse",
@@ -115,6 +119,19 @@ class DeviceDialog(_EntityDialog):
         self.mode_combo = QComboBox(self)
         self.mode_combo.addItems(["Unspecified", "REAL", "SIM", "REPLAY"])
 
+        self.bus_combo = QComboBox(self)
+        self.bus_combo.setEditable(True)
+        self.bus_combo.addItems(DEVICE_BUSES)
+        self.bus_combo.setCurrentText("")
+
+        self.address_edit = QLineEdit(self)
+        self.address_edit.setPlaceholderText("CAN ID or channel number")
+        self.breaker_edit = QLineEdit(self)
+        self.breaker_edit.setPlaceholderText("Amps")
+        self.mass_edit = QLineEdit(self)
+        self.mass_edit.setPlaceholderText("Kilograms")
+        self.notes_edit = QLineEdit(self)
+
         if device is not None:
             owner_index = self.owner_combo.findData(device.owner_subsystem_id)
             if owner_index >= 0:
@@ -122,19 +139,44 @@ class DeviceDialog(_EntityDialog):
             self.name_edit.setText(device.name.effective or "")
             self.type_combo.setCurrentText(device.device_type.effective or "")
             self.mode_combo.setCurrentText(device.mode.effective or "Unspecified")
+            self.bus_combo.setCurrentText(device.bus.effective or "")
+            self.address_edit.setText(device.address.effective or "")
+            self.breaker_edit.setText(device.breaker_amps.effective or "")
+            self.mass_edit.setText(device.mass_kg.effective or "")
+            self.notes_edit.setText(device.notes.effective or "")
 
         form = QFormLayout()
         form.addRow("Subsystem:", self.owner_combo)
         form.addRow("Name:", self.name_edit)
         form.addRow("Device type:", self.type_combo)
         form.addRow("Mode:", self.mode_combo)
+        form.addRow("Bus:", self.bus_combo)
+        form.addRow("Address:", self.address_edit)
+        form.addRow("Breaker (A):", self.breaker_edit)
+        form.addRow("Mass (kg):", self.mass_edit)
+        form.addRow("Notes:", self.notes_edit)
         self._build_layout(form, allow_add_another=device is None)
 
         self.owner_combo.currentIndexChanged.connect(self._update_validity)
         self.name_edit.textChanged.connect(self._update_validity)
         self.type_combo.editTextChanged.connect(self._update_validity)
+        self.breaker_edit.textChanged.connect(self._update_validity)
+        self.mass_edit.textChanged.connect(self._update_validity)
         self._update_validity()
         self.name_edit.setFocus()
+
+    @staticmethod
+    def _positive_number_error(text: str, label: str) -> str | None:
+        """Validate an optional numeric entry that is still stored as text."""
+        if not text.strip():
+            return None
+        try:
+            value = float(text.strip())
+        except ValueError:
+            return f"{label} must be a number."
+        if value <= 0:
+            return f"{label} must be greater than zero."
+        return None
 
     def _validity_error(self) -> str | None:
         if self.owner_combo.count() == 0:
@@ -143,20 +185,36 @@ class DeviceDialog(_EntityDialog):
             return "Enter a device name."
         if not self.type_combo.currentText().strip():
             return "Enter a device type."
-        return None
+        return self._positive_number_error(
+            self.breaker_edit.text(), "Breaker rating"
+        ) or self._positive_number_error(self.mass_edit.text(), "Mass")
 
-    def values(self) -> tuple[UUID, str, str, str | None]:
+    def values(self) -> tuple[
+        UUID, str, str, str | None, str | None, str | None, str | None, str | None, str | None
+    ]:
+        """Return the entered device, with the numeric fields kept as validated text."""
         mode = self.mode_combo.currentText()
         return (
             self.owner_combo.currentData(),
             self.name_edit.text().strip(),
             self.type_combo.currentText().strip(),
             None if mode == "Unspecified" else mode,
+            self._optional(self.bus_combo.currentText()),
+            self._optional(self.address_edit.text()),
+            self._optional(self.breaker_edit.text()),
+            self._optional(self.mass_edit.text()),
+            self._optional(self.notes_edit.text()),
         )
 
+    @staticmethod
+    def _optional(text: str) -> str | None:
+        return text.strip() or None
+
     def reset_for_another(self) -> None:
-        """Keep the owner/type/mode selection but clear the name for the next device."""
+        """Keep the shared owner/type/mode/bus choices but clear per-device entries."""
         self.name_edit.clear()
+        self.address_edit.clear()
+        self.notes_edit.clear()
         self.name_edit.setFocus()
 
 

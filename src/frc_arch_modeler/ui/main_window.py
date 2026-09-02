@@ -307,10 +307,29 @@ class MainWindow(QMainWindow):
     def add_subsystem(self, name: str) -> None:
         self.element_controller.add_subsystem(name)
 
-    def add_device(
-        self, owner_subsystem_id, name: str, device_type: str, mode: str | None = None
-    ) -> None:  # type: ignore[no-untyped-def]
-        self.element_controller.add_device(owner_subsystem_id, name, device_type, mode)
+    def add_device(  # type: ignore[no-untyped-def]
+        self,
+        owner_subsystem_id,
+        name: str,
+        device_type: str,
+        mode: str | None = None,
+        bus: str | None = None,
+        address: str | None = None,
+        breaker_amps: str | None = None,
+        mass_kg: str | None = None,
+        notes: str | None = None,
+    ) -> None:
+        self.element_controller.add_device(
+            owner_subsystem_id,
+            name,
+            device_type,
+            mode,
+            bus,
+            address,
+            breaker_amps,
+            mass_kg,
+            notes,
+        )
 
     def add_trigger(
         self, command_id, expression: str, activation: str

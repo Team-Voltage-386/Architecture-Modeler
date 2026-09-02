@@ -8,7 +8,7 @@ from pathlib import PurePath
 from typing import Any
 from uuid import UUID, uuid4
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class ComparisonState(StrEnum):
@@ -171,12 +171,22 @@ class Subsystem(_ArchitectureElement):
 
 @dataclass(slots=True)
 class Device:
-    """A portable, design-layer hardware fact owned by a logical subsystem."""
+    """A portable, design-layer hardware fact owned by a logical subsystem.
+
+    ``address`` is text rather than a number because FRC addresses devices both by CAN
+    ID and by PWM/DIO/PDH channel; ``breaker_amps`` and ``mass_kg`` are likewise stored
+    as the strings a ``FieldValue`` holds, and are validated where they are entered.
+    """
 
     name: FieldValue
     device_type: FieldValue
     owner_subsystem_id: UUID
     mode: FieldValue = field(default_factory=FieldValue)
+    bus: FieldValue = field(default_factory=FieldValue)
+    address: FieldValue = field(default_factory=FieldValue)
+    breaker_amps: FieldValue = field(default_factory=FieldValue)
+    mass_kg: FieldValue = field(default_factory=FieldValue)
+    notes: FieldValue = field(default_factory=FieldValue)
     id: UUID = field(default_factory=uuid4)
     code_binding: SourceAnchor | None = None
 
@@ -193,6 +203,11 @@ class Device:
             "deviceType": self.device_type.to_dict(),
             "ownerSubsystemId": str(self.owner_subsystem_id),
             "mode": self.mode.to_dict(),
+            "bus": self.bus.to_dict(),
+            "address": self.address.to_dict(),
+            "breakerAmps": self.breaker_amps.to_dict(),
+            "massKg": self.mass_kg.to_dict(),
+            "notes": self.notes.to_dict(),
             "codeBinding": self.code_binding.to_dict() if self.code_binding else None,
         }
 
@@ -205,6 +220,11 @@ class Device:
             device_type=FieldValue.from_dict(data["deviceType"]),
             owner_subsystem_id=UUID(data["ownerSubsystemId"]),
             mode=FieldValue.from_dict(data.get("mode", {})),
+            bus=FieldValue.from_dict(data.get("bus", {})),
+            address=FieldValue.from_dict(data.get("address", {})),
+            breaker_amps=FieldValue.from_dict(data.get("breakerAmps", {})),
+            mass_kg=FieldValue.from_dict(data.get("massKg", {})),
+            notes=FieldValue.from_dict(data.get("notes", {})),
             code_binding=SourceAnchor.from_dict(binding) if binding else None,
         )
 

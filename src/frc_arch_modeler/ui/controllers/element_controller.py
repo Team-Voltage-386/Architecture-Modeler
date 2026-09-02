@@ -51,15 +51,33 @@ class ElementController:
             )
         )
 
-    def add_device(
-        self, owner_subsystem_id, name: str, device_type: str, mode: str | None = None
-    ) -> None:  # type: ignore[no-untyped-def]
+    def add_device(  # type: ignore[no-untyped-def]
+        self,
+        owner_subsystem_id,
+        name: str,
+        device_type: str,
+        mode: str | None = None,
+        bus: str | None = None,
+        address: str | None = None,
+        breaker_amps: str | None = None,
+        mass_kg: str | None = None,
+        notes: str | None = None,
+    ) -> None:
         """Add a proposed hardware device and surface it on its subsystem block."""
         window = self.window
         if window.project is None:
             raise RuntimeError("Create or open a model before adding a device.")
         device = window.project_service.add_device(
-            window.project, owner_subsystem_id, name, device_type, mode
+            window.project,
+            owner_subsystem_id,
+            name,
+            device_type,
+            mode,
+            bus,
+            address,
+            breaker_amps,
+            mass_kg,
+            notes,
         )
         window.project.devices.remove(device)
         window.undo_stack.push(
@@ -382,12 +400,27 @@ class ElementController:
             dialog = DeviceDialog(window.project, entity, parent=window)
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
-            owner_id, name, device_type, mode = dialog.values()
+            (
+                owner_id,
+                name,
+                device_type,
+                mode,
+                bus,
+                address,
+                breaker_amps,
+                mass_kg,
+                notes,
+            ) = dialog.values()
             fields = {
                 "owner_subsystem_id": owner_id,
                 "name": name,
                 "device_type": device_type,
                 "mode": mode,
+                "bus": bus,
+                "address": address,
+                "breaker_amps": breaker_amps,
+                "mass_kg": mass_kg,
+                "notes": notes,
             }
         elif kind == "trigger":
             dialog = TriggerDialog(window.project, entity, parent=window)

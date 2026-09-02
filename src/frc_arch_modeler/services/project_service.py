@@ -21,6 +21,11 @@ from frc_arch_modeler.persistence.binding_store import BindingStore
 from frc_arch_modeler.persistence.project_store import ProjectStore
 
 
+def _design_value(value: str | None) -> FieldValue:
+    """Return a design override for meaningful text, otherwise an empty layered field."""
+    return FieldValue(design=value) if value and value.strip() else FieldValue()
+
+
 class ProjectService:
     """Keep model lifecycle behavior independent of the Qt user interface."""
 
@@ -61,13 +66,27 @@ class ProjectService:
         name: str,
         device_type: str,
         mode: str | None = None,
+        bus: str | None = None,
+        address: str | None = None,
+        breaker_amps: str | None = None,
+        mass_kg: str | None = None,
+        notes: str | None = None,
     ) -> Device:
-        """Add portable, user-authored hardware to its logical subsystem."""
+        """Add portable, user-authored hardware to its logical subsystem.
+
+        The wiring and budget values arrive as the strings a ``FieldValue`` holds; the
+        caller is responsible for validating the numeric ones.
+        """
         device = Device(
             name=FieldValue(design=name),
             device_type=FieldValue(design=device_type),
             owner_subsystem_id=owner_subsystem_id,
-            mode=FieldValue(design=mode) if mode else FieldValue(),
+            mode=_design_value(mode),
+            bus=_design_value(bus),
+            address=_design_value(address),
+            breaker_amps=_design_value(breaker_amps),
+            mass_kg=_design_value(mass_kg),
+            notes=_design_value(notes),
         )
         project.devices.append(device)
         return device
