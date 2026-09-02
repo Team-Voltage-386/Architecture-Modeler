@@ -9,6 +9,7 @@ from frc_arch_modeler.domain.model import (
     BehaviorTransition,
     FieldValue,
 )
+from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.ui.architecture_scene import ArchitectureScene
 from frc_arch_modeler.ui.behavior_scene import (
     DECISION_SIZE,
@@ -92,6 +93,24 @@ def test_render_diagram_shows_the_diagram_name_above_its_states(qapp) -> None:
     assert len(title_items) == 1
     block = next(item for item in scene.items() if isinstance(item, StateBlock))
     assert title_items[0].pos().y() < block.sceneBoundingRect().top()
+
+
+def test_no_transition_label_rect_intersects_any_state_block_rect_on_the_seeded_diagram(
+    qapp,
+) -> None:
+    project = ProjectService().create("Competition Robot")
+    diagram = project.behavior_diagrams[0]
+    scene = BehaviorScene()
+
+    scene.render_diagram(diagram)
+
+    blocks = [item for item in scene.items() if isinstance(item, StateBlock)]
+    labels = [edge.label for edge in scene._edges if edge.label is not None]
+    assert labels
+    for label in labels:
+        label_rect = label.sceneBoundingRect()
+        for block in blocks:
+            assert not label_rect.intersects(block.sceneBoundingRect())
 
 
 def test_clip_ellipse_lands_exactly_on_the_circle_boundary() -> None:

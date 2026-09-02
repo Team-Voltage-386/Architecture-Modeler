@@ -585,14 +585,91 @@ class BehaviorScene(QGraphicsScene):
             before, tip = edge_routing.last_segment_endpoints(edge.path())
             edge.marker.setPolygon(ArchitectureScene._arrow_polygon(tip, tip - before))
         if edge.label is not None:
-            midpoint = edge.path().pointAtPercent(0.5)
-            label_width = edge.label.boundingRect().width()
-            edge.label.setPos(midpoint.x() - label_width / 2, midpoint.y() - 18)
+            self._place_transition_label(edge)
         # Hidden handles don't need repositioning; _update_edge_visibility() gives a
         # handle a fresh position at the moment it becomes visible again.
         for handle, percent in edge.handles:
             if handle is not None and handle.isVisible():
                 handle.setPos(edge.path().pointAtPercent(percent))
+
+    _LABEL_OFFSETS = (16.0, 32.0, 48.0, 64.0, 80.0, 96.0)
+    _LABEL_PLACEMENT_PERCENTS = (0.5, 0.35, 0.65, 0.2, 0.8)
+
+    def _place_transition_label(self, edge: TransitionEdge) -> None:
+        """Place a transition's trigger label clear of every state block.
+
+        The label starts offset perpendicular to the path segment it sits on rather
+        than centered on the line. If that position's rect still intersects a state
+        block -- as happens on the default seeded Robot Modes diagram, where the
+        naive midpoint placement lands two labels on top of the states they describe
+        -- successively larger offsets are tried, then the other side of the line,
+        then other points along the path, keeping the first position that clears
+        every block.
+        """
+        label = edge.label
+        assert label is not None
+        path = edge.path()
+        size = label.boundingRect().size()
+        blockers = [
+            item.sceneBoundingRect() for item in self.items() if isinstance(item, StateBlock)
+        ]
+        fallback: QPointF | None = None
+        for percent in self._LABEL_PLACEMENT_PERCENTS:
+            point, tangent = self._path_point_and_tangent(path, percent)
+            perpendicular = self._perpendicular_unit(tangent)
+            for offset in self._LABEL_OFFSETS:
+                for side in (1.0, -1.0):
+                    center = point + perpendicular * (offset * side)
+                    top_left = QPointF(
+                        center.x() - size.width() / 2, center.y() - size.height() / 2
+                    )
+                    if fallback is None:
+                        fallback = top_left
+                    candidate = QRectF(top_left, size)
+                    if not any(
+                        self._rects_intersect(candidate, blocker) for blocker in blockers
+                    ):
+                        label.setPos(top_left)
+                        return
+        label.setPos(fallback)
+
+    @staticmethod
+    def _path_point_and_tangent(
+        path: QPainterPath, percent: float, epsilon: float = 0.02
+    ) -> tuple[QPointF, QPointF]:
+        point = path.pointAtPercent(percent)
+        before = path.pointAtPercent(max(0.0, percent - epsilon))
+        after = path.pointAtPercent(min(1.0, percent + epsilon))
+        tangent = after - before
+        if tangent.manhattanLength() == 0:
+            tangent = QPointF(1.0, 0.0)
+        return point, tangent
+
+    @staticmethod
+    def _perpendicular_unit(direction: QPointF) -> QPointF:
+        length = (direction.x() ** 2 + direction.y() ** 2) ** 0.5
+        if length == 0:
+            return QPointF(0.0, -1.0)
+        return QPointF(-direction.y() / length, direction.x() / length)
+
+    @staticmethod
+    def _rects_intersect(a: QRectF, b: QRectF) -> bool:
+        """Whether two rects overlap, built only from edge_routing's segment/rect check.
+
+        Testing each rect's edges against the other catches both a crossing boundary
+        and one rect sitting fully inside the other.
+        """
+        a_corners = [a.topLeft(), a.topRight(), a.bottomRight(), a.bottomLeft()]
+        b_corners = [b.topLeft(), b.topRight(), b.bottomRight(), b.bottomLeft()]
+        if any(
+            edge_routing._segment_crosses_rect(a_corners[i], a_corners[(i + 1) % 4], b)
+            for i in range(4)
+        ):
+            return True
+        return any(
+            edge_routing._segment_crosses_rect(b_corners[i], b_corners[(i + 1) % 4], a)
+            for i in range(4)
+        )
 
     @staticmethod
     def _clip_for(
