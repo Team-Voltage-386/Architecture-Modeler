@@ -43,6 +43,7 @@ from frc_arch_modeler.ui.controllers.canvas_controller import CanvasController
 from frc_arch_modeler.ui.controllers.details_controller import DetailsController
 from frc_arch_modeler.ui.controllers.element_controller import ElementController
 from frc_arch_modeler.ui.controllers.export_controller import ExportController
+from frc_arch_modeler.ui.controllers.hardware_controller import HardwareController
 from frc_arch_modeler.ui.controllers.project_controller import ProjectController
 from frc_arch_modeler.ui.controllers.scan_controller import ScanController
 from frc_arch_modeler.ui.help_panel import HelpPanel
@@ -70,6 +71,7 @@ class MainWindow(QMainWindow):
         self.details_controller = DetailsController(self)
         self.element_controller = ElementController(self)
         self.export_controller = ExportController(self)
+        self.hardware_controller = HardwareController(self)
         self.project_controller = ProjectController(self)
         self.scan_controller = ScanController(self)
         self.undo_stack = QUndoStack(self)
@@ -79,6 +81,7 @@ class MainWindow(QMainWindow):
         self._build_help_dock()
         self._build_toolbar()
         self.canvas_controller.build_canvas()
+        self.hardware_controller.build_hardware_tab()
         self.details_controller.build_details_dock()
         self._build_inventory_dock()
         self.project_controller.build_status_bar()
@@ -393,6 +396,35 @@ class MainWindow(QMainWindow):
     def _prompt_new_relationship(self) -> None:
         self.element_controller.prompt_new_relationship()
 
+    def _refresh_after_hardware_edit(self) -> None:
+        """Re-render the canvas and the Hardware table after a table-driven edit."""
+        self.element_controller.refresh_after_edit()
+        self.hardware_controller.refresh_table()
+
+    def _hardware_column_header_clicked(self, column: int) -> None:
+        self.hardware_controller.column_header_clicked(column)
+
+    def _hardware_cell_changed(self, item) -> None:  # type: ignore[no-untyped-def]
+        self.hardware_controller.cell_changed(item)
+
+    def _hardware_subsystem_cell_changed(self, device_id, combo) -> None:  # type: ignore[no-untyped-def]
+        self.hardware_controller.subsystem_cell_changed(device_id, combo)
+
+    def _hardware_mode_cell_changed(self, device_id, combo) -> None:  # type: ignore[no-untyped-def]
+        self.hardware_controller.mode_cell_changed(device_id, combo)
+
+    def _remove_selected_hardware_device(self) -> None:
+        self.hardware_controller.remove_selected_device()
+
+    def _filter_hardware_table(self, text: str) -> None:
+        self.hardware_controller.apply_filter(text)
+
+    def _sync_hardware_table_selection(self) -> None:
+        self.hardware_controller.sync_table_to_canvas_selection()
+
+    def _sync_canvas_to_hardware_selection(self) -> None:
+        self.hardware_controller.sync_canvas_to_table_selection()
+
     def _update_details_presentation(self) -> None:
         self.details_controller.update_details_presentation()
 
@@ -450,6 +482,7 @@ class MainWindow(QMainWindow):
         self.restore_action.setEnabled(project is not None)
         self.device_view_action.setEnabled(project is not None)
         self.canvas_controller.update_device_view_action()
+        self.hardware_controller.refresh_table()
         self.export_architecture_action.setEnabled(project is not None)
         self.compare_action.setEnabled(project is not None and self.last_scan is not None)
         self.export_change_request_action.setEnabled(

@@ -329,6 +329,7 @@ class ElementController:
         window.behavior_model_browser.rebuild(
             window.project, window._selected_behavior_diagram_id
         )
+        window.hardware_controller.refresh_table()
         window._mark_dirty(f"Unsaved design model: {window.project.name}")
 
     # -- owned objects on the details panel -------------------------------

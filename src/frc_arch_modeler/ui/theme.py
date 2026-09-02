@@ -86,6 +86,31 @@ def apply_voltage_theme(app: QApplication) -> None:
             color: {VOLTAGE_YELLOW};
             border-left: 3px solid {VOLTAGE_YELLOW};
         }}
+        QTableWidget {{
+            background: {NEAR_BLACK};
+            color: {OFF_WHITE};
+            gridline-color: transparent;
+        }}
+        QTableWidget#hardwareTable::item {{
+            padding: 4px 8px;
+            margin: 2px;
+            border: 1px solid #4A5568;
+            border-radius: 3px;
+            background: {PANEL_BLACK};
+        }}
+        QTableWidget#hardwareTable::item:hover {{ border-color: {VOLTAGE_YELLOW}; }}
+        QTableWidget#hardwareTable::item:selected,
+        QTableWidget#hardwareTable::item:selected:!active {{
+            background: #303846;
+            color: {VOLTAGE_YELLOW};
+            border-color: {VOLTAGE_YELLOW};
+        }}
+        QHeaderView::section {{
+            background: {PANEL_BLACK};
+            color: {OFF_WHITE};
+            padding: 4px 8px;
+            border: 1px solid #303846;
+        }}
         QPushButton {{ border: 1px solid #4A5568; border-radius: 4px; padding: 6px 10px; }}
         QPushButton:hover {{ border-color: {VOLTAGE_YELLOW}; }}
         """

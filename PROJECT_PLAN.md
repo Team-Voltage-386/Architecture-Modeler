@@ -566,6 +566,10 @@ The MVP is successful when a student can:
 
 FRC project scope is small enough to capture in one structure diagram, but multiple activity diagrams will be needed. When Behavior tab is active, replace the code inventory with a model browser where we can create multiple named activity diagrams. We should be able to have activity diagrams at the root/top level of the model but also tied to specific commands (tree view)
 
+## Controlls Tab
+
+Add a new tab that shows the Xbox Driver and Manipulator controller layouts (button mapping). Use the controller png under assets, which has red lines pointing to the different buttons. Like the other functions, we should have a design (able to write the desired controls) separate from logic that parses the actual implemented controls from the code, with the ability to show both a button's planned/designed function and the function it currently maps to in the code. Ideally we would be able to jump/link from the control to the relevant activity diagram or trigger in the structure view
+
 ## 12. Decisions to confirm after the first spike
 
 The plan can proceed with the following defaults; they do not need to block Phase 0:
