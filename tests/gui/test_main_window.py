@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence, QPalette
 from PySide6.QtWidgets import (
     QDialog,
@@ -97,6 +97,49 @@ def test_canvas_layout_moves_are_undoable(qtbot) -> None:
     assert block.pos() == before
     window.undo_stack.redo()
     assert block.pos() == after
+
+
+def test_zoom_to_fit_uses_item_bounds_not_the_padded_scene_rect(qtbot, monkeypatch) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+
+    fitted_rects = []
+    monkeypatch.setattr(
+        window.canvas, "fitInView", lambda rect, *a, **k: fitted_rects.append(QRectF(rect))
+    )
+    window.zoom_to_fit()
+
+    assert fitted_rects, "zoom_to_fit did not fit the view to a rect"
+    items_bounds = window.scene.itemsBoundingRect()
+    assert window.scene.sceneRect() != items_bounds
+    margin = 20
+    assert fitted_rects[0] == items_bounds.adjusted(-margin, -margin, margin, margin)
+
+
+def test_behavior_zoom_to_fit_uses_item_bounds_not_the_padded_scene_rect(
+    qtbot, monkeypatch
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+
+    fitted_rects = []
+    monkeypatch.setattr(
+        window.behavior_canvas,
+        "fitInView",
+        lambda rect, *a, **k: fitted_rects.append(QRectF(rect)),
+    )
+    window.behavior_zoom_to_fit()
+
+    assert fitted_rects, "behavior_zoom_to_fit did not fit the view to a rect"
+    items_bounds = window.behavior_scene.itemsBoundingRect()
+    assert window.behavior_scene.sceneRect() != items_bounds
+    margin = 20
+    assert fitted_rects[0] == items_bounds.adjusted(-margin, -margin, margin, margin)
 
 
 def test_selected_design_block_can_be_deleted_and_undone(qtbot) -> None:
@@ -347,6 +390,7 @@ def test_every_toolbar_action_has_a_tooltip_and_status_tip(qtbot) -> None:
         window.new_behavior_decision_action,
         window.new_behavior_sync_action,
         window.new_behavior_join_action,
+        window.behavior_zoom_to_fit_action,
     ]
     for action in toolbar_actions:
         assert action.toolTip(), f"{action.text()!r} has no tooltip"

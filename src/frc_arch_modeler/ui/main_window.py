@@ -735,6 +735,16 @@ class MainWindow(QMainWindow):
         ):
             action.setEnabled(False)
             action.setIcon(state_kind_icon(kind))
+        toolbar.addSeparator()
+        self.behavior_zoom_to_fit_action = toolbar.addAction(
+            "Zoom to Fit", self.behavior_zoom_to_fit
+        )
+        self._set_action_help(
+            self.behavior_zoom_to_fit_action,
+            "Zoom and pan the behavior canvas so every state is visible at once. Use "
+            "this to get your bearings after scrolling or zooming in.",
+        )
+        self.behavior_zoom_to_fit_action.setEnabled(False)
         self.behavior_toolbar = toolbar
 
     def set_project(self, project: ArchitectureProject | None) -> None:
@@ -759,6 +769,7 @@ class MainWindow(QMainWindow):
         )
         for action in self._behavior_creation_actions:
             action.setEnabled(project is not None)
+        self.behavior_zoom_to_fit_action.setEnabled(project is not None)
         self.save_model_action.setEnabled(project is not None)
         self.auto_layout_action.setEnabled(project is not None)
         self.zoom_to_fit_action.setEnabled(project is not None)
@@ -1693,8 +1704,22 @@ class MainWindow(QMainWindow):
 
     def zoom_to_fit(self) -> None:
         """Fit the current design into the visible canvas without changing it."""
-        if self.project is not None and not self.scene.sceneRect().isEmpty():
-            self.canvas.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        self._fit_view_to_items(self.canvas, self.scene)
+
+    def behavior_zoom_to_fit(self) -> None:
+        """Fit the current behavior diagram into the visible canvas without changing it."""
+        self._fit_view_to_items(self.behavior_canvas, self.behavior_scene)
+
+    @staticmethod
+    def _fit_view_to_items(view: QGraphicsView, scene) -> None:  # type: ignore[no-untyped-def]
+        """Fit the view to the actual item bounds, not the padded sceneRect, so
+        content fills the canvas instead of appearing small and off-centre."""
+        bounds = scene.itemsBoundingRect()
+        if bounds.isEmpty():
+            return
+        margin = 20
+        bounds = bounds.adjusted(-margin, -margin, margin, margin)
+        view.fitInView(bounds, Qt.AspectRatioMode.KeepAspectRatio)
 
     def minimize_selected(self) -> None:
         if self.scene.set_selected_minimized(True):
