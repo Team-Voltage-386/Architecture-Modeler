@@ -113,6 +113,9 @@ class MainWindow(QMainWindow):
     def open_project(self, root: Path) -> ArchitectureProject:
         return self.project_controller.open_project(root)
 
+    def open_sample_model(self, destination: Path) -> ArchitectureProject:
+        return self.project_controller.open_sample_model(destination)
+
     def save_project(self, root: Path | None = None) -> Path:
         return self.project_controller.save_project(root)
 
@@ -127,6 +130,9 @@ class MainWindow(QMainWindow):
 
     def _prompt_open_project(self) -> None:
         self.project_controller.prompt_open_project()
+
+    def _prompt_open_sample_model(self) -> None:
+        self.project_controller.prompt_open_sample_model()
 
     def _prompt_save_project(self) -> None:
         self.project_controller.prompt_save_project()

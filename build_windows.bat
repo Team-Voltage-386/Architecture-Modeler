@@ -16,6 +16,7 @@ if not exist "%PYTHON_EXE%" (
     --paths src ^
     --collect-all tree_sitter_java ^
     --add-data "%CD%\assets;assets" ^
+    --add-data "%CD%\resources;resources" ^
     --add-data "%CD%\LICENSE;." ^
     --distpath dist ^
     --workpath build\pyinstaller ^

@@ -40,6 +40,15 @@ def build_toolbar(window: MainWindow) -> None:
         "Open a previously saved architecture model from disk. Use this to resume "
         "work on a model you already created.",
     )
+    window.open_sample_model_action = window.addAction(
+        "Open Sample Model", window._prompt_open_sample_model
+    )
+    set_action_help(
+        window.open_sample_model_action,
+        "Copy the built-in example robot — a full swerve drivetrain, intake, "
+        "elevator, shooter and climber — into a folder you choose, then open it. "
+        "Use this to explore the tool on a real model before building your own.",
+    )
     window.save_model_action = window.addAction("Save Model", window._prompt_save_project)
     window.save_model_action.setShortcut(QKeySequence.StandardKey.Save)
     window.save_model_action.setEnabled(False)
@@ -328,7 +337,13 @@ def organize_toolbar(window: MainWindow, toolbar: QToolBar) -> None:
         return menu
 
     model_menu = add_group(
-        "Model", [window.new_model_action, window.open_model_action, window.save_model_action]
+        "Model",
+        [
+            window.new_model_action,
+            window.open_model_action,
+            window.open_sample_model_action,
+            window.save_model_action,
+        ],
     )
     model_menu.addSeparator()
     window.open_recent_model_action = model_menu.addAction(

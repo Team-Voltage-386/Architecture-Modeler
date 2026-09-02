@@ -876,6 +876,35 @@ def test_opening_legacy_project_selects_first_diagram_as_root_level(qtbot, tmp_p
     assert root_header.child(0).text(0) == "Robot Modes"
 
 
+def test_open_sample_model_copies_the_shipped_sample_into_a_chosen_folder_and_opens_it(
+    qtbot, tmp_path
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    destination = tmp_path / "my_robot"
+    shipped_model = (
+        Path(__file__).parents[2]
+        / "resources"
+        / "sample_model"
+        / ".frc-architecture"
+        / "model.json"
+    )
+    shipped_contents_before = shipped_model.read_text(encoding="utf-8")
+
+    project = window.open_sample_model(destination)
+
+    assert project.name == "Sample Swerve Robot"
+    assert window.model_root == destination
+    copied_model = destination / ".frc-architecture" / "model.json"
+    assert copied_model.read_text(encoding="utf-8") == shipped_contents_before
+
+    window.add_command("Student's New Command")
+    window.save_project()
+
+    assert shipped_model.read_text(encoding="utf-8") == shipped_contents_before
+
+
 def test_imported_command_details_show_lifecycle_with_inherited_phases(qtbot) -> None:
     create_application([])
     window = MainWindow()

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,9 +15,16 @@ from PySide6.QtWidgets import QFileDialog, QInputDialog, QLabel, QMessageBox
 from frc_arch_modeler.domain.model import ArchitectureProject
 from frc_arch_modeler.persistence.draft_store import DraftStore
 from frc_arch_modeler.persistence.layout_store import LayoutStore
+from frc_arch_modeler.persistence.project_store import ProjectStore
 
 if TYPE_CHECKING:
     from frc_arch_modeler.ui.main_window import MainWindow
+
+
+def _bundled_sample_model_root() -> Path:
+    """Resolve the shipped sample model, under PyInstaller's extraction dir or in dev."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[4]))
+    return base / "resources" / "sample_model"
 
 
 class ProjectController:
@@ -72,6 +81,30 @@ class ProjectController:
         else:
             window.statusBar().showMessage(f"Opened design model: {project.name}")
         return project
+
+    def open_sample_model(self, destination: Path) -> ArchitectureProject:
+        """Copy the shipped sample model into a chosen writable folder and open it there.
+
+        Copying first means a student can edit the sample freely without ever mutating
+        the shipped copy, and reuses the ordinary open path for draft recovery, layout
+        and recent-model bookkeeping.
+        """
+        destination = Path(destination)
+        destination.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(
+            _bundled_sample_model_root() / ProjectStore.directory_name,
+            destination / ProjectStore.directory_name,
+            dirs_exist_ok=True,
+        )
+        return self.open_project(destination)
+
+    def prompt_open_sample_model(self) -> None:
+        root = QFileDialog.getExistingDirectory(self.window, "Copy sample model to")
+        if root:
+            try:
+                self.window.open_sample_model(Path(root))
+            except (OSError, ValueError) as error:
+                QMessageBox.critical(self.window, "Could not open sample model", str(error))
 
     def save_project(self, root: Path | None = None) -> Path:
         """Persist the current design model and clear its dirty state."""

@@ -1,0 +1,1707 @@
+{
+  "schemaVersion": 2,
+  "id": "62c8691e-bf05-495e-9de6-b536b2388fb2",
+  "name": "Sample Swerve Robot",
+  "commands": [
+    {
+      "id": "09162c55-d4f3-464b-8470-0487a473c95e",
+      "name": {
+        "design": "Teleop Drive",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Drives the robot in teleop using field-relative joystick input.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null,
+      "requirementIds": [
+        "ccaaf2b5-8cf8-43bf-9e64-09812f254d71"
+      ]
+    },
+    {
+      "id": "7bc61471-a881-4986-8024-dcc9badfc934",
+      "name": {
+        "design": "Run Intake",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Runs the intake rollers to pick up a game piece.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null,
+      "requirementIds": [
+        "de352ee9-7639-480e-abc5-6f0ca4d6a69e"
+      ]
+    },
+    {
+      "id": "b907cbe3-a462-4e32-8031-517f84d0e9cb",
+      "name": {
+        "design": "Raise Elevator",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Raises the elevator to the scoring position.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null,
+      "requirementIds": [
+        "60991aa1-ed1a-481c-b999-0199f1340b40"
+      ]
+    },
+    {
+      "id": "0eada739-5788-4b03-912d-1d9e3754dfde",
+      "name": {
+        "design": "Lower Elevator",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Lowers the elevator back to the stowed position.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null,
+      "requirementIds": [
+        "60991aa1-ed1a-481c-b999-0199f1340b40"
+      ]
+    },
+    {
+      "id": "e53748b0-aad5-4559-ab05-7375533bab0c",
+      "name": {
+        "design": "Run Shooter",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Spins the flywheels up to speed and feeds a game piece through.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null,
+      "requirementIds": [
+        "da0219d4-3742-4603-b381-929a857bc78e"
+      ]
+    },
+    {
+      "id": "3f77d169-5fd0-4d42-b9ee-ed5f493fcb9d",
+      "name": {
+        "design": "Climb",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Winches the climber to raise the robot on the chain.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null,
+      "requirementIds": [
+        "fb73b7d0-7f88-4159-a2c0-f7599c6a8d46"
+      ]
+    },
+    {
+      "id": "b7224e60-406b-4e91-b36c-b4efff85745a",
+      "name": {
+        "design": "Score and Leave",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Autonomous routine: score the preloaded game piece, then drive out of the starting zone.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null,
+      "requirementIds": [
+        "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+        "da0219d4-3742-4603-b381-929a857bc78e"
+      ]
+    },
+    {
+      "id": "181507d5-8f4a-4f82-8aa6-a6cd5c3a1994",
+      "name": {
+        "design": "Signal Ready",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Blinks the status LEDs green once a game piece is ready to score. Not yet implemented in code.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null,
+      "requirementIds": []
+    }
+  ],
+  "subsystems": [
+    {
+      "id": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "name": {
+        "design": "Drivetrain",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Four-module swerve drive: independent drive and steer motors per corner, each with an absolute steer encoder, plus a gyro for field-relative heading.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "de352ee9-7639-480e-abc5-6f0ca4d6a69e",
+      "name": {
+        "design": "Intake",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Ground intake that picks up game pieces and feeds them to the shooter.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "60991aa1-ed1a-481c-b999-0199f1340b40",
+      "name": {
+        "design": "Elevator",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Vertical elevator that raises the shooter to scoring height.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "da0219d4-3742-4603-b381-929a857bc78e",
+      "name": {
+        "design": "Shooter",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Dual-flywheel shooter that scores game pieces.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "fb73b7d0-7f88-4159-a2c0-f7599c6a8d46",
+      "name": {
+        "design": "Climber",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Winches the robot up the end-game chain.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": {
+        "relativePath": "src/main/java/frc/robot/subsystems/ClimberSubsystem.java",
+        "qualifiedSymbol": "frc.robot.subsystems.ClimberSubsystem",
+        "signature": "public class ClimberSubsystem extends SubsystemBase",
+        "startLine": 6,
+        "endLine": 8,
+        "sourceHash": null
+      }
+    }
+  ],
+  "devices": [
+    {
+      "id": "d3bcdcb1-8b97-47cf-9f89-aadd4093f7c5",
+      "name": {
+        "design": "Front Left Drive Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "10",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "40",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "050f373a-93bf-4245-9bca-fdfd1c4f19dd",
+      "name": {
+        "design": "Front Left Steer Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "11",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "20",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "eda62fa1-dcd1-44b5-aa01-a2be7261ae72",
+      "name": {
+        "design": "Front Left Steer Encoder",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "CANcoder",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "12",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.04",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "d99fef0d-81d0-4662-80a1-fb3b97d7482b",
+      "name": {
+        "design": "Front Right Drive Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "13",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "40",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "b0e05f72-1cdd-4b13-96e0-1d57b78fb9ed",
+      "name": {
+        "design": "Front Right Steer Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "14",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "20",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "d76de005-25c5-401f-94a2-3786eab02a02",
+      "name": {
+        "design": "Front Right Steer Encoder",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "CANcoder",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "15",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.04",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "0e7d669c-ad2a-47ea-93ef-8fc4d1c23194",
+      "name": {
+        "design": "Back Left Drive Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "16",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "40",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "70adb9dc-982f-4e2e-bef9-857fd16bdb3f",
+      "name": {
+        "design": "Back Left Steer Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "17",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "20",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "c18bc50e-b9c4-47ec-a68a-7e7ed1808eda",
+      "name": {
+        "design": "Back Left Steer Encoder",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "CANcoder",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "18",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.04",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "7aaa4b22-1fd5-4faa-98e6-b46cd36e033b",
+      "name": {
+        "design": "Back Right Drive Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "19",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "40",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "bc41740e-96e5-4653-9bca-69eefa34fe65",
+      "name": {
+        "design": "Back Right Steer Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "20",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "20",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "1c86ab9b-aa37-451a-8ce2-ddd3f1b14767",
+      "name": {
+        "design": "Back Right Steer Encoder",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "CANcoder",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "21",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.04",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "d745353f-8b9d-4712-8e73-5f23ba49e660",
+      "name": {
+        "design": "Gyro",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "Pigeon2",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "ccaaf2b5-8cf8-43bf-9e64-09812f254d71",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "22",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.08",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "4dca3523-6f75-4367-a492-b4cd9068bae6",
+      "name": {
+        "design": "Intake Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "de352ee9-7639-480e-abc5-6f0ca4d6a69e",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "30",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "20",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "55422c09-ae29-44c3-8295-253eeb660611",
+      "name": {
+        "design": "Note Sensor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "DigitalInput",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "de352ee9-7639-480e-abc5-6f0ca4d6a69e",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "dio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "0",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.02",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "a8dc5c9d-bac5-4eff-92fd-8e8b2e7b27c7",
+      "name": {
+        "design": "Elevator Leader Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "60991aa1-ed1a-481c-b999-0199f1340b40",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "40",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "40",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "89a61b43-596c-462d-8dd3-8e628b1c2c02",
+      "name": {
+        "design": "Elevator Follower Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "60991aa1-ed1a-481c-b999-0199f1340b40",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "41",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "40",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "8fb780b8-c046-4ab5-959f-c28b71b72720",
+      "name": {
+        "design": "Lower Limit Switch",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "DigitalInput",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "60991aa1-ed1a-481c-b999-0199f1340b40",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "dio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "1",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.02",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "e2954356-2a54-4607-8537-f697eea176e5",
+      "name": {
+        "design": "Left Flywheel Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "TalonFX",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "da0219d4-3742-4603-b381-929a857bc78e",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "50",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "40",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.51",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "f41faef3-63cf-4d4b-aae6-118adb0b6194",
+      "name": {
+        "design": "Right Flywheel Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "TalonFX",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "da0219d4-3742-4603-b381-929a857bc78e",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "51",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "40",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.51",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "1264d3a7-3707-47ce-b373-aaf157735e39",
+      "name": {
+        "design": "Feeder Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "da0219d4-3742-4603-b381-929a857bc78e",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "52",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "20",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    },
+    {
+      "id": "c3c96e0d-4b3f-4434-8a54-c627e0e6ad79",
+      "name": {
+        "design": "Climber Motor",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "deviceType": {
+        "design": "SparkMax",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "ownerSubsystemId": "fb73b7d0-7f88-4159-a2c0-f7599c6a8d46",
+      "mode": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "bus": {
+        "design": "rio",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "address": {
+        "design": "60",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "breakerAmps": {
+        "design": "40",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "massKg": {
+        "design": "0.42",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "notes": {
+        "design": null,
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
+    }
+  ],
+  "triggers": [
+    {
+      "id": "fad78985-bbfd-4aa1-8b7a-7a526c20d09a",
+      "expression": {
+        "design": "operator.rightTrigger()",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "activation": {
+        "design": "whileTrue",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "commandId": "7bc61471-a881-4986-8024-dcc9badfc934",
+      "codeBinding": null
+    },
+    {
+      "id": "048a245e-059f-4fa1-bef1-b069f1cc0e58",
+      "expression": {
+        "design": "operator.y()",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "activation": {
+        "design": "onTrue",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "commandId": "b907cbe3-a462-4e32-8031-517f84d0e9cb",
+      "codeBinding": null
+    },
+    {
+      "id": "f97cc0ae-b8cb-431b-8ad0-897d3972a65e",
+      "expression": {
+        "design": "operator.a()",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "activation": {
+        "design": "onTrue",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "commandId": "0eada739-5788-4b03-912d-1d9e3754dfde",
+      "codeBinding": null
+    },
+    {
+      "id": "40d767f5-e3ad-4ad5-918e-ad2642d0ea35",
+      "expression": {
+        "design": "operator.rightBumper()",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "activation": {
+        "design": "whileTrue",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "commandId": "e53748b0-aad5-4559-ab05-7375533bab0c",
+      "codeBinding": null
+    },
+    {
+      "id": "4559acec-3339-4f0d-8f63-5307d2e752c0",
+      "expression": {
+        "design": "operator.start()",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "activation": {
+        "design": "whileTrue",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "commandId": "3f77d169-5fd0-4d42-b9ee-ed5f493fcb9d",
+      "codeBinding": null
+    }
+  ],
+  "relationships": [],
+  "behaviorDiagrams": [
+    {
+      "id": "222f6885-a500-4280-ae16-b8e58a4e406b",
+      "name": "Robot Modes",
+      "states": [
+        {
+          "id": "4036c5fb-a4b6-4f09-84c2-4b3beb9a818c",
+          "name": {
+            "design": "Disabled",
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "description": {
+            "design": null,
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "kind": "state"
+        },
+        {
+          "id": "e0ba2edc-8819-4809-aa10-a9b0bc81bb09",
+          "name": {
+            "design": "Autonomous",
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "description": {
+            "design": null,
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "kind": "state"
+        },
+        {
+          "id": "e5b35ac6-4b0f-4887-a6bf-f29dc168e685",
+          "name": {
+            "design": "Teleop",
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "description": {
+            "design": null,
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "kind": "state"
+        },
+        {
+          "id": "048b6d1b-7ab0-4df0-897e-fd366455401d",
+          "name": {
+            "design": "Test",
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "description": {
+            "design": null,
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "kind": "state"
+        }
+      ],
+      "transitions": [
+        {
+          "id": "6ed4204b-925a-4870-9f16-5029b838cfd2",
+          "sourceStateId": "4036c5fb-a4b6-4f09-84c2-4b3beb9a818c",
+          "targetStateId": "e0ba2edc-8819-4809-aa10-a9b0bc81bb09",
+          "triggerLabel": "Autonomous period starts",
+          "commandId": null
+        },
+        {
+          "id": "70fd389e-d32c-433d-a116-0b2fa0ef861c",
+          "sourceStateId": "e0ba2edc-8819-4809-aa10-a9b0bc81bb09",
+          "targetStateId": "e5b35ac6-4b0f-4887-a6bf-f29dc168e685",
+          "triggerLabel": "Teleop period starts",
+          "commandId": null
+        },
+        {
+          "id": "f62bf9f1-842f-4068-b29b-f1ba2b522c5e",
+          "sourceStateId": "e5b35ac6-4b0f-4887-a6bf-f29dc168e685",
+          "targetStateId": "4036c5fb-a4b6-4f09-84c2-4b3beb9a818c",
+          "triggerLabel": "Match ends",
+          "commandId": null
+        },
+        {
+          "id": "8aed3d6c-2c3f-492f-bd5e-ffc9909ab210",
+          "sourceStateId": "4036c5fb-a4b6-4f09-84c2-4b3beb9a818c",
+          "targetStateId": "048b6d1b-7ab0-4df0-897e-fd366455401d",
+          "triggerLabel": "Test mode enabled",
+          "commandId": null
+        },
+        {
+          "id": "fc9fe4f6-4d13-46fb-8bc8-1e42c9ad8295",
+          "sourceStateId": "048b6d1b-7ab0-4df0-897e-fd366455401d",
+          "targetStateId": "4036c5fb-a4b6-4f09-84c2-4b3beb9a818c",
+          "triggerLabel": "Test mode disabled",
+          "commandId": null
+        }
+      ],
+      "ownerCommandId": null
+    },
+    {
+      "id": "fbd91dba-6bd1-4301-b74a-aebff3d1bf5a",
+      "name": "Score and Leave Auto",
+      "states": [
+        {
+          "id": "664a7e76-58ef-4e73-b628-11346edf29a8",
+          "name": {
+            "design": "Start",
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "description": {
+            "design": null,
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "kind": "start"
+        },
+        {
+          "id": "1e6000d1-480e-4210-a505-6a57cd503053",
+          "name": {
+            "design": "Shoot Preload Note",
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "description": {
+            "design": null,
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "kind": "state"
+        },
+        {
+          "id": "5e802713-e01b-4683-b172-4858a22d8258",
+          "name": {
+            "design": "Drive Out of Zone",
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "description": {
+            "design": null,
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "kind": "state"
+        },
+        {
+          "id": "566035c3-ceb2-45fa-bb2e-a144f1170dc4",
+          "name": {
+            "design": "End",
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "description": {
+            "design": null,
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "kind": "end"
+        }
+      ],
+      "transitions": [
+        {
+          "id": "c7622ad4-f78e-4935-b955-0a258cfa95a3",
+          "sourceStateId": "664a7e76-58ef-4e73-b628-11346edf29a8",
+          "targetStateId": "1e6000d1-480e-4210-a505-6a57cd503053",
+          "triggerLabel": "Autonomous period begins",
+          "commandId": "e53748b0-aad5-4559-ab05-7375533bab0c"
+        },
+        {
+          "id": "5900d7af-c390-4a4c-af6f-03b8acdc6b8e",
+          "sourceStateId": "1e6000d1-480e-4210-a505-6a57cd503053",
+          "targetStateId": "5e802713-e01b-4683-b172-4858a22d8258",
+          "triggerLabel": "Note scored",
+          "commandId": null
+        },
+        {
+          "id": "998ce93e-a65f-44ae-96cb-2eb1b58fe582",
+          "sourceStateId": "5e802713-e01b-4683-b172-4858a22d8258",
+          "targetStateId": "566035c3-ceb2-45fa-bb2e-a144f1170dc4",
+          "triggerLabel": "Robot clears the starting zone",
+          "commandId": null
+        }
+      ],
+      "ownerCommandId": "b7224e60-406b-4e91-b36c-b4efff85745a"
+    }
+  ]
+}
