@@ -80,10 +80,14 @@ class ScanController:
         worker = JavaScanWorker(self.pending_scan_root)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.completed.connect(self._scan_completed)
-        worker.failed.connect(self._scan_failed)
-        worker.cancelled.connect(self._scan_cancelled)
-        worker.progress.connect(self._scan_progress)
+        # The worker lives on another thread, so these must connect to bound methods of
+        # the window: Qt queues a cross-thread signal onto the receiver QObject's thread
+        # and drops it once that object dies. A plain controller receiver has neither
+        # affinity nor lifetime, and would run these handlers on the worker thread.
+        worker.completed.connect(window._scan_completed)
+        worker.failed.connect(window._scan_failed)
+        worker.cancelled.connect(window._scan_cancelled)
+        worker.progress.connect(window._scan_progress)
         self.scan_thread = thread
         self.scan_worker = worker
         window.connect_robot_action.setEnabled(False)
@@ -112,21 +116,21 @@ class ScanController:
         self.pending_scan_root = None
         return True
 
-    def _scan_progress(self, completed: int, total: int) -> None:
+    def scan_progress(self, completed: int, total: int) -> None:
         self.window.statusBar().showMessage(
             f"{self.pending_scan_action} Java project in background… {completed}/{total} files"
         )
 
-    def _scan_completed(self, scan: ScanResult) -> None:
+    def scan_completed(self, scan: ScanResult) -> None:
         assert self.pending_scan_root is not None
         self.apply_scan(self.pending_scan_root, scan, self.pending_scan_action)
         self._finish_background_scan()
 
-    def _scan_failed(self, message: str) -> None:
+    def scan_failed(self, message: str) -> None:
         self.window.statusBar().showMessage(f"Code scan failed: {message}")
         self._finish_background_scan()
 
-    def _scan_cancelled(self) -> None:
+    def scan_cancelled(self) -> None:
         self.window.statusBar().showMessage(
             "Code scan cancelled; prior code view was retained."
         )

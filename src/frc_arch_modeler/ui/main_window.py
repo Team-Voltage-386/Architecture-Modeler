@@ -10,24 +10,20 @@ from PySide6.QtGui import (
     QCloseEvent,
     QCursor,
     QKeySequence,
-    QPainter,
     QUndoStack,
 )
 from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
-    QGraphicsView,
     QInputDialog,
     QMainWindow,
     QMenu,
     QMessageBox,
     QStackedWidget,
-    QTabWidget,
     QToolBar,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
-    QWidget,
 )
 
 from frc_arch_modeler.domain.model import (
@@ -44,6 +40,7 @@ from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock, Architectu
 from frc_arch_modeler.ui.behavior_model_browser import BehaviorModelBrowser
 from frc_arch_modeler.ui.behavior_scene import BehaviorScene
 from frc_arch_modeler.ui.controllers.behavior_controller import BehaviorController
+from frc_arch_modeler.ui.controllers.canvas_controller import CanvasController
 from frc_arch_modeler.ui.controllers.export_controller import ExportController
 from frc_arch_modeler.ui.controllers.project_controller import ProjectController
 from frc_arch_modeler.ui.controllers.scan_controller import ScanController
@@ -59,7 +56,6 @@ from frc_arch_modeler.ui.help_panel import HelpPanel
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
 from frc_arch_modeler.ui.undo_commands import (
     AddDesignEntityCommand,
-    MoveBlocksCommand,
     RemoveDesignEntityCommand,
 )
 
@@ -84,29 +80,17 @@ class MainWindow(QMainWindow):
         self.project_service = ProjectService()
         self.recent_model_store = RecentModelStore()
         self.behavior_controller = BehaviorController(self)
+        self.canvas_controller = CanvasController(self)
         self.export_controller = ExportController(self)
         self.project_controller = ProjectController(self)
         self.scan_controller = ScanController(self)
         self.undo_stack = QUndoStack(self)
         self.scene = ArchitectureScene(self)
-        self.scene.layout_changed.connect(self._layout_changed)
-        self.scene.layout_move_completed.connect(self._record_layout_move)
-        self.scene.block_double_clicked.connect(self._open_compact_details)
-        self.scene.delete_requested.connect(self._confirm_delete_selected)
-        self.scene.connection_requested.connect(self._handle_connection_requested)
         self.behavior_scene = BehaviorScene(self)
-        self.behavior_scene.layout_move_completed.connect(self._record_behavior_layout_move)
-        self.behavior_scene.delete_requested.connect(self._confirm_delete_selected)
-        self.behavior_scene.connection_requested.connect(self._handle_behavior_connection_requested)
-        self.behavior_scene.state_double_clicked.connect(self._prompt_rename_behavior_state)
-        self.behavior_scene.transition_delete_requested.connect(self._delete_behavior_transition)
-        self.behavior_scene.transition_reattach_requested.connect(
-            self._reattach_behavior_transition
-        )
-        self.behavior_scene.transition_anchor_changed.connect(self._behavior_layout_changed)
+        self.canvas_controller.connect_scenes()
         self._build_help_dock()
         self._build_toolbar()
-        self._build_canvas()
+        self.canvas_controller.build_canvas()
         self._build_details_dock()
         self._build_inventory_dock()
         self.project_controller.build_status_bar()
@@ -128,38 +112,6 @@ class MainWindow(QMainWindow):
 
     def _build_behavior_toolbar(self) -> None:
         toolbars.build_behavior_toolbar(self)
-
-    def _build_canvas(self) -> None:
-        self.canvas = QGraphicsView(self.scene, self)
-        self.canvas.setAccessibleName("Architecture canvas")
-        self.canvas.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self.canvas.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-        self.canvas.setBackgroundBrush(Qt.GlobalColor.black)
-        self.scene.selectionChanged.connect(self._update_selected_element)
-        self.scene.selectionChanged.connect(self._update_bind_selected_action)
-        self.scene.selectionChanged.connect(self._update_delete_selected_action)
-        self.scene.selectionChanged.connect(self._update_link_selected_action)
-
-        self.behavior_canvas = QGraphicsView(self.behavior_scene, self)
-        self.behavior_canvas.setAccessibleName("Behavior canvas")
-        self.behavior_canvas.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self.behavior_canvas.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-        self.behavior_canvas.setBackgroundBrush(Qt.GlobalColor.black)
-        self._build_behavior_toolbar()
-
-        self._behavior_tab = QWidget(self)
-        behavior_layout = QVBoxLayout(self._behavior_tab)
-        behavior_layout.setContentsMargins(0, 0, 0, 0)
-        behavior_layout.setSpacing(0)
-        behavior_layout.addWidget(self.behavior_toolbar)
-        behavior_layout.addWidget(self.behavior_canvas)
-
-        self.diagram_tabs = QTabWidget(self)
-        self.diagram_tabs.addTab(self.canvas, "Structure")
-        self.diagram_tabs.addTab(self._behavior_tab, "Behavior")
-        self.diagram_tabs.currentChanged.connect(self._update_delete_selected_action)
-        self.behavior_scene.selectionChanged.connect(self._update_delete_selected_action)
-        self.setCentralWidget(self.diagram_tabs)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.project_controller.handle_close_event(event)
@@ -216,6 +168,18 @@ class MainWindow(QMainWindow):
 
     def _stop_background_scan_for_close(self) -> bool:
         return self.scan_controller.stop_background_scan_for_close()
+
+    def _scan_progress(self, completed: int, total: int) -> None:
+        self.scan_controller.scan_progress(completed, total)
+
+    def _scan_completed(self, scan: ScanResult) -> None:
+        self.scan_controller.scan_completed(scan)
+
+    def _scan_failed(self, message: str) -> None:
+        self.scan_controller.scan_failed(message)
+
+    def _scan_cancelled(self) -> None:
+        self.scan_controller.scan_cancelled()
 
     def _prompt_connect_robot_project(self) -> None:
         self.scan_controller.prompt_connect_robot_project()
@@ -304,6 +268,51 @@ class MainWindow(QMainWindow):
     def _refresh_behavior_after_edit(self) -> None:
         self.behavior_controller.refresh_after_edit()
 
+    def _render_with_current_scan(self) -> None:
+        self.canvas_controller.render_with_current_scan()
+
+    def _render_preserving_selection(self) -> None:
+        self.canvas_controller.render_preserving_selection()
+
+    def _toggle_command_forms(self, visible: bool) -> None:
+        self.canvas_controller.toggle_command_forms(visible)
+
+    def _apply_status_filters(self) -> None:
+        self.canvas_controller.apply_status_filters()
+
+    def _update_bind_selected_action(self) -> None:
+        self.canvas_controller.update_bind_selected_action()
+
+    def _update_delete_selected_action(self) -> None:
+        self.canvas_controller.update_delete_selected_action()
+
+    def _update_link_selected_action(self) -> None:
+        self.canvas_controller.update_link_selected_action()
+
+    def auto_layout(self) -> None:
+        self.canvas_controller.auto_layout()
+
+    def zoom_to_fit(self) -> None:
+        self.canvas_controller.zoom_to_fit()
+
+    def behavior_zoom_to_fit(self) -> None:
+        self.canvas_controller.behavior_zoom_to_fit()
+
+    def minimize_selected(self) -> None:
+        self.canvas_controller.minimize_selected()
+
+    def restore_selected(self) -> None:
+        self.canvas_controller.restore_selected()
+
+    def _layout_changed(self) -> None:
+        self.canvas_controller.layout_changed()
+
+    def _record_layout_move(self, before, after) -> None:  # type: ignore[no-untyped-def]
+        self.canvas_controller.record_layout_move(before, after)
+
+    def _sync_left_dock_to_active_tab(self, index: int) -> None:
+        self.canvas_controller.sync_left_dock_to_active_tab(index)
+
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
         self.project = project
@@ -357,68 +366,6 @@ class MainWindow(QMainWindow):
 
     def _prompt_export_change_request(self) -> None:
         self.export_controller.prompt_export_change_request()
-
-    def _render_with_current_scan(self) -> None:
-        self.scene.render_project(
-            self.project,
-            layout=self.scene.layout_state(),
-            scan=self.last_scan,
-            statuses=self._comparison_statuses(),
-            code_only_symbols=self._code_only_symbols(),
-        )
-
-    def _render_preserving_selection(self) -> None:
-        """Refresh block text without disrupting the active details context."""
-        selected_ids = {block.element_id for block in self.scene.selected_blocks()}
-        self._render_with_current_scan()
-        for item in self.scene.items():
-            if isinstance(item, ArchitectureBlock) and item.element_id in selected_ids:
-                item.setSelected(True)
-
-    def _toggle_command_forms(self, visible: bool) -> None:
-        """Keep inline forms in the inventory unless the user explicitly expands the canvas."""
-        self.scene.show_command_forms = visible
-        self._render_with_current_scan()
-
-    def _apply_status_filters(self) -> None:
-        self.scene.set_status_filter(
-            {state for state, action in self._status_filter_actions.items() if action.isChecked()}
-        )
-
-    def _update_bind_selected_action(self) -> None:
-        blocks = self.scene.selected_blocks()
-        self.bind_selected_action.setEnabled(
-            len(blocks) == 2
-            and {block.imported for block in blocks} == {False, True}
-            and blocks[0].kind == blocks[1].kind
-            and self.project is not None
-            and self.last_scan is not None
-        )
-
-    def _update_delete_selected_action(self) -> None:
-        """Route the single Delete action/shortcut to whichever diagram tab is active."""
-        if self.diagram_tabs.currentWidget() is self._behavior_tab:
-            blocks = self.behavior_scene.selected_blocks()
-            transitions = self.behavior_scene.selected_transition_ids()
-            self.delete_selected_action.setEnabled(
-                self._active_behavior_diagram() is not None
-                and ((len(blocks) == 1) != (len(transitions) == 1))
-            )
-            return
-        blocks = self.scene.selected_blocks()
-        self.delete_selected_action.setEnabled(
-            self.project is not None and len(blocks) == 1 and not blocks[0].imported
-        )
-
-    def _update_link_selected_action(self) -> None:
-        """Enable the direct drafting shortcut for a command/subsystem pair."""
-        blocks = self.scene.selected_blocks()
-        self.link_selected_action.setEnabled(
-            self.project is not None
-            and len(blocks) == 2
-            and not any(block.imported for block in blocks)
-            and {block.kind for block in blocks} == {"command", "subsystem"}
-        )
 
     def add_command(self, name: str) -> None:
         """Add a command and refresh its deterministic initial canvas position."""
@@ -675,47 +622,6 @@ class MainWindow(QMainWindow):
         # Commands can gain/lose their model-browser node here too (e.g. add/delete command).
         self.behavior_model_browser.rebuild(self.project, self._selected_behavior_diagram_id)
         self._mark_dirty(f"Unsaved design model: {self.project.name}")
-
-    def auto_layout(self) -> None:
-        """Restore the deterministic layout without changing design intent."""
-        if self.project is None:
-            return
-        self.scene.render_project(self.project, scan=self.last_scan)
-        self._mark_dirty("Auto-layout applied")
-
-    def zoom_to_fit(self) -> None:
-        """Fit the current design into the visible canvas without changing it."""
-        self._fit_view_to_items(self.canvas, self.scene)
-
-    def behavior_zoom_to_fit(self) -> None:
-        """Fit the current behavior diagram into the visible canvas without changing it."""
-        self._fit_view_to_items(self.behavior_canvas, self.behavior_scene)
-
-    @staticmethod
-    def _fit_view_to_items(view: QGraphicsView, scene) -> None:  # type: ignore[no-untyped-def]
-        """Fit the view to the actual item bounds, not the padded sceneRect, so
-        content fills the canvas instead of appearing small and off-centre."""
-        bounds = scene.itemsBoundingRect()
-        if bounds.isEmpty():
-            return
-        margin = 20
-        bounds = bounds.adjusted(-margin, -margin, margin, margin)
-        view.fitInView(bounds, Qt.AspectRatioMode.KeepAspectRatio)
-
-    def minimize_selected(self) -> None:
-        if self.scene.set_selected_minimized(True):
-            self._mark_dirty("Selected items minimized")
-
-    def restore_selected(self) -> None:
-        if self.scene.set_selected_minimized(False):
-            self._mark_dirty("Selected items restored")
-
-    def _layout_changed(self) -> None:
-        self._mark_dirty("Canvas layout updated")
-
-    def _record_layout_move(self, before, after) -> None:  # type: ignore[no-untyped-def]
-        """Place completed drags on the normal undo stack after Qt releases the mouse."""
-        self.undo_stack.push(MoveBlocksCommand(self.scene, before, after, self._layout_changed))
 
     def _update_selected_element(self) -> None:
         selected = self.scene.selected_blocks()
@@ -1346,15 +1252,6 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
         self.diagram_tabs.currentChanged.connect(self._sync_left_dock_to_active_tab)
         self._sync_left_dock_to_active_tab(self.diagram_tabs.currentIndex())
-
-    def _sync_left_dock_to_active_tab(self, index: int) -> None:
-        """Show the behavior model browser only while the Behavior tab is active."""
-        on_behavior = self.diagram_tabs.currentWidget() is self._behavior_tab
-        self._left_dock_stack.setCurrentWidget(
-            self.behavior_model_browser if on_behavior else self.inventory_tree
-        )
-        self._left_dock.setWindowTitle("Behavior Diagrams" if on_behavior else "Code Inventory")
-        self.help_panel.set_active_context("behavior" if on_behavior else "structure")
 
     def _build_help_dock(self) -> None:
         """A notation help panel, hidden by default so it costs the canvas no width.

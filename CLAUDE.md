@@ -46,3 +46,7 @@
   plain Python attributes.
 - Pass Qt enums as enum members, e.g. `Qt.AspectRatioMode.KeepAspectRatio`, never ints.
 - Reset any cached list of scene items before calling `scene.clear()`.
+- Connect Qt signals only to bound methods of a `QObject` (the window), never of a
+  plain controller object. Qt drops a connection when its receiver `QObject` dies and
+  queues a cross-thread signal onto that object's thread; a non-`QObject` receiver has
+  neither, so slots fire against deleted scenes and run on the worker thread.
