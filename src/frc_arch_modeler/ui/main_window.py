@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +20,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QGraphicsView,
     QInputDialog,
-    QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -41,8 +39,6 @@ from frc_arch_modeler.domain.model import (
 )
 from frc_arch_modeler.importers.base import ScanResult
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
-from frc_arch_modeler.persistence.draft_store import DraftStore
-from frc_arch_modeler.persistence.layout_store import LayoutStore
 from frc_arch_modeler.persistence.recent_model_store import RecentModelStore
 from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.services.reconcile_service import ReconciliationResult, ReconciliationService
@@ -51,6 +47,7 @@ from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock, Architectu
 from frc_arch_modeler.ui.behavior_model_browser import BehaviorModelBrowser
 from frc_arch_modeler.ui.behavior_scene import BehaviorScene
 from frc_arch_modeler.ui.controllers.export_controller import ExportController
+from frc_arch_modeler.ui.controllers.project_controller import ProjectController
 from frc_arch_modeler.ui.details_panel import (
     DetailsPanel,
     EditDescriptionCommand,
@@ -97,6 +94,7 @@ class MainWindow(QMainWindow):
         self.project_service = ProjectService()
         self.recent_model_store = RecentModelStore()
         self.export_controller = ExportController(self)
+        self.project_controller = ProjectController(self)
         self.undo_stack = QUndoStack(self)
         self.scene = ArchitectureScene(self)
         self.scene.layout_changed.connect(self._layout_changed)
@@ -119,7 +117,7 @@ class MainWindow(QMainWindow):
         self._build_canvas()
         self._build_details_dock()
         self._build_inventory_dock()
-        self._build_status_bar()
+        self.project_controller.build_status_bar()
         self.statusBar().showMessage("No robot project connected")
 
     def resizeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
@@ -138,42 +136,6 @@ class MainWindow(QMainWindow):
 
     def _build_behavior_toolbar(self) -> None:
         toolbars.build_behavior_toolbar(self)
-
-    def closeEvent(self, event: QCloseEvent) -> None:
-        """Protect unsaved design and canvas edits when the main window closes."""
-        if not self.is_dirty or not self.isVisible():
-            if self._stop_background_scan_for_close():
-                event.accept()
-            else:
-                event.ignore()
-            return
-        choice = QMessageBox.warning(
-            self,
-            "Unsaved architecture model",
-            "Save changes before closing?",
-            QMessageBox.StandardButton.Save
-            | QMessageBox.StandardButton.Discard
-            | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Save,
-        )
-        if choice == QMessageBox.StandardButton.Discard:
-            if self._stop_background_scan_for_close():
-                event.accept()
-            else:
-                event.ignore()
-            return
-        if choice == QMessageBox.StandardButton.Save:
-            try:
-                self._prompt_save_project()
-            except OSError as error:
-                QMessageBox.critical(self, "Could not save model", str(error))
-            if not self.is_dirty:
-                if self._stop_background_scan_for_close():
-                    event.accept()
-                else:
-                    event.ignore()
-                return
-        event.ignore()
 
     def _stop_background_scan_for_close(self) -> bool:
         """Cancel a live worker before destroying its Qt owner during window shutdown."""
@@ -220,6 +182,39 @@ class MainWindow(QMainWindow):
         self.behavior_scene.selectionChanged.connect(self._update_delete_selected_action)
         self.setCentralWidget(self.diagram_tabs)
 
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self.project_controller.handle_close_event(event)
+
+    def new_project(self, name: str) -> ArchitectureProject:
+        return self.project_controller.new_project(name)
+
+    def open_project(self, root: Path) -> ArchitectureProject:
+        return self.project_controller.open_project(root)
+
+    def save_project(self, root: Path | None = None) -> Path:
+        return self.project_controller.save_project(root)
+
+    def _mark_dirty(self, message: str) -> None:
+        self.project_controller.mark_dirty(message)
+
+    def _update_status_indicators(self) -> None:
+        self.project_controller.update_status_indicators()
+
+    def _prompt_new_project(self) -> None:
+        self.project_controller.prompt_new_project()
+
+    def _prompt_open_project(self) -> None:
+        self.project_controller.prompt_open_project()
+
+    def _prompt_save_project(self) -> None:
+        self.project_controller.prompt_save_project()
+
+    def _open_recent_model(self) -> None:
+        self.project_controller.open_recent_model()
+
+    def _refresh_recent_model_action(self) -> None:
+        self.project_controller.refresh_recent_model_action()
+
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
         self.project = project
@@ -262,67 +257,6 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Design model: {project.name}")
         self._update_status_indicators()
 
-    def new_project(self, name: str) -> ArchitectureProject:
-        """Create and display an unsaved design-only project."""
-        project = self.project_service.create(name)
-        self.model_root = None
-        self.set_project(project)
-        self.is_dirty = True
-        self.statusBar().showMessage(f"Unsaved design model: {project.name}")
-        return project
-
-    def open_project(self, root: Path) -> ArchitectureProject:
-        """Load a saved model sidecar directory into the canvas."""
-        project = self.project_service.open(root)
-        self.model_root = Path(root)
-        draft = DraftStore(self.model_root).load()
-        recovered = False
-        if draft is not None and draft.to_dict() != project.to_dict():
-            choice = QMessageBox.question(
-                self,
-                "Recover unsaved draft",
-                "An autosaved draft differs from the saved model. Restore it?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
-            )
-            if choice == QMessageBox.StandardButton.Yes:
-                project = draft
-                recovered = True
-        self.set_project(project)
-        layout_store = LayoutStore(self.model_root)
-        loaded_layout = layout_store.load()
-        self.scene.render_project(project, loaded_layout, self.last_scan)
-        self.behavior_scene.render_diagram(self._active_behavior_diagram(), loaded_layout)
-        self._restore_ui_preferences(layout_store.load_ui())
-        self.recent_model_store.save(self.model_root)
-        self._refresh_recent_model_action()
-        if recovered:
-            self.is_dirty = True
-            self.statusBar().showMessage(f"Recovered unsaved draft: {project.name}")
-        else:
-            self.statusBar().showMessage(f"Opened design model: {project.name}")
-        return project
-
-    def save_project(self, root: Path | None = None) -> Path:
-        """Persist the current design model and clear its dirty state."""
-        if self.project is None:
-            raise RuntimeError("Create or open a model before saving.")
-        if root is not None:
-            self.model_root = Path(root)
-        if self.model_root is None:
-            raise RuntimeError("Choose a folder for the model before saving.")
-        saved_path = self.project_service.save(self.model_root, self.project)
-        combined_layout = {**self.scene.layout_state(), **self.behavior_scene.layout_state()}
-        LayoutStore(self.model_root).save(combined_layout, self._ui_preferences())
-        DraftStore(self.model_root).discard()
-        self.is_dirty = False
-        self.undo_stack.setClean()
-        self.recent_model_store.save(self.model_root)
-        self._refresh_recent_model_action()
-        self.statusBar().showMessage(f"Saved design model: {saved_path}")
-        self._update_status_indicators()
-        return saved_path
-
     def export_architecture(self, root: Path | None = None) -> Path:
         return self.export_controller.export_architecture(root)
 
@@ -348,7 +282,7 @@ class MainWindow(QMainWindow):
         self.last_scan = scan
         self.reconciliation = None
         self._last_scan_time = datetime.now().strftime("%H:%M:%S")
-        self._git_revision_text = self._git_revision(root)
+        self._git_revision_text = ProjectController.git_revision(root)
         self.refresh_code_action.setEnabled(True)
         self.compare_action.setEnabled(self.project is not None)
         self.export_change_request_action.setEnabled(self.project is not None)
@@ -1183,13 +1117,6 @@ class MainWindow(QMainWindow):
         if self.scene.set_selected_minimized(False):
             self._mark_dirty("Selected items restored")
 
-    def _mark_dirty(self, message: str) -> None:
-        self.is_dirty = True
-        if self.project is not None and self.model_root is not None:
-            DraftStore(self.model_root).save(self.project)
-        self.statusBar().showMessage(message)
-        self._update_status_indicators()
-
     def _layout_changed(self) -> None:
         self._mark_dirty("Canvas layout updated")
 
@@ -1675,45 +1602,6 @@ class MainWindow(QMainWindow):
         self._mark_dirty("Description updated")
         self._render_preserving_selection()
 
-    def _prompt_new_project(self) -> None:
-        name, accepted = QInputDialog.getText(self, "New model", "Model name:")
-        if accepted and name.strip():
-            self.new_project(name.strip())
-
-    def _prompt_open_project(self) -> None:
-        root = QFileDialog.getExistingDirectory(self, "Open architecture model")
-        if root:
-            try:
-                self.open_project(Path(root))
-            except ValueError as error:
-                QMessageBox.critical(self, "Could not open model", str(error))
-
-    def _open_recent_model(self) -> None:
-        recent_path = self.recent_model_store.load()
-        if recent_path is None:
-            return
-        try:
-            self.open_project(recent_path)
-        except ValueError as error:
-            QMessageBox.critical(self, "Could not open model", str(error))
-
-    def _refresh_recent_model_action(self) -> None:
-        """Reflect the last-opened model (if any) on the Model menu's Recent entry."""
-        recent_path = self.recent_model_store.load()
-        self.open_recent_model_action.setVisible(recent_path is not None)
-        if recent_path is not None:
-            self.open_recent_model_action.setText(f"Recent: {recent_path.name}")
-            self.open_recent_model_action.setToolTip(str(recent_path))
-
-    def _prompt_save_project(self) -> None:
-        if self.model_root is None:
-            root = QFileDialog.getExistingDirectory(self, "Save architecture model")
-            if not root:
-                return
-            self.save_project(Path(root))
-        else:
-            self.save_project()
-
     def _prompt_connect_robot_project(self) -> None:
         root = QFileDialog.getExistingDirectory(self, "Connect Java/WPILib robot project")
         if root:
@@ -1775,27 +1663,6 @@ class MainWindow(QMainWindow):
     def _update_details_presentation(self) -> None:
         """Use a dock on wide screens and reserve a sheet on laptop-width windows."""
         self.details_dock.setVisible(self.width() >= DETAILS_DOCK_BREAKPOINT)
-
-    def _ui_preferences(self) -> dict[str, int]:
-        """Persist bounded presentation values separately from semantic design data."""
-        return {
-            "windowWidth": self.width(),
-            "windowHeight": self.height(),
-            "detailsWidth": self.details_dock.width(),
-        }
-
-    def _restore_ui_preferences(self, preferences: dict[str, object]) -> None:
-        """Restore only reasonable dimensions so changed monitor setups remain usable."""
-        width = preferences.get("windowWidth")
-        height = preferences.get("windowHeight")
-        if isinstance(width, int) and isinstance(height, int):
-            self.resize(min(max(width, 800), 2560), min(max(height, 600), 1600))
-        details_width = preferences.get("detailsWidth")
-        if isinstance(details_width, int) and 180 <= details_width <= 900:
-            self.resizeDocks(
-                [self.details_dock], [details_width], Qt.Orientation.Horizontal
-            )
-        self._update_details_presentation()
 
     def _open_compact_details(self) -> None:
         if self.width() >= DETAILS_DOCK_BREAKPOINT or len(self.scene.selected_blocks()) != 1:
@@ -1929,58 +1796,6 @@ class MainWindow(QMainWindow):
             "Show or hide the notation help panel. Use this when you forget what a "
             "block accent, border style, line, or palette shape means.",
         )
-
-    def _build_status_bar(self) -> None:
-        """Reserve the plan's persistent status fields alongside transient action messages."""
-        bar = self.statusBar()
-        self.status_project_label = QLabel("No model", self)
-        self.status_scan_label = QLabel("No robot project connected", self)
-        self.status_warnings_label = QLabel("", self)
-        self.status_dirty_label = QLabel("", self)
-        for label in (
-            self.status_project_label,
-            self.status_scan_label,
-            self.status_warnings_label,
-            self.status_dirty_label,
-        ):
-            label.setContentsMargins(8, 0, 8, 0)
-            bar.addPermanentWidget(label)
-        self._update_status_indicators()
-
-    def _update_status_indicators(self) -> None:
-        """Keep the persistent status fields current without disturbing action messages."""
-        self.status_project_label.setText(
-            f"Model: {self.project.name}" if self.project is not None else "No model"
-        )
-        if self.robot_project_root is not None:
-            scan_time = self._last_scan_time or "not scanned yet"
-            revision = f" @ {self._git_revision_text}" if self._git_revision_text else ""
-            self.status_scan_label.setText(
-                f"Robot: {self.robot_project_root.name}{revision} · scanned {scan_time}"
-            )
-        else:
-            self.status_scan_label.setText("No robot project connected")
-        warning_count = len(self.last_scan.diagnostics) if self.last_scan is not None else 0
-        self.status_warnings_label.setText(
-            f"{warning_count} parse warning(s)" if self.last_scan is not None else ""
-        )
-        self.status_dirty_label.setText("● Unsaved" if self.is_dirty else "Saved")
-
-    @staticmethod
-    def _git_revision(root: Path) -> str | None:
-        """Best-effort short revision when Git is available; never blocks on a scan."""
-        try:
-            result = subprocess.run(
-                ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
-                capture_output=True,
-                text=True,
-                timeout=2,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return None
-        if result.returncode != 0:
-            return None
-        return result.stdout.strip() or None
 
     def _open_inventory_source(self, item: QTreeWidgetItem, column: int) -> None:
         symbol_name = item.data(0, Qt.ItemDataRole.UserRole)
