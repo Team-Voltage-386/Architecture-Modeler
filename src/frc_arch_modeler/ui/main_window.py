@@ -1,4 +1,10 @@
-"""Main application shell for the Phase 0 spike."""
+"""Composition root for the main application window.
+
+MainWindow owns the widgets, the undo stack and the shared model state, and hands
+every behavior to a controller in `controllers/`. The delegating methods below are
+the single call path between those controllers, so a controller reaches a sibling
+through the window rather than holding a reference to it.
+"""
 
 from __future__ import annotations
 
@@ -11,14 +17,12 @@ from PySide6.QtGui import (
     QUndoStack,
 )
 from PySide6.QtWidgets import (
-    QDialog,
     QDockWidget,
     QMainWindow,
     QStackedWidget,
     QToolBar,
     QTreeWidget,
     QTreeWidgetItem,
-    QVBoxLayout,
 )
 
 from frc_arch_modeler.domain.model import (
@@ -36,24 +40,16 @@ from frc_arch_modeler.ui.behavior_model_browser import BehaviorModelBrowser
 from frc_arch_modeler.ui.behavior_scene import BehaviorScene
 from frc_arch_modeler.ui.controllers.behavior_controller import BehaviorController
 from frc_arch_modeler.ui.controllers.canvas_controller import CanvasController
+from frc_arch_modeler.ui.controllers.details_controller import DetailsController
 from frc_arch_modeler.ui.controllers.element_controller import ElementController
 from frc_arch_modeler.ui.controllers.export_controller import ExportController
 from frc_arch_modeler.ui.controllers.project_controller import ProjectController
 from frc_arch_modeler.ui.controllers.scan_controller import ScanController
-from frc_arch_modeler.ui.details_panel import (
-    DetailsPanel,
-    EditDescriptionCommand,
-    EditNameCommand,
-    EditRequirementsCommand,
-)
 from frc_arch_modeler.ui.help_panel import HelpPanel
-from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
-
-DETAILS_DOCK_BREAKPOINT = 1280
 
 
 class MainWindow(QMainWindow):
-    """Initial shell that reserves the plan's primary UI regions."""
+    """The plan's primary UI regions, wired to the controllers that drive them."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -71,6 +67,7 @@ class MainWindow(QMainWindow):
         self.recent_model_store = RecentModelStore()
         self.behavior_controller = BehaviorController(self)
         self.canvas_controller = CanvasController(self)
+        self.details_controller = DetailsController(self)
         self.element_controller = ElementController(self)
         self.export_controller = ExportController(self)
         self.project_controller = ProjectController(self)
@@ -82,7 +79,7 @@ class MainWindow(QMainWindow):
         self._build_help_dock()
         self._build_toolbar()
         self.canvas_controller.build_canvas()
-        self._build_details_dock()
+        self.details_controller.build_details_dock()
         self._build_inventory_dock()
         self.project_controller.build_status_bar()
         self.statusBar().showMessage("No robot project connected")
@@ -371,6 +368,33 @@ class MainWindow(QMainWindow):
     def _prompt_new_relationship(self) -> None:
         self.element_controller.prompt_new_relationship()
 
+    def _update_details_presentation(self) -> None:
+        self.details_controller.update_details_presentation()
+
+    def _open_compact_details(self) -> None:
+        self.details_controller.open_compact_details()
+
+    def _update_compact_details(self) -> None:
+        self.details_controller.update_compact_details()
+
+    def _update_selected_element(self) -> None:
+        self.details_controller.update_selected_element()
+
+    def edit_selected_description(self, description: str | None) -> None:
+        self.details_controller.edit_selected_description(description)
+
+    def edit_selected_name(self, name: str | None) -> None:
+        self.details_controller.edit_selected_name(name)
+
+    def edit_selected_requirements(self, requirement_ids) -> None:  # type: ignore[no-untyped-def]
+        self.details_controller.edit_selected_requirements(requirement_ids)
+
+    def _requirements_changed(self) -> None:
+        self.details_controller.requirements_changed()
+
+    def _open_source_anchor(self, anchor: SourceAnchor) -> None:
+        self.details_controller.open_source_anchor(anchor)
+
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
         self.project = project
@@ -425,454 +449,6 @@ class MainWindow(QMainWindow):
     def _prompt_export_change_request(self) -> None:
         self.export_controller.prompt_export_change_request()
 
-    def _update_selected_element(self) -> None:
-        selected = self.scene.selected_blocks()
-        if len(selected) != 1:
-            self.details_panel.set_element(None)
-            self._update_compact_details()
-            return
-        imported_anchor = selected[0].source_anchor
-        if isinstance(imported_anchor, SourceAnchor):
-            conventional_command = (
-                selected[0].kind == "command" and self._is_conventional_command(imported_anchor)
-            )
-            functional_command = self._functional_phase_expressions(imported_anchor)
-            inline_flow = self._inline_command_flow(imported_anchor)
-            self.details_panel.set_imported_fact(
-                selected[0].title.toPlainText(),
-                selected[0].kind,
-                imported_anchor,
-                self._imported_details(selected[0]),
-                self._lifecycle_methods(imported_anchor)
-                if conventional_command
-                else ["initialize", "execute", "isFinished", "end"]
-                if functional_command
-                else None,
-                self._lifecycle_anchors(imported_anchor) if conventional_command else None,
-                conventional_command or bool(functional_command) or bool(inline_flow),
-                inline_flow,
-            )
-            self._update_compact_details()
-            return
-        if self.project is None:
-            self.details_panel.set_element(None)
-            self._update_compact_details()
-            return
-        element_id = selected[0].element_id
-        element = next(
-            (
-                item
-                for item in [*self.project.commands, *self.project.subsystems]
-                if item.id == element_id
-            ),
-            None,
-        )
-        self.details_panel.set_element(
-            element,
-            *self._matched_code_details(element.id) if element is not None else (),
-            subsystem_options=self._subsystem_options(),
-            design_context=self._design_structure(element.id) if element is not None else None,
-            owned_objects=self._owned_objects(element),
-        )
-        self._update_compact_details()
-
-    def _matched_code_details(
-        self, element_id
-    ) -> tuple[str | None, str | None, SourceAnchor | None]:  # type: ignore[no-untyped-def]
-        if self.reconciliation is None:
-            return (None, None, None)
-        symbol = self.reconciliation.matches.get(element_id)
-        if symbol is None:
-            return (None, None, None)
-        return (symbol.name, symbol.documentation, symbol.anchor)
-
-    def _imported_details(self, block) -> str | None:  # type: ignore[no-untyped-def]
-        """Augment imported facts with directly extracted architecture evidence."""
-        details = block.code_summary
-        if not isinstance(block.source_anchor, SourceAnchor) or self.last_scan is None:
-            return details
-        lines: list[str] = [details] if details else []
-        qualified_symbol = block.source_anchor.qualified_symbol
-        if block.kind == "subsystem":
-            devices = [
-                f"- {device.device_type}{f' [{device.mode}]' if device.mode else ''}: "
-                f"{device.resolved_arguments or device.constructor_arguments}"
-                for device in self.last_scan.devices
-                if self._logical_device_owner(device.owner_symbol) == qualified_symbol
-            ]
-            if devices:
-                lines.extend(["Devices:", *devices])
-        if block.kind == "command":
-            normalized_block_name = self._normalized(block.title.toPlainText())
-            triggers = [
-                f"- {trigger.controller_expression} · {trigger.activation} → "
-                f"{trigger.command_expression}"
-                for trigger in self.last_scan.triggers
-                if normalized_block_name in self._normalized(trigger.command_expression)
-            ]
-            lifecycle = [
-                symbol.name
-                for symbol in self.last_scan.symbols_of_kind("lifecycle_method")
-                if symbol.anchor.qualified_symbol.startswith(f"{qualified_symbol}#")
-            ]
-            if triggers:
-                lines.extend(["Triggers:", *triggers])
-            if lifecycle:
-                lines.append(f"Lifecycle overrides: {', '.join(lifecycle)}")
-            registrations = [
-                "- "
-                + (
-                    "Default command"
-                    if relationship.kind == "default_command"
-                    else "Autonomous registration"
-                )
-                + f": {relationship.target_expression}"
-                for relationship in self.last_scan.relationships
-                if relationship.kind in {"default_command", "autonomous_registration"}
-                and normalized_block_name in self._normalized(relationship.target_expression)
-            ]
-            if registrations:
-                lines.extend(["Scheduler registrations:", *registrations])
-        children = [
-            relationship.target_expression
-            for relationship in self.last_scan.relationships
-            if relationship.kind == "composition_child"
-            and relationship.source_symbol == qualified_symbol
-        ]
-        if children:
-            lines.extend(["Composition children:", *(f"- {child}" for child in children)])
-        decorators = [
-            relationship.target_expression
-            for relationship in self.last_scan.relationships
-            if relationship.kind == "command_decorator"
-            and relationship.source_symbol == qualified_symbol
-        ]
-        if decorators:
-            lines.extend(["Decorators:", *(f"- {decorator}" for decorator in decorators)])
-        functional_phases = [
-            relationship.target_expression
-            for relationship in self.last_scan.relationships
-            if relationship.kind == "functional_phase"
-            and relationship.source_symbol == qualified_symbol
-        ]
-        if functional_phases:
-            lines.extend(
-                ["Functional command phases:", *(f"- {phase}" for phase in functional_phases)]
-            )
-        return "\n\n".join(lines) or None
-
-    def _lifecycle_methods(self, command_anchor: SourceAnchor) -> list[str]:
-        """Return overrides for an imported command without inventing absent phases."""
-        if self.last_scan is None:
-            return []
-        return [
-            symbol.name
-            for symbol in self.last_scan.symbols_of_kind("lifecycle_method")
-            if symbol.anchor.qualified_symbol.startswith(f"{command_anchor.qualified_symbol}#")
-        ]
-
-    def _is_conventional_command(self, command_anchor: SourceAnchor) -> bool:
-        """Only command subclasses have the conventional initialize/execute lifecycle."""
-        return self.last_scan is not None and any(
-            symbol.kind == "command"
-            and symbol.anchor.qualified_symbol == command_anchor.qualified_symbol
-            for symbol in self.last_scan.symbols
-        )
-
-    def _functional_phase_expressions(self, command_anchor: SourceAnchor) -> list[str]:
-        """Identify a FunctionalCommand form without fabricating conventional source methods."""
-        if self.last_scan is None:
-            return []
-        return [
-            relationship.target_expression
-            for relationship in self.last_scan.relationships
-            if relationship.kind == "functional_phase"
-            and relationship.source_symbol == command_anchor.qualified_symbol
-        ]
-
-    def _inline_command_flow(self, command_anchor: SourceAnchor) -> list[str] | None:
-        """Describe the fixed scheduler behavior of supported inline WPILib factories."""
-        if self.last_scan is None or not any(
-            symbol.kind == "command_composition"
-            and symbol.anchor.qualified_symbol == command_anchor.qualified_symbol
-            for symbol in self.last_scan.symbols
-        ):
-            return None
-        form = command_anchor.qualified_symbol.rsplit(".", 1)[-1].split("@", 1)[0]
-        flows = {
-            "runOnce": ["Start", "action", "Finish"],
-            "run": ["Start", "execute", "Until interrupted", "end(interrupted)"],
-            "runEnd": ["Start", "execute", "end(interrupted)"],
-            "startEnd": ["Start", "execute", "end(interrupted)"],
-        }
-        return flows.get(form)
-
-    def _lifecycle_anchors(self, command_anchor: SourceAnchor) -> dict[str, SourceAnchor]:
-        if self.last_scan is None:
-            return {}
-        return {
-            symbol.name: symbol.anchor
-            for symbol in self.last_scan.symbols_of_kind("lifecycle_method")
-            if symbol.anchor.qualified_symbol.startswith(f"{command_anchor.qualified_symbol}#")
-        }
-
-    def _design_structure(self, element_id) -> str | None:  # type: ignore[no-untyped-def]
-        """Summarize authored devices, controls, and typed links for the details panel."""
-        if self.project is None:
-            return None
-        lines: list[str] = []
-        devices = [
-            device for device in self.project.devices if device.owner_subsystem_id == element_id
-        ]
-        if devices:
-            lines.append(
-                "Devices: "
-                + ", ".join(
-                    f"{device.name.effective} ({device.device_type.effective})"
-                    for device in devices
-                )
-            )
-        triggers = [
-            trigger for trigger in self.project.triggers if trigger.command_id == element_id
-        ]
-        if triggers:
-            lines.append(
-                "Triggers: "
-                + ", ".join(
-                    f"{trigger.expression.effective} · {trigger.activation.effective}"
-                    for trigger in triggers
-                )
-            )
-        links = [
-            relationship.relationship_type.replace("_", " ")
-            for relationship in self.project.relationships
-            if element_id in {relationship.source_id, relationship.target_id}
-        ]
-        if links:
-            lines.append("Relationships: " + ", ".join(links))
-        return "\n".join(lines) or None
-
-    def _element_names(self) -> dict:  # type: ignore[type-arg]
-        if self.project is None:
-            return {}
-        return {
-            item.id: item.name.effective or "Unnamed"
-            for item in [*self.project.commands, *self.project.subsystems]
-        }
-
-    def _owned_objects(self, element) -> dict:  # type: ignore[no-untyped-def, type-arg]
-        """List, per kind, what the given element owns so its details panel can manage it."""
-        if self.project is None or element is None:
-            return {}
-        element_id = element.id
-        names = self._element_names()
-        return {
-            "device": [
-                (device.id, f"{device.name.effective} ({device.device_type.effective})")
-                for device in self.project.devices
-                if device.owner_subsystem_id == element_id
-            ],
-            "trigger": [
-                (trigger.id, f"{trigger.expression.effective} · {trigger.activation.effective}")
-                for trigger in self.project.triggers
-                if trigger.command_id == element_id
-            ],
-            "relationship": [
-                (
-                    relationship.id,
-                    f"{names.get(relationship.source_id, 'Unknown')} — "
-                    f"{relationship.relationship_type.replace('_', ' ')} → "
-                    f"{names.get(relationship.target_id, 'Unknown')}",
-                )
-                for relationship in self.project.relationships
-                if element_id in {relationship.source_id, relationship.target_id}
-            ],
-        }
-
-    @staticmethod
-    def _normalized(value: str) -> str:
-        return "".join(character for character in value.casefold() if character.isalnum())
-
-    def _logical_device_owner(self, owner_symbol: str) -> str:
-        """Use the same conservative IO-to-subsystem presentation mapping as the canvas."""
-        if self.last_scan is None:
-            return owner_symbol
-        owner_type = owner_symbol.rsplit(".", 1)[-1]
-        normalized_owner = self._normalized(owner_type)
-        matches = [
-            symbol.anchor.qualified_symbol
-            for symbol in self.last_scan.symbols_of_kind("subsystem")
-            if normalized_owner.startswith(self._normalized(symbol.name))
-            and "io" in normalized_owner[len(self._normalized(symbol.name)) :]
-        ]
-        return matches[0] if len(matches) == 1 else owner_symbol
-
-    def edit_selected_description(self, description: str | None) -> None:
-        """Apply a selected element's design description through the undo stack."""
-        selected = self.scene.selected_blocks()
-        if self.project is None or len(selected) != 1:
-            return
-        element_id = selected[0].element_id
-        element = next(
-            (
-                item
-                for item in [*self.project.commands, *self.project.subsystems]
-                if item.id == element_id
-            ),
-            None,
-        )
-        if element is None or element.description.design == description:
-            return
-        self.undo_stack.push(
-            EditDescriptionCommand(element, description, self._description_changed)
-        )
-
-    def edit_selected_name(self, name: str | None) -> None:
-        """Apply a selected element's proposed display name through the undo stack."""
-        selected = self.scene.selected_blocks()
-        if self.project is None or len(selected) != 1 or (name is not None and not name.strip()):
-            return
-        element = next(
-            (
-                item
-                for item in [*self.project.commands, *self.project.subsystems]
-                if item.id == selected[0].element_id
-            ),
-            None,
-        )
-        if element is None or element.name.design == name:
-            return
-        self.undo_stack.push(EditNameCommand(element, name, self._name_changed))
-
-    def edit_selected_requirements(self, requirement_ids) -> None:  # type: ignore[no-untyped-def]
-        """Apply selected command requirement IDs through the undo stack."""
-        selected = self.scene.selected_blocks()
-        if self.project is None or len(selected) != 1:
-            return
-        element = next(
-            (item for item in self.project.commands if item.id == selected[0].element_id), None
-        )
-        if element is None:
-            return
-        valid_ids = {subsystem.id for subsystem in self.project.subsystems}
-        normalized = list(dict.fromkeys(requirement_ids))
-        if any(requirement_id not in valid_ids for requirement_id in normalized):
-            return
-        if element.requirement_ids != normalized:
-            self.undo_stack.push(
-                EditRequirementsCommand(element, normalized, self._requirements_changed)
-            )
-
-    def _name_changed(self) -> None:
-        self._mark_dirty("Name updated")
-        self._render_preserving_selection()
-
-    def _requirements_changed(self) -> None:
-        self._mark_dirty("Requirements updated")
-        self._render_with_current_scan()
-
-    def _description_changed(self) -> None:
-        self._mark_dirty("Description updated")
-        self._render_preserving_selection()
-
-    def _build_details_dock(self) -> None:
-        dock = QDockWidget("Details", self)
-        dock.setObjectName("detailsDock")
-        self.details_dock = dock
-        self.details_panel = DetailsPanel(
-            self.edit_selected_description,
-            self.edit_selected_name,
-            self.edit_selected_requirements,
-            self._open_source_anchor,
-            self.add_owned_object,
-            self.edit_owned_object,
-            self.remove_owned_object,
-        )
-        dock.setWidget(self.details_panel)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
-        self.compact_details_dialog: QDialog | None = None
-        self.compact_details_panel: DetailsPanel | None = None
-
-    def _update_details_presentation(self) -> None:
-        """Use a dock on wide screens and reserve a sheet on laptop-width windows."""
-        self.details_dock.setVisible(self.width() >= DETAILS_DOCK_BREAKPOINT)
-
-    def _open_compact_details(self) -> None:
-        if self.width() >= DETAILS_DOCK_BREAKPOINT or len(self.scene.selected_blocks()) != 1:
-            return
-        if self.compact_details_dialog is None:
-            dialog = QDialog(self)
-            dialog.setObjectName("compactDetailsDialog")
-            dialog.setWindowTitle("Details")
-            dialog.setModal(False)
-            dialog.resize(440, 520)
-            panel = DetailsPanel(
-                self.edit_selected_description,
-                self.edit_selected_name,
-                self.edit_selected_requirements,
-                self._open_source_anchor,
-                self.add_owned_object,
-                self.edit_owned_object,
-                self.remove_owned_object,
-            )
-            layout = QVBoxLayout(dialog)
-            layout.addWidget(panel)
-            self.compact_details_dialog = dialog
-            self.compact_details_panel = panel
-        self._update_compact_details()
-        self.compact_details_dialog.show()
-        self.compact_details_dialog.raise_()
-
-    def _update_compact_details(self) -> None:
-        """Mirror selection in a visible compact sheet without changing model state."""
-        if self.compact_details_panel is None:
-            return
-        selected = self.scene.selected_blocks()
-        if len(selected) != 1:
-            self.compact_details_panel.set_element(None)
-            return
-        block = selected[0]
-        if isinstance(block.source_anchor, SourceAnchor):
-            conventional_command = (
-                block.kind == "command" and self._is_conventional_command(block.source_anchor)
-            )
-            self.compact_details_panel.set_imported_fact(
-                block.title.toPlainText(),
-                block.kind,
-                block.source_anchor,
-                self._imported_details(block),
-                self._lifecycle_methods(block.source_anchor) if conventional_command else None,
-                self._lifecycle_anchors(block.source_anchor) if conventional_command else None,
-                conventional_command,
-            )
-            return
-        if self.project is None:
-            self.compact_details_panel.set_element(None)
-            return
-        element = next(
-            (
-                item
-                for item in [*self.project.commands, *self.project.subsystems]
-                if item.id == block.element_id
-            ),
-            None,
-        )
-        self.compact_details_panel.set_element(
-            element,
-            *self._matched_code_details(element.id) if element is not None else (),
-            subsystem_options=self._subsystem_options(),
-            design_context=self._design_structure(element.id) if element is not None else None,
-            owned_objects=self._owned_objects(element),
-        )
-
-    def _subsystem_options(self) -> list[tuple]:  # type: ignore[type-arg]
-        if self.project is None:
-            return []
-        return [
-            (subsystem.id, subsystem.name.effective or "Unnamed")
-            for subsystem in self.project.subsystems
-        ]
-
     def _build_inventory_dock(self) -> None:
         dock = QDockWidget("Code Inventory", self)
         dock.setObjectName("codeInventoryDock")
@@ -921,9 +497,3 @@ class MainWindow(QMainWindow):
             "block accent, border style, line, or palette shape means.",
         )
 
-    def _open_source_anchor(self, anchor: SourceAnchor) -> None:
-        """Open portable source evidence when a robot project is currently connected."""
-        if self.robot_project_root is None:
-            return
-        dialog = SourceViewerDialog(self.robot_project_root, anchor, self)
-        dialog.open()
