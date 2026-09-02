@@ -35,6 +35,7 @@ def test_main_window_has_planned_regions(qtbot) -> None:
     help_dock = window.findChild(QDockWidget, "helpDock")
     assert help_dock is not None
     assert not help_dock.isVisible()
+    assert not app.windowIcon().isNull()
     assert window.statusBar().currentMessage() == "No robot project connected"
     assert f"QToolBar QToolButton {{\n            color: {OFF_WHITE};" in app.styleSheet()
     input_selector = "QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QComboBox {"

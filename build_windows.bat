@@ -13,6 +13,7 @@ if not exist "%PYTHON_EXE%" (
 
 "%PYTHON_EXE%" -m PyInstaller --noconfirm --clean --windowed ^
     --name "FRC Architecture Modeler" ^
+    --icon "%CD%\assets\ArchitectureModelLogo.ico" ^
     --paths src ^
     --collect-all tree_sitter_java ^
     --add-data "%CD%\assets;assets" ^
