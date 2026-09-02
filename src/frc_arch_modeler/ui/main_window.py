@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread
@@ -17,7 +16,6 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
-    QFileDialog,
     QGraphicsView,
     QInputDialog,
     QMainWindow,
@@ -38,16 +36,16 @@ from frc_arch_modeler.domain.model import (
     SourceAnchor,
 )
 from frc_arch_modeler.importers.base import ScanResult
-from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
 from frc_arch_modeler.persistence.recent_model_store import RecentModelStore
 from frc_arch_modeler.services.project_service import ProjectService
-from frc_arch_modeler.services.reconcile_service import ReconciliationResult, ReconciliationService
+from frc_arch_modeler.services.reconcile_service import ReconciliationResult
 from frc_arch_modeler.ui import toolbars
 from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock, ArchitectureScene
 from frc_arch_modeler.ui.behavior_model_browser import BehaviorModelBrowser
 from frc_arch_modeler.ui.behavior_scene import BehaviorScene
 from frc_arch_modeler.ui.controllers.export_controller import ExportController
 from frc_arch_modeler.ui.controllers.project_controller import ProjectController
+from frc_arch_modeler.ui.controllers.scan_controller import ScanController
 from frc_arch_modeler.ui.details_panel import (
     DetailsPanel,
     EditDescriptionCommand,
@@ -57,7 +55,6 @@ from frc_arch_modeler.ui.details_panel import (
 )
 from frc_arch_modeler.ui.entity_dialogs import DeviceDialog, RelationshipDialog, TriggerDialog
 from frc_arch_modeler.ui.help_panel import HelpPanel
-from frc_arch_modeler.ui.scan_worker import JavaScanWorker
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
 from frc_arch_modeler.ui.undo_commands import (
     AddDesignEntityCommand,
@@ -82,11 +79,6 @@ class MainWindow(QMainWindow):
         self.robot_project_root: Path | None = None
         self.last_scan: ScanResult | None = None
         self.reconciliation: ReconciliationResult | None = None
-        self._scan_thread: QThread | None = None
-        self._scan_worker: JavaScanWorker | None = None
-        self._pending_scan_root: Path | None = None
-        self._pending_scan_action = "Connected"
-        self._inventory_symbols: dict[str, object] = {}
         self._selected_behavior_diagram_id: object = None
         self._last_scan_time: str | None = None
         self._git_revision_text: str | None = None
@@ -95,6 +87,7 @@ class MainWindow(QMainWindow):
         self.recent_model_store = RecentModelStore()
         self.export_controller = ExportController(self)
         self.project_controller = ProjectController(self)
+        self.scan_controller = ScanController(self)
         self.undo_stack = QUndoStack(self)
         self.scene = ArchitectureScene(self)
         self.scene.layout_changed.connect(self._layout_changed)
@@ -136,19 +129,6 @@ class MainWindow(QMainWindow):
 
     def _build_behavior_toolbar(self) -> None:
         toolbars.build_behavior_toolbar(self)
-
-    def _stop_background_scan_for_close(self) -> bool:
-        """Cancel a live worker before destroying its Qt owner during window shutdown."""
-        if self._scan_thread is None:
-            return True
-        self.cancel_scan()
-        if not self._scan_thread.wait(1500):
-            self.statusBar().showMessage("Waiting for the code scan to cancel before closing.")
-            return False
-        self._scan_thread = None
-        self._scan_worker = None
-        self._pending_scan_root = None
-        return True
 
     def _build_canvas(self) -> None:
         self.canvas = QGraphicsView(self.scene, self)
@@ -215,6 +195,50 @@ class MainWindow(QMainWindow):
     def _refresh_recent_model_action(self) -> None:
         self.project_controller.refresh_recent_model_action()
 
+    @property
+    def _scan_thread(self) -> QThread | None:
+        """The live scanner thread, exposed for tests that wait for a scan to finish."""
+        return self.scan_controller.scan_thread
+
+    def connect_robot_project(self, root: Path) -> ScanResult:
+        return self.scan_controller.connect_robot_project(root)
+
+    def refresh_robot_project(self) -> ScanResult | None:
+        return self.scan_controller.refresh_robot_project()
+
+    def _refresh_robot_project_async(self) -> None:
+        self.scan_controller.refresh_robot_project_async()
+
+    def _start_scan(self, root: Path, action: str) -> None:
+        self.scan_controller.start_scan(root, action)
+
+    def cancel_scan(self) -> None:
+        self.scan_controller.cancel_scan()
+
+    def _stop_background_scan_for_close(self) -> bool:
+        return self.scan_controller.stop_background_scan_for_close()
+
+    def _prompt_connect_robot_project(self) -> None:
+        self.scan_controller.prompt_connect_robot_project()
+
+    def _open_inventory_source(self, item: QTreeWidgetItem, column: int) -> None:
+        self.scan_controller.open_inventory_source(item, column)
+
+    def compare_changes(self) -> ReconciliationResult | None:
+        return self.scan_controller.compare_changes()
+
+    def accept_matches(self) -> int:
+        return self.scan_controller.accept_matches()
+
+    def bind_selected(self) -> bool:
+        return self.scan_controller.bind_selected()
+
+    def _comparison_statuses(self) -> dict:
+        return self.scan_controller.comparison_statuses()
+
+    def _code_only_symbols(self) -> set[str]:
+        return self.scan_controller.code_only_symbols()
+
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
         self.project = project
@@ -269,187 +293,6 @@ class MainWindow(QMainWindow):
     def _prompt_export_change_request(self) -> None:
         self.export_controller.prompt_export_change_request()
 
-    def connect_robot_project(self, root: Path) -> ScanResult:
-        """Scan a Java/WPILib project without altering the user-authored design."""
-        root = Path(root)
-        scan = JavaProjectScanner().scan(root)
-        self._apply_scan(root, scan, "Connected")
-        return scan
-
-    def _apply_scan(self, root: Path, scan: ScanResult, action: str) -> None:
-        """Apply a completed scan atomically to the visible, regenerable code layer."""
-        self.robot_project_root = root
-        self.last_scan = scan
-        self.reconciliation = None
-        self._last_scan_time = datetime.now().strftime("%H:%M:%S")
-        self._git_revision_text = ProjectController.git_revision(root)
-        self.refresh_code_action.setEnabled(True)
-        self.compare_action.setEnabled(self.project is not None)
-        self.export_change_request_action.setEnabled(self.project is not None)
-        self._render_with_current_scan()
-        self._show_scan_inventory()
-        self._show_scan_status(action)
-        self._update_status_indicators()
-
-    def refresh_robot_project(self) -> ScanResult | None:
-        """Refresh the current code-derived inventory while retaining design edits."""
-        if self.robot_project_root is None:
-            return None
-        scan = JavaProjectScanner().scan(self.robot_project_root)
-        self._apply_scan(self.robot_project_root, scan, "Refreshed")
-        return scan
-
-    def _refresh_robot_project_async(self) -> None:
-        if self.robot_project_root is not None:
-            self._start_scan(self.robot_project_root, "Refreshed")
-
-    def _start_scan(self, root: Path, action: str) -> None:
-        """Run a toolbar-initiated scan off the UI thread, preserving the old view on failure."""
-        if self._scan_thread is not None:
-            return
-        self._pending_scan_root = Path(root)
-        self._pending_scan_action = action
-        thread = QThread(self)
-        worker = JavaScanWorker(self._pending_scan_root)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.completed.connect(self._scan_completed)
-        worker.failed.connect(self._scan_failed)
-        worker.cancelled.connect(self._scan_cancelled)
-        worker.progress.connect(self._scan_progress)
-        self._scan_thread = thread
-        self._scan_worker = worker
-        self.connect_robot_action.setEnabled(False)
-        self.refresh_code_action.setEnabled(False)
-        self.cancel_scan_action.setEnabled(True)
-        self.statusBar().showMessage(f"{action} Java project in background…")
-        thread.start()
-
-    def cancel_scan(self) -> None:
-        if self._scan_worker is not None:
-            self._scan_worker.request_cancel()
-            self.statusBar().showMessage("Cancelling Java project scan…")
-
-    def _scan_progress(self, completed: int, total: int) -> None:
-        self.statusBar().showMessage(
-            f"{self._pending_scan_action} Java project in background… {completed}/{total} files"
-        )
-
-    def _scan_completed(self, scan: ScanResult) -> None:
-        assert self._pending_scan_root is not None
-        self._apply_scan(self._pending_scan_root, scan, self._pending_scan_action)
-        self._finish_background_scan()
-
-    def _scan_failed(self, message: str) -> None:
-        self.statusBar().showMessage(f"Code scan failed: {message}")
-        self._finish_background_scan()
-
-    def _scan_cancelled(self) -> None:
-        self.statusBar().showMessage("Code scan cancelled; prior code view was retained.")
-        self._finish_background_scan()
-
-    def _finish_background_scan(self) -> None:
-        if self._scan_thread is not None:
-            self._scan_thread.quit()
-            self._scan_thread.wait()
-            self._scan_thread.deleteLater()
-        if self._scan_worker is not None:
-            self._scan_worker.deleteLater()
-        self._scan_thread = None
-        self._scan_worker = None
-        self._pending_scan_root = None
-        self.connect_robot_action.setEnabled(True)
-        self.refresh_code_action.setEnabled(self.robot_project_root is not None)
-        self.cancel_scan_action.setEnabled(False)
-
-    def _show_scan_status(self, action: str) -> None:
-        assert self.robot_project_root is not None
-        assert self.last_scan is not None
-        subsystem_count = len(self.last_scan.symbols_of_kind("subsystem"))
-        command_count = len(self.last_scan.symbols_of_kind("command"))
-        factory_count = len(self.last_scan.symbols_of_kind("command_factory"))
-        form_count = len(self.last_scan.symbols_of_kind("command_composition"))
-        trigger_count = len(self.last_scan.triggers)
-        device_count = len(self.last_scan.devices)
-        diagnostic_count = len(self.last_scan.diagnostics)
-        self.statusBar().showMessage(
-            f"{action} {self.robot_project_root.name}: {subsystem_count} subsystems, "
-            f"{command_count} commands, {factory_count} factories, {form_count} forms, "
-            f"{trigger_count} triggers, {device_count} devices, {diagnostic_count} warnings"
-        )
-
-    def _show_scan_inventory(self) -> None:
-        assert self.last_scan is not None
-        self.inventory_tree.clear()
-        self._inventory_symbols = {}
-        labels = {
-            "subsystem": "Subsystems",
-            "command": "Commands",
-            "command_factory": "Command factories",
-            "command_composition": "Command forms and groups",
-            "command_registration": "Default and autonomous commands",
-            "lifecycle_method": "Lifecycle methods",
-        }
-        groups: dict[str, QTreeWidgetItem] = {}
-        for kind, label in labels.items():
-            symbols = self.last_scan.symbols_of_kind(kind)
-            if symbols:
-                group = QTreeWidgetItem([label, ""])
-                self.inventory_tree.addTopLevelItem(group)
-                groups[kind] = group
-        for symbol in self.last_scan.symbols:
-            group = groups.get(symbol.kind)
-            if group is not None:
-                item = QTreeWidgetItem(
-                    [symbol.name, f"{symbol.anchor.relative_path}:{symbol.anchor.start_line}"]
-                )
-                item.setData(0, Qt.ItemDataRole.UserRole, symbol.anchor.qualified_symbol)
-                self._inventory_symbols[symbol.anchor.qualified_symbol] = symbol
-                group.addChild(item)
-        if self.last_scan.triggers:
-            trigger_group = QTreeWidgetItem(["Trigger bindings", ""])
-            self.inventory_tree.addTopLevelItem(trigger_group)
-            for index, trigger in enumerate(self.last_scan.triggers):
-                key = f"trigger:{index}"
-                item = QTreeWidgetItem(
-                    [
-                        f"{trigger.controller_expression} · {trigger.activation}",
-                        f"{trigger.anchor.relative_path}:{trigger.anchor.start_line}",
-                    ]
-                )
-                item.setData(0, Qt.ItemDataRole.UserRole, key)
-                self._inventory_symbols[key] = trigger
-                trigger_group.addChild(item)
-        if self.last_scan.devices:
-            device_group = QTreeWidgetItem(["Devices", ""])
-            self.inventory_tree.addTopLevelItem(device_group)
-            for index, device in enumerate(self.last_scan.devices):
-                key = f"device:{index}"
-                item = QTreeWidgetItem(
-                    [
-                        self._device_inventory_label(device),
-                        f"{device.anchor.relative_path}:{device.anchor.start_line}",
-                    ]
-                )
-                item.setData(0, Qt.ItemDataRole.UserRole, key)
-                self._inventory_symbols[key] = device
-                device_group.addChild(item)
-        if self.last_scan.diagnostics:
-            diagnostic_group = QTreeWidgetItem(["Scan diagnostics", ""])
-            self.inventory_tree.addTopLevelItem(diagnostic_group)
-            for diagnostic in self.last_scan.diagnostics:
-                diagnostic_group.addChild(
-                    QTreeWidgetItem([diagnostic.message, diagnostic.relative_path or ""])
-                )
-        self.inventory_tree.expandAll()
-
-    @staticmethod
-    def _device_inventory_label(device) -> str:  # type: ignore[no-untyped-def]
-        resolved = (
-            f" → {device.resolved_arguments}" if device.resolved_arguments is not None else ""
-        )
-        return f"{device.device_type} ({device.constructor_arguments}{resolved})"
-
     def _render_with_current_scan(self) -> None:
         self.scene.render_project(
             self.project,
@@ -471,72 +314,6 @@ class MainWindow(QMainWindow):
         """Keep inline forms in the inventory unless the user explicitly expands the canvas."""
         self.scene.show_command_forms = visible
         self._render_with_current_scan()
-
-    def compare_changes(self) -> ReconciliationResult | None:
-        """Display a non-destructive design/code comparison on the canvas."""
-        if self.project is None or self.last_scan is None:
-            return None
-        reconciliation_service = ReconciliationService()
-        self.reconciliation = reconciliation_service.reconcile(self.project, self.last_scan)
-        reconciliation_service.populate_scanned_fields(self.project, self.reconciliation)
-        self._render_with_current_scan()
-        self.accept_matches_action.setEnabled(bool(self.reconciliation.matches))
-        matched = len(self.reconciliation.matches)
-        design_only = sum(
-            state.value == "design_only" for state in self.reconciliation.statuses.values()
-        )
-        self.statusBar().showMessage(f"Comparison: {matched} matched, {design_only} design-only")
-        return self.reconciliation
-
-    def accept_matches(self) -> int:
-        """Persist the currently suggested unambiguous bindings after user confirmation."""
-        if self.project is None or self.reconciliation is None:
-            return 0
-        accepted = ReconciliationService.accept_matches(self.project, self.reconciliation)
-        if accepted:
-            self._mark_dirty(f"Accepted {accepted} code binding(s)")
-        self.accept_matches_action.setEnabled(False)
-        return accepted
-
-    def bind_selected(self) -> bool:
-        """Persist an explicit design-to-code binding selected by the user."""
-        if self.project is None or self.last_scan is None:
-            return False
-        blocks = self.scene.selected_blocks()
-        if len(blocks) != 2:
-            return False
-        design_block = next((block for block in blocks if not block.imported), None)
-        code_block = next((block for block in blocks if block.imported), None)
-        if design_block is None or code_block is None or design_block.kind != code_block.kind:
-            return False
-        if not isinstance(code_block.source_anchor, SourceAnchor):
-            return False
-        element = next(
-            (
-                item
-                for item in [*self.project.commands, *self.project.subsystems]
-                if item.id == design_block.element_id
-            ),
-            None,
-        )
-        if element is None:
-            return False
-        element.code_binding = code_block.source_anchor
-        code_name = code_block.title.toPlainText()
-        reconciliation_service = ReconciliationService()
-        self.reconciliation = reconciliation_service.reconcile(self.project, self.last_scan)
-        reconciliation_service.populate_scanned_fields(self.project, self.reconciliation)
-        self._render_with_current_scan()
-        self._mark_dirty(f"Bound {element.name.effective} to {code_name}")
-        return True
-
-    def _comparison_statuses(self) -> dict:
-        return self.reconciliation.statuses if self.reconciliation is not None else {}
-
-    def _code_only_symbols(self) -> set[str]:
-        if self.reconciliation is None:
-            return set()
-        return {symbol.anchor.qualified_symbol for symbol in self.reconciliation.code_only}
 
     def _apply_status_filters(self) -> None:
         self.scene.set_status_filter(
@@ -1602,11 +1379,6 @@ class MainWindow(QMainWindow):
         self._mark_dirty("Description updated")
         self._render_preserving_selection()
 
-    def _prompt_connect_robot_project(self) -> None:
-        root = QFileDialog.getExistingDirectory(self, "Connect Java/WPILib robot project")
-        if root:
-            self._start_scan(Path(root), "Connected")
-
     def _prompt_new_command(self) -> None:
         self._prompt_element("New command", self.add_command)
 
@@ -1796,13 +1568,6 @@ class MainWindow(QMainWindow):
             "Show or hide the notation help panel. Use this when you forget what a "
             "block accent, border style, line, or palette shape means.",
         )
-
-    def _open_inventory_source(self, item: QTreeWidgetItem, column: int) -> None:
-        symbol_name = item.data(0, Qt.ItemDataRole.UserRole)
-        symbol = self._inventory_symbols.get(symbol_name)
-        if symbol is None or self.robot_project_root is None:
-            return
-        self._open_source_anchor(symbol.anchor)
 
     def _open_source_anchor(self, anchor: SourceAnchor) -> None:
         """Open portable source evidence when a robot project is currently connected."""
