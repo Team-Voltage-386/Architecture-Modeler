@@ -43,6 +43,7 @@ from frc_arch_modeler.ui import toolbars
 from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock, ArchitectureScene
 from frc_arch_modeler.ui.behavior_model_browser import BehaviorModelBrowser
 from frc_arch_modeler.ui.behavior_scene import BehaviorScene
+from frc_arch_modeler.ui.controllers.behavior_controller import BehaviorController
 from frc_arch_modeler.ui.controllers.export_controller import ExportController
 from frc_arch_modeler.ui.controllers.project_controller import ProjectController
 from frc_arch_modeler.ui.controllers.scan_controller import ScanController
@@ -58,10 +59,8 @@ from frc_arch_modeler.ui.help_panel import HelpPanel
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
 from frc_arch_modeler.ui.undo_commands import (
     AddDesignEntityCommand,
-    EditTransitionEndpointsCommand,
     MoveBlocksCommand,
     RemoveDesignEntityCommand,
-    RenameBehaviorDiagramCommand,
 )
 
 DETAILS_DOCK_BREAKPOINT = 1280
@@ -79,12 +78,12 @@ class MainWindow(QMainWindow):
         self.robot_project_root: Path | None = None
         self.last_scan: ScanResult | None = None
         self.reconciliation: ReconciliationResult | None = None
-        self._selected_behavior_diagram_id: object = None
         self._last_scan_time: str | None = None
         self._git_revision_text: str | None = None
         self.is_dirty = False
         self.project_service = ProjectService()
         self.recent_model_store = RecentModelStore()
+        self.behavior_controller = BehaviorController(self)
         self.export_controller = ExportController(self)
         self.project_controller = ProjectController(self)
         self.scan_controller = ScanController(self)
@@ -239,6 +238,72 @@ class MainWindow(QMainWindow):
     def _code_only_symbols(self) -> set[str]:
         return self.scan_controller.code_only_symbols()
 
+    @property
+    def _selected_behavior_diagram_id(self) -> object:
+        return self.behavior_controller.selected_diagram_id
+
+    @_selected_behavior_diagram_id.setter
+    def _selected_behavior_diagram_id(self, diagram_id: object) -> None:
+        self.behavior_controller.selected_diagram_id = diagram_id
+
+    def _active_behavior_diagram(self) -> BehaviorDiagram | None:
+        return self.behavior_controller.active_diagram()
+
+    def _select_behavior_diagram(self, diagram_id: object) -> None:
+        self.behavior_controller.select_diagram(diagram_id)
+
+    def _add_root_behavior_diagram(self) -> None:
+        self.behavior_controller.add_root_diagram()
+
+    def _add_command_behavior_diagram(self, command_id: object) -> None:
+        self.behavior_controller.add_command_diagram(command_id)
+
+    def _rename_behavior_diagram(self, diagram_id: object) -> None:
+        self.behavior_controller.rename_diagram(diagram_id)
+
+    def _delete_behavior_diagram(self, diagram_id: object) -> None:
+        self.behavior_controller.delete_diagram(diagram_id)
+
+    def add_behavior_state(self, name: str, kind: str = "state") -> None:
+        self.behavior_controller.add_state(name, kind)
+
+    def _add_behavior_pseudostate(self, kind: str) -> None:
+        self.behavior_controller.add_pseudostate(kind)
+
+    def add_behavior_transition(  # type: ignore[no-untyped-def]
+        self, source_state_id, target_state_id, trigger_label: str
+    ) -> None:
+        self.behavior_controller.add_transition(source_state_id, target_state_id, trigger_label)
+
+    def delete_behavior_selected(self) -> bool:
+        return self.behavior_controller.delete_selected()
+
+    def _delete_behavior_transition(self, transition_id: object) -> None:
+        self.behavior_controller.delete_transition(transition_id)
+
+    def _reattach_behavior_transition(
+        self, transition_id: object, end: str, new_state_id: object
+    ) -> None:
+        self.behavior_controller.reattach_transition(transition_id, end, new_state_id)
+
+    def _handle_behavior_connection_requested(self, source_block, target_block, drop_pos) -> None:  # type: ignore[no-untyped-def]
+        self.behavior_controller.handle_connection_requested(source_block, target_block, drop_pos)
+
+    def _prompt_rename_behavior_state(self, block) -> None:  # type: ignore[no-untyped-def]
+        self.behavior_controller.prompt_rename_state(block)
+
+    def _prompt_new_behavior_state(self) -> None:
+        self.behavior_controller.prompt_new_state()
+
+    def _record_behavior_layout_move(self, before, after) -> None:  # type: ignore[no-untyped-def]
+        self.behavior_controller.record_layout_move(before, after)
+
+    def _behavior_layout_changed(self) -> None:
+        self.behavior_controller.layout_changed()
+
+    def _refresh_behavior_after_edit(self) -> None:
+        self.behavior_controller.refresh_after_edit()
+
     def set_project(self, project: ArchitectureProject | None) -> None:
         """Display a project with the deterministic initial canvas layout."""
         self.project = project
@@ -343,19 +408,6 @@ class MainWindow(QMainWindow):
         blocks = self.scene.selected_blocks()
         self.delete_selected_action.setEnabled(
             self.project is not None and len(blocks) == 1 and not blocks[0].imported
-        )
-
-    def _active_behavior_diagram(self) -> BehaviorDiagram | None:
-        """Return the behavior diagram currently selected in the model browser, if any."""
-        if self.project is None:
-            return None
-        return next(
-            (
-                diagram
-                for diagram in self.project.behavior_diagrams
-                if diagram.id == self._selected_behavior_diagram_id
-            ),
-            None,
         )
 
     def _update_link_selected_action(self) -> None:
@@ -508,242 +560,6 @@ class MainWindow(QMainWindow):
             )
             return
         self.add_relationship(relationship_type, source_block.element_id, target_block.element_id)
-
-    def _handle_behavior_connection_requested(self, source_block, target_block, drop_pos) -> None:  # type: ignore[no-untyped-def]
-        """Prompt for the triggering event, then add the dragged state transition."""
-        if self._active_behavior_diagram() is None:
-            return
-        trigger_label, accepted = QInputDialog.getText(self, "New transition", "Trigger / event:")
-        if accepted:
-            self.add_behavior_transition(
-                source_block.state_id, target_block.state_id, trigger_label.strip()
-            )
-
-    def _prompt_rename_behavior_state(self, block) -> None:  # type: ignore[no-untyped-def]
-        """Rename a behavior state via a lightweight prompt (no dedicated details panel yet)."""
-        diagram = self._active_behavior_diagram()
-        if diagram is None:
-            return
-        state = next((item for item in diagram.states if item.id == block.state_id), None)
-        if state is None:
-            return
-        name, accepted = QInputDialog.getText(
-            self, "Rename state", "State name:", text=state.name.effective or ""
-        )
-        if accepted and name.strip() and name.strip() != state.name.effective:
-            self.undo_stack.push(
-                EditNameCommand(state, name.strip(), self._refresh_behavior_after_edit)
-            )
-
-    def add_behavior_state(self, name: str, kind: str = "state") -> None:
-        """Add a state (or pseudostate) to the active diagram, creating one first if needed."""
-        if self.project is None:
-            return
-        diagram = self._active_behavior_diagram()
-        if diagram is None:
-            diagram = self.project_service.add_behavior_diagram(self.project, "Untitled Diagram")
-            self.project.behavior_diagrams.remove(diagram)
-            self.undo_stack.push(
-                AddDesignEntityCommand(
-                    self.project.behavior_diagrams,
-                    diagram,
-                    "behavior diagram",
-                    self._refresh_behavior_after_edit,
-                )
-            )
-            self._selected_behavior_diagram_id = diagram.id
-        state = self.project_service.add_behavior_state(diagram, name, kind=kind)
-        diagram.states.remove(state)
-        self.undo_stack.push(
-            AddDesignEntityCommand(
-                diagram.states, state, "state", self._refresh_behavior_after_edit
-            )
-        )
-
-    def _add_behavior_pseudostate(self, kind: str) -> None:
-        """Drop a SysML start/end/decision/synchronization/join node onto the behavior diagram."""
-        default_labels = {
-            "start": "Start",
-            "end": "End",
-            "decision": "Decision",
-            "synchronization": "Sync",
-            "join": "Join",
-        }
-        self.add_behavior_state(default_labels[kind], kind=kind)
-
-    def add_behavior_transition(  # type: ignore[no-untyped-def]
-        self, source_state_id, target_state_id, trigger_label: str
-    ) -> None:
-        """Add a transition to the active behavior diagram through the normal undo path."""
-        diagram = self._active_behavior_diagram()
-        if diagram is None:
-            return
-        transition = self.project_service.add_behavior_transition(
-            diagram, source_state_id, target_state_id, trigger_label
-        )
-        diagram.transitions.remove(transition)
-        self.undo_stack.push(
-            AddDesignEntityCommand(
-                diagram.transitions, transition, "transition", self._refresh_behavior_after_edit
-            )
-        )
-
-    def delete_behavior_selected(self) -> bool:
-        """Delete one selected transition, or one state with no transition depending on it."""
-        diagram = self._active_behavior_diagram()
-        if diagram is None:
-            return False
-        blocks = self.behavior_scene.selected_blocks()
-        transition_ids = self.behavior_scene.selected_transition_ids()
-        if len(transition_ids) == 1 and not blocks:
-            self._delete_behavior_transition(transition_ids[0])
-            return True
-        if len(blocks) != 1:
-            return False
-        state_id = blocks[0].state_id
-        state = next((item for item in diagram.states if item.id == state_id), None)
-        if state is None:
-            return False
-        dependent = [
-            transition
-            for transition in diagram.transitions
-            if state_id in {transition.source_state_id, transition.target_state_id}
-        ]
-        if dependent:
-            QMessageBox.warning(
-                self,
-                "Cannot delete selected state",
-                "Remove dependent transition(s) first.",
-            )
-            return False
-        self.undo_stack.push(
-            RemoveDesignEntityCommand(
-                diagram.states, state, "state", self._refresh_behavior_after_edit
-            )
-        )
-        return True
-
-    def _delete_behavior_transition(self, transition_id: object) -> None:
-        """Delete one transition, e.g. from its right-click context menu."""
-        diagram = self._active_behavior_diagram()
-        if diagram is None:
-            return
-        transition = next((item for item in diagram.transitions if item.id == transition_id), None)
-        if transition is None:
-            return
-        self.undo_stack.push(
-            RemoveDesignEntityCommand(
-                diagram.transitions, transition, "transition", self._refresh_behavior_after_edit
-            )
-        )
-
-    def _reattach_behavior_transition(
-        self, transition_id: object, end: str, new_state_id: object
-    ) -> None:
-        """Rewire a transition's dragged endpoint to a different state through undo."""
-        diagram = self._active_behavior_diagram()
-        if diagram is None:
-            return
-        transition = next((item for item in diagram.transitions if item.id == transition_id), None)
-        if transition is None:
-            return
-        new_source_id = new_state_id if end == "source" else transition.source_state_id
-        new_target_id = new_state_id if end == "target" else transition.target_state_id
-        self.undo_stack.push(
-            EditTransitionEndpointsCommand(
-                transition, new_source_id, new_target_id, self._refresh_behavior_after_edit
-            )
-        )
-
-    def _refresh_behavior_after_edit(self) -> None:
-        assert self.project is not None
-        self.behavior_scene.render_diagram(
-            self._active_behavior_diagram(), self.behavior_scene.layout_state()
-        )
-        self.behavior_model_browser.rebuild(self.project, self._selected_behavior_diagram_id)
-        self._mark_dirty(f"Unsaved design model: {self.project.name}")
-
-    def _select_behavior_diagram(self, diagram_id: object) -> None:
-        """Switch which diagram is rendered/edited, driven by the model browser's selection."""
-        self._selected_behavior_diagram_id = diagram_id
-        self.behavior_scene.render_diagram(self._active_behavior_diagram())
-        self._update_delete_selected_action()
-
-    def _add_root_behavior_diagram(self) -> None:
-        self._create_behavior_diagram(owner_command_id=None)
-
-    def _add_command_behavior_diagram(self, command_id: object) -> None:
-        self._create_behavior_diagram(owner_command_id=command_id)
-
-    def _create_behavior_diagram(self, owner_command_id: object) -> None:
-        if self.project is None:
-            return
-        diagram = self.project_service.add_behavior_diagram(
-            self.project, "Untitled Diagram", owner_command_id
-        )
-        self.project.behavior_diagrams.remove(diagram)
-        self.undo_stack.push(
-            AddDesignEntityCommand(
-                self.project.behavior_diagrams,
-                diagram,
-                "behavior diagram",
-                self._refresh_behavior_after_edit,
-            )
-        )
-        self._selected_behavior_diagram_id = diagram.id
-        self._refresh_behavior_after_edit()
-
-    def _rename_behavior_diagram(self, diagram_id: object) -> None:
-        diagram = next(
-            (
-                item
-                for item in (self.project.behavior_diagrams if self.project else [])
-                if item.id == diagram_id
-            ),
-            None,
-        )
-        if diagram is None:
-            return
-        name, accepted = QInputDialog.getText(
-            self, "Rename diagram", "Diagram name:", text=diagram.name
-        )
-        if accepted and name.strip() and name.strip() != diagram.name:
-            self.undo_stack.push(
-                RenameBehaviorDiagramCommand(
-                    diagram, name.strip(), self._refresh_behavior_after_edit
-                )
-            )
-
-    def _delete_behavior_diagram(self, diagram_id: object) -> None:
-        diagram = next(
-            (
-                item
-                for item in (self.project.behavior_diagrams if self.project else [])
-                if item.id == diagram_id
-            ),
-            None,
-        )
-        if diagram is None:
-            return
-        if self._selected_behavior_diagram_id == diagram_id:
-            self._selected_behavior_diagram_id = None
-        self.undo_stack.push(
-            RemoveDesignEntityCommand(
-                self.project.behavior_diagrams,
-                diagram,
-                "behavior diagram",
-                self._refresh_behavior_after_edit,
-            )
-        )
-
-    def _record_behavior_layout_move(self, before, after) -> None:  # type: ignore[no-untyped-def]
-        self.undo_stack.push(
-            MoveBlocksCommand(self.behavior_scene, before, after, self._layout_changed)
-        )
-
-    def _behavior_layout_changed(self) -> None:
-        """A transition's connection point moved without changing the entity it connects to."""
-        self._mark_dirty("Canvas layout updated")
 
     def _confirm_delete_selected(self) -> None:
         if self.diagram_tabs.currentWidget() is self._behavior_tab:
@@ -1401,13 +1217,6 @@ class MainWindow(QMainWindow):
         self._run_entity_dialog(
             RelationshipDialog(self.project, parent=self), self.add_relationship
         )
-
-    def _prompt_new_behavior_state(self) -> None:
-        if self.project is None:
-            return
-        name, accepted = QInputDialog.getText(self, "New state", "State name:")
-        if accepted and name.strip():
-            self.add_behavior_state(name.strip())
 
     def _prompt_element(self, title: str, create_element: Callable[[str], None]) -> None:
         name, accepted = QInputDialog.getText(self, title, "Name:")
