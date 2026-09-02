@@ -9,10 +9,10 @@ style (drag blocks, drag-to-connect from a connector handle, select to focus edg
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsPathItem,
@@ -122,6 +122,31 @@ class StateBlock(QGraphicsRectItem):
                 QPointF(center.x(), rect.bottom()),
             ]
         )
+
+
+def state_kind_icon(kind: str, size: int = 28) -> QIcon:
+    """Render a toolbar icon by calling ``StateBlock.paint`` on an offscreen pixmap.
+
+    A palette button and the canvas notation it creates are drawn by the same code
+    path here, so they cannot disagree the way a text label like "Split/Merge Bar"
+    silently can.
+    """
+    block = StateBlock(uuid4(), "", kind)
+    bounds = block.rect()
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    margin = 3
+    available = size - margin * 2
+    width, height = bounds.width(), bounds.height()
+    scale = min(available / width, available / height) if width and height else 1.0
+    painter.translate(size / 2, size / 2)
+    painter.scale(scale, scale)
+    painter.translate(-bounds.center().x(), -bounds.center().y())
+    block.paint(painter, None)
+    painter.end()
+    return QIcon(pixmap)
 
 
 class TransitionEdge(QGraphicsPathItem):

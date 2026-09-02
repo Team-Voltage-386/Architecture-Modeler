@@ -28,7 +28,9 @@ def test_main_window_has_planned_regions(qtbot) -> None:
 
     assert window.windowTitle() == "FRC Architecture Modeler"
     assert window.findChild(QDockWidget, "detailsDock") is not None
-    assert window.findChild(QDockWidget, "legendDock") is not None
+    help_dock = window.findChild(QDockWidget, "helpDock")
+    assert help_dock is not None
+    assert not help_dock.isVisible()
     assert window.statusBar().currentMessage() == "No robot project connected"
     assert f"QToolBar QToolButton {{\n            color: {OFF_WHITE};" in app.styleSheet()
     input_selector = "QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QComboBox {"
@@ -304,6 +306,139 @@ def test_behavior_toolbar_sits_above_the_behavior_canvas_and_starts_disabled(qtb
         window.new_behavior_join_action,
     ):
         assert action.isEnabled()
+
+
+def test_every_toolbar_action_has_a_tooltip_and_status_tip(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    toolbar_actions = [
+        window.new_model_action,
+        window.open_model_action,
+        window.save_model_action,
+        window.connect_robot_action,
+        window.refresh_code_action,
+        window.cancel_scan_action,
+        window.compare_action,
+        window.accept_matches_action,
+        window.bind_selected_action,
+        window.export_change_request_action,
+        window.export_architecture_action,
+        window.new_command_action,
+        window.new_subsystem_action,
+        window.new_device_action,
+        window.new_trigger_action,
+        window.new_relationship_action,
+        window.show_command_forms_action,
+        window.link_selected_action,
+        window.delete_selected_action,
+        window.undo_action,
+        window.redo_action,
+        window.auto_layout_action,
+        window.zoom_to_fit_action,
+        window.minimize_action,
+        window.restore_action,
+        window.toggle_help_action,
+        *window._status_filter_actions.values(),
+        window.new_behavior_state_action,
+        window.new_behavior_start_action,
+        window.new_behavior_end_action,
+        window.new_behavior_decision_action,
+        window.new_behavior_sync_action,
+        window.new_behavior_join_action,
+    ]
+    for action in toolbar_actions:
+        assert action.toolTip(), f"{action.text()!r} has no tooltip"
+        assert action.statusTip(), f"{action.text()!r} has no status tip"
+
+
+def test_behavior_palette_buttons_get_a_shape_icon_matching_the_canvas(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    for action in (
+        window.new_behavior_state_action,
+        window.new_behavior_start_action,
+        window.new_behavior_end_action,
+        window.new_behavior_decision_action,
+        window.new_behavior_sync_action,
+        window.new_behavior_join_action,
+    ):
+        assert not action.icon().isNull()
+
+
+def test_help_panel_is_hidden_on_startup_and_toggled_by_f1_and_the_toolbar_button(
+    qtbot,
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(window.isVisible)
+
+    assert not window.help_dock.isVisible()
+    assert window.toggle_help_action.shortcut() == QKeySequence(Qt.Key.Key_F1)
+
+    window.toggle_help_action.trigger()
+    qtbot.waitUntil(window.help_dock.isVisible)
+
+    window.toggle_help_action.trigger()
+    qtbot.waitUntil(lambda: not window.help_dock.isVisible())
+
+
+def test_help_panel_search_filters_sections_by_title_and_content(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(window.isVisible)
+    window.toggle_help_action.trigger()
+    qtbot.waitUntil(window.help_dock.isVisible)
+
+    panel = window.help_panel
+    visible_titles = lambda: {  # noqa: E731
+        title for title, _, _, label in panel._sections if label.isVisible()
+    }
+    structure_titles = {
+        title for title, _, context, _ in panel._sections if context == "structure"
+    }
+    assert visible_titles() == structure_titles
+
+    panel.search_field.setText("diamond")
+    assert visible_titles() == {"Relationship lines"}
+
+    panel.search_field.setText("")
+    assert visible_titles() == structure_titles
+
+
+def test_help_panel_shows_only_the_active_diagram_tabs_sections(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(window.isVisible)
+    window.toggle_help_action.trigger()
+    qtbot.waitUntil(window.help_dock.isVisible)
+
+    panel = window.help_panel
+    visible_titles = lambda: {  # noqa: E731
+        title for title, _, _, label in panel._sections if label.isVisible()
+    }
+    structure_titles = {
+        title for title, _, context, _ in panel._sections if context == "structure"
+    }
+    behavior_titles = {
+        title for title, _, context, _ in panel._sections if context == "behavior"
+    }
+    assert visible_titles() == structure_titles
+
+    window.diagram_tabs.setCurrentWidget(window._behavior_tab)
+    assert visible_titles() == behavior_titles
+
+    window.diagram_tabs.setCurrentIndex(0)
+    assert visible_titles() == structure_titles
 
 
 @pytest.mark.parametrize(

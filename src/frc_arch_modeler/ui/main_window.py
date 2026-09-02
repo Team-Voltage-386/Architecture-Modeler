@@ -55,15 +55,9 @@ from frc_arch_modeler.services.change_request_export import ChangeRequestExportS
 from frc_arch_modeler.services.export_service import ArchitectureExportService
 from frc_arch_modeler.services.project_service import ProjectService
 from frc_arch_modeler.services.reconcile_service import ReconciliationResult, ReconciliationService
-from frc_arch_modeler.ui.architecture_scene import (
-    MATCHED_GREEN,
-    MODIFIED_AMBER,
-    UNRESOLVED_MAGENTA,
-    ArchitectureBlock,
-    ArchitectureScene,
-)
+from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock, ArchitectureScene
 from frc_arch_modeler.ui.behavior_model_browser import BehaviorModelBrowser
-from frc_arch_modeler.ui.behavior_scene import BehaviorScene
+from frc_arch_modeler.ui.behavior_scene import BehaviorScene, state_kind_icon
 from frc_arch_modeler.ui.details_panel import (
     DetailsPanel,
     EditDescriptionCommand,
@@ -72,9 +66,9 @@ from frc_arch_modeler.ui.details_panel import (
     EditRequirementsCommand,
 )
 from frc_arch_modeler.ui.entity_dialogs import DeviceDialog, RelationshipDialog, TriggerDialog
+from frc_arch_modeler.ui.help_panel import HelpPanel
 from frc_arch_modeler.ui.scan_worker import JavaScanWorker
 from frc_arch_modeler.ui.source_viewer import SourceViewerDialog
-from frc_arch_modeler.ui.theme import OFF_WHITE, VOLTAGE_BLUE, VOLTAGE_YELLOW
 
 DETAILS_DOCK_BREAKPOINT = 1280
 
@@ -231,11 +225,11 @@ class MainWindow(QMainWindow):
             self._reattach_behavior_transition
         )
         self.behavior_scene.transition_anchor_changed.connect(self._behavior_layout_changed)
+        self._build_help_dock()
         self._build_toolbar()
         self._build_canvas()
         self._build_details_dock()
         self._build_inventory_dock()
-        self._build_legend_dock()
         self._build_status_bar()
         self.statusBar().showMessage("No robot project connected")
 
@@ -249,61 +243,165 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         self.new_model_action = self.addAction("New Model", self._prompt_new_project)
         self.new_model_action.setShortcut(QKeySequence.StandardKey.New)
+        self._set_action_help(
+            self.new_model_action,
+            "Start a brand-new, empty architecture model. Use this when beginning a "
+            "design from scratch, before any robot code exists.",
+        )
         self.open_model_action = self.addAction("Open Model", self._prompt_open_project)
         self.open_model_action.setShortcut(QKeySequence.StandardKey.Open)
+        self._set_action_help(
+            self.open_model_action,
+            "Open a previously saved architecture model from disk. Use this to resume "
+            "work on a model you already created.",
+        )
         self.save_model_action = self.addAction("Save Model", self._prompt_save_project)
         self.save_model_action.setShortcut(QKeySequence.StandardKey.Save)
         self.save_model_action.setEnabled(False)
+        self._set_action_help(
+            self.save_model_action,
+            "Save the current architecture model to disk. Use this after making design "
+            "changes you want to keep.",
+        )
         self.connect_robot_action = self.addAction(
             "Connect Robot Project", self._prompt_connect_robot_project
+        )
+        self._set_action_help(
+            self.connect_robot_action,
+            "Point the tool at an FRC robot code project so it can scan the Java source "
+            "for commands, subsystems and devices. Use this the first time you want to "
+            "compare your design against real code.",
         )
         self.refresh_code_action = self.addAction(
             "Refresh Code", self._refresh_robot_project_async
         )
         self.refresh_code_action.setShortcut(QKeySequence(Qt.Key.Key_F5))
         self.refresh_code_action.setEnabled(False)
+        self._set_action_help(
+            self.refresh_code_action,
+            "Re-scan the connected robot project to pick up recent code changes without "
+            "disturbing your design. Use this after editing code outside the tool.",
+        )
         self.cancel_scan_action = self.addAction("Cancel Scan", self.cancel_scan)
         self.cancel_scan_action.setEnabled(False)
+        self._set_action_help(
+            self.cancel_scan_action,
+            "Stop a code scan that is currently running. Use this if a scan is taking "
+            "too long or you connected the wrong project.",
+        )
         self.compare_action = self.addAction("Compare Changes", self.compare_changes)
         self.compare_action.setEnabled(False)
+        self._set_action_help(
+            self.compare_action,
+            "Compare the current design against the most recent code scan and mark what "
+            "matches, what changed, and what only exists on one side. Use this after "
+            "connecting or refreshing code to see how design and implementation diverge.",
+        )
         self.accept_matches_action = self.addAction("Accept Matches", self.accept_matches)
         self.accept_matches_action.setEnabled(False)
+        self._set_action_help(
+            self.accept_matches_action,
+            "Accept the tool's suggested matches between design elements and scanned "
+            "code symbols, marking them as confirmed. Use this after Compare Changes "
+            "when the automatic matches already look correct.",
+        )
         self.bind_selected_action = self.addAction("Bind Selected", self.bind_selected)
         self.bind_selected_action.setEnabled(False)
+        self._set_action_help(
+            self.bind_selected_action,
+            "Tell the tool that this design element and this scanned code symbol are "
+            "the same thing — use it when a rename made the automatic match ambiguous.",
+        )
         self.export_change_request_action = self.addAction(
             "Export AI Change Request", self._prompt_export_change_request
         )
         self.export_change_request_action.setEnabled(False)
+        self._set_action_help(
+            self.export_change_request_action,
+            "Export a Markdown brief describing the differences between design and "
+            "code, written for an AI coding assistant to implement. Use this when you "
+            "want an LLM to bring the code in line with the design.",
+        )
         self.export_architecture_action = self.addAction(
             "Export Architecture", self._prompt_export_architecture
         )
         self.export_architecture_action.setShortcut(QKeySequence("Ctrl+E"))
         self.export_architecture_action.setEnabled(False)
+        self._set_action_help(
+            self.export_architecture_action,
+            "Export the current architecture as a human-readable Markdown document. "
+            "Use this to share or archive a snapshot of the design.",
+        )
         self.new_command_action = self.addAction("New Command", self._prompt_new_command)
         self.new_command_action.setEnabled(False)
+        self._set_action_help(
+            self.new_command_action,
+            "Add a new Command — a robot action such as driving a distance or running "
+            "an intake — to the design. Use this to model a piece of robot behavior "
+            "that doesn't exist yet.",
+        )
         self.new_subsystem_action = self.addAction("New Subsystem", self._prompt_new_subsystem)
         self.new_subsystem_action.setEnabled(False)
+        self._set_action_help(
+            self.new_subsystem_action,
+            "Add a new Subsystem — a group of hardware such as a drivetrain or arm — "
+            "to the design. Use this to model a mechanical or electrical grouping of "
+            "devices.",
+        )
         self.new_device_action = self.addAction("New Device", self._prompt_new_device)
         self.new_device_action.setEnabled(False)
+        self._set_action_help(
+            self.new_device_action,
+            "Add a new Device, such as a motor or sensor, owned by a subsystem. Use "
+            "this to model a specific piece of hardware.",
+        )
         self.new_trigger_action = self.addAction("New Trigger", self._prompt_new_trigger)
         self.new_trigger_action.setEnabled(False)
+        self._set_action_help(
+            self.new_trigger_action,
+            "Add a new Trigger — a condition, like a button press or sensor threshold, "
+            "that starts a Command. Use this to model what causes a command to run.",
+        )
         self.new_relationship_action = self.addAction(
             "New Relationship", self._prompt_new_relationship
         )
         self.new_relationship_action.setEnabled(False)
+        self._set_action_help(
+            self.new_relationship_action,
+            "Draw a new relationship, such as calls or triggers, between two selected "
+            "design elements. Use this to model how commands, subsystems and devices "
+            "interact.",
+        )
         self.show_command_forms_action = self.addAction("Show Command Forms")
         self.show_command_forms_action.setCheckable(True)
         self.show_command_forms_action.toggled.connect(self._toggle_command_forms)
+        self._set_action_help(
+            self.show_command_forms_action,
+            "Toggle whether each Command's parameter list is shown expanded on the "
+            "canvas. Use this to see or hide command configuration details inline.",
+        )
         self.link_selected_action = self.addAction(
             "Link Selected (Requires)", self.link_selected_requirement
         )
         self.link_selected_action.setShortcut(QKeySequence("Ctrl+L"))
         self.link_selected_action.setEnabled(False)
+        self._set_action_help(
+            self.link_selected_action,
+            "Mark the second selected element as required by the first, recording a "
+            "design dependency. Use this to capture that one part of the robot depends "
+            "on another being built first.",
+        )
         self.delete_selected_action = self.addAction(
             "Delete Selected", self._confirm_delete_selected
         )
         self.delete_selected_action.setShortcut(QKeySequence(Qt.Key.Key_Delete))
         self.delete_selected_action.setEnabled(False)
+        self._set_action_help(
+            self.delete_selected_action,
+            "Delete the currently selected design elements from the model. Use this to "
+            "remove commands, subsystems, devices or relationships you no longer want "
+            "— press Ctrl+Z to undo.",
+        )
         self.search_field = QLineEdit(self)
         self.search_field.setObjectName("architectureSearch")
         self.search_field.setAccessibleName("Search architecture evidence")
@@ -313,27 +411,94 @@ class MainWindow(QMainWindow):
         self.find_shortcut = QShortcut(QKeySequence.StandardKey.Find, self)
         self.find_shortcut.activated.connect(self.search_field.setFocus)
         self._status_filter_actions = {}
-        for state, label in (
-            (ComparisonState.MATCHED, "Matched"),
-            (ComparisonState.MODIFIED, "Modified"),
-            (ComparisonState.DESIGN_ONLY, "Design Only"),
-            (ComparisonState.CODE_ONLY, "Code Only"),
-            (ComparisonState.UNRESOLVED, "Unresolved"),
-            (ComparisonState.AMBIGUOUS, "Ambiguous"),
-            (ComparisonState.SCAN_ERROR, "Scan Error"),
+        for state, label, help_text in (
+            (
+                ComparisonState.MATCHED,
+                "Matched",
+                "Show or hide blocks whose design matches the scanned code exactly. "
+                "Turn this off to reduce clutter while focusing on what's changed.",
+            ),
+            (
+                ComparisonState.MODIFIED,
+                "Modified",
+                "Show or hide blocks where the code has diverged from the design. Turn "
+                "this off to hide elements that already agree.",
+            ),
+            (
+                ComparisonState.DESIGN_ONLY,
+                "Design Only",
+                "Show or hide blocks that exist in the design but haven't been "
+                "implemented in code yet. Use this to see what's still to be built.",
+            ),
+            (
+                ComparisonState.CODE_ONLY,
+                "Code Only",
+                "Show or hide blocks found in the scanned code that aren't part of the "
+                "design yet. Use this to spot undocumented code.",
+            ),
+            (
+                ComparisonState.UNRESOLVED,
+                "Unresolved",
+                "Show or hide blocks the tool couldn't confidently match between design "
+                "and code. Use this to focus on matches that may need manual binding.",
+            ),
+            (
+                ComparisonState.AMBIGUOUS,
+                "Ambiguous",
+                "Show or hide blocks with more than one possible code match. Use this "
+                "to focus on matches that need manual review.",
+            ),
+            (
+                ComparisonState.SCAN_ERROR,
+                "Scan Error",
+                "Show or hide blocks the code scanner couldn't parse. Use this to find "
+                "files that need attention before comparing.",
+            ),
         ):
             action = self.addAction(label)
             action.setCheckable(True)
             action.setChecked(True)
             action.toggled.connect(self._apply_status_filters)
+            self._set_action_help(action, help_text)
             self._status_filter_actions[state] = action
         toolbar.addSeparator()
         self.undo_action = self.undo_stack.createUndoAction(self, "Undo")
         self.redo_action = self.undo_stack.createRedoAction(self, "Redo")
+        self._set_action_help(
+            self.undo_action,
+            "Undo the most recent design change. Use this to step back one edit at a "
+            "time, including canvas moves.",
+        )
+        self._set_action_help(
+            self.redo_action,
+            "Redo the design change you just undid. Use this to step forward again "
+            "after an undo.",
+        )
         self.auto_layout_action = self.addAction("Auto Layout", self.auto_layout)
+        self._set_action_help(
+            self.auto_layout_action,
+            "Automatically rearrange all blocks into a tidy grid. Use this to clean up "
+            "the canvas after adding or importing many elements.",
+        )
         self.zoom_to_fit_action = self.addAction("Zoom to Fit", self.zoom_to_fit)
+        self._set_action_help(
+            self.zoom_to_fit_action,
+            "Zoom and pan the canvas so every block is visible at once. Use this to "
+            "get your bearings after scrolling or zooming in.",
+        )
         self.minimize_action = self.addAction("Minimize Selected", self.minimize_selected)
+        self._set_action_help(
+            self.minimize_action,
+            "Collapse the selected blocks down to a compact title-only size. Use this "
+            "to reduce visual clutter for blocks you don't need full detail on right "
+            "now.",
+        )
         self.restore_action = self.addAction("Restore Selected", self.restore_selected)
+        self._set_action_help(
+            self.restore_action,
+            "Expand previously minimized blocks back to full size. Use this to see "
+            "full details again.",
+        )
         for action in (
             self.auto_layout_action,
             self.zoom_to_fit_action,
@@ -342,6 +507,13 @@ class MainWindow(QMainWindow):
         ):
             action.setEnabled(False)
         self._organize_toolbar(toolbar)
+
+    @staticmethod
+    def _set_action_help(action, text: str) -> None:  # type: ignore[no-untyped-def]
+        """Give a toolbar action the same one-sentence explanation as both its tooltip
+        and its status-bar text, written for someone new to FRC architecture modeling."""
+        action.setToolTip(text)
+        action.setStatusTip(text)
 
     def _organize_toolbar(self, toolbar: QToolBar) -> None:
         """Replace a wrapping action strip with compact, named action groups."""
@@ -409,6 +581,8 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.redo_action)
         toolbar.addSeparator()
         toolbar.addWidget(self.search_field)
+        toolbar.addSeparator()
+        toolbar.addAction(self.toggle_help_action)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Protect unsaved design and canvas edits when the main window closes."""
@@ -495,23 +669,57 @@ class MainWindow(QMainWindow):
         """A palette of SysML-style node buttons scoped to the Behavior tab, Cameo-style."""
         toolbar = QToolBar("Behavior palette", self)
         toolbar.setMovable(False)
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         self.new_behavior_state_action = toolbar.addAction(
             "New State", self._prompt_new_behavior_state
+        )
+        self._set_action_help(
+            self.new_behavior_state_action,
+            "Add a new named state to the behavior diagram, representing a robot "
+            "operating mode such as Autonomous or Teleop. Use this to model a mode the "
+            "robot can be in.",
         )
         self.new_behavior_start_action = toolbar.addAction(
             "Start", lambda: self._add_behavior_pseudostate("start")
         )
+        self._set_action_help(
+            self.new_behavior_start_action,
+            "Add a Start pseudostate — a filled circle marking where the behavior "
+            "diagram begins. Use this to show which state the robot enters first.",
+        )
         self.new_behavior_end_action = toolbar.addAction(
             "End", lambda: self._add_behavior_pseudostate("end")
+        )
+        self._set_action_help(
+            self.new_behavior_end_action,
+            "Add an End pseudostate — a ringed circle marking a terminal state. Use "
+            "this to show that a behavior sequence has finished.",
         )
         self.new_behavior_decision_action = toolbar.addAction(
             "Decision", lambda: self._add_behavior_pseudostate("decision")
         )
+        self._set_action_help(
+            self.new_behavior_decision_action,
+            "Add a Decision diamond that branches into different states depending on "
+            "a guard condition. Use this to model an if/else choice in robot behavior.",
+        )
         self.new_behavior_sync_action = toolbar.addAction(
             "Split/Merge Bar", lambda: self._add_behavior_pseudostate("synchronization")
         )
+        self._set_action_help(
+            self.new_behavior_sync_action,
+            "Add a Split/Merge bar, used to fork one flow into several concurrent "
+            "states or merge several concurrent flows back into one. Use this to model "
+            "behaviors that happen at the same time.",
+        )
         self.new_behavior_join_action = toolbar.addAction(
             "Join", lambda: self._add_behavior_pseudostate("join")
+        )
+        self._set_action_help(
+            self.new_behavior_join_action,
+            "Add a Join — an unlabeled circular point where multiple incoming "
+            "transitions converge onto one outgoing line. Use this to bring separate "
+            "flows back together without branching logic.",
         )
         self._behavior_creation_actions = [
             self.new_behavior_state_action,
@@ -521,8 +729,12 @@ class MainWindow(QMainWindow):
             self.new_behavior_sync_action,
             self.new_behavior_join_action,
         ]
-        for action in self._behavior_creation_actions:
+        for action, kind in zip(
+            self._behavior_creation_actions,
+            ("state", "start", "end", "decision", "synchronization", "join"),
+        ):
             action.setEnabled(False)
+            action.setIcon(state_kind_icon(kind))
         self.behavior_toolbar = toolbar
 
     def set_project(self, project: ArchitectureProject | None) -> None:
@@ -2233,59 +2445,29 @@ class MainWindow(QMainWindow):
             self.behavior_model_browser if on_behavior else self.inventory_tree
         )
         self._left_dock.setWindowTitle("Behavior Diagrams" if on_behavior else "Code Inventory")
+        self.help_panel.set_active_context("behavior" if on_behavior else "structure")
 
-    def _build_legend_dock(self) -> None:
-        dock = QDockWidget("Legend", self)
-        dock.setObjectName("legendDock")
-        legend = QLabel(dock)
-        legend.setTextFormat(Qt.TextFormat.RichText)
-        legend.setWordWrap(True)
-        legend.setText(
-            "<b>Block accent</b><br>"
-            f"<span style='color:{VOLTAGE_YELLOW}'>&#9632;</span> Command &nbsp; "
-            f"<span style='color:{VOLTAGE_BLUE}'>&#9632;</span> Subsystem"
-            "<hr>"
-            "<b>Status</b> (badge + border, never color alone)<br>"
-            f"<span style='color:{MATCHED_GREEN}'>&#10003; MATCHED</span> — solid border<br>"
-            f"<span style='color:{MODIFIED_AMBER}'>&Delta; MODIFIED</span> — dash-dot border<br>"
-            f"<span style='color:{VOLTAGE_YELLOW}'>+ DESIGN ONLY</span> — dashed border<br>"
-            f"<span style='color:{VOLTAGE_BLUE}'>&#8595; CODE ONLY</span> — dotted border<br>"
-            f"<span style='color:{UNRESOLVED_MAGENTA}'>? UNRESOLVED / AMBIGUOUS</span><br>"
-            "<span style='color:#FF5C5C'>! SCAN ERROR</span><br>"
-            "IMPORTED — dotted border, no design match yet"
-            "<hr>"
-            "<b>Relationship lines</b><br>"
-            "Dashed — design requirement<br>"
-            f"<span style='color:{VOLTAGE_BLUE}'>Dashed</span> — imported requirement (evidence "
-            "on hover)<br>"
-            "Dotted, hollow arrow — calls<br>"
-            "Dotted, filled arrow — triggers<br>"
-            "Dotted, hollow diamond — contains<br>"
-            "Dotted, filled diamond — owns device<br>"
-            "Bright solid — connected to the current selection"
-            "<hr>"
-            "<b>Drawing a relationship</b><br>"
-            "Drag from a block's small yellow handle onto another block, then pick a type."
-            "<hr>"
-            "<b>Behavior tab</b><br>"
-            "A separate state diagram for robot modes (Disabled/Autonomous/Teleop/Test). "
-            "States and transitions are authored the same way: drag from a state's handle "
-            "onto another state to add a transition. Click a transition line to select it and "
-            "reveal its two yellow endpoint handles — drag one onto a different state to "
-            "reconnect it. Right-click a transition for a Delete Transition option."
-            "<hr>"
-            "<b>Behavior palette</b> (toolbar above the Behavior canvas)<br>"
-            f"<span style='color:{VOLTAGE_YELLOW}'>&#9679;</span> Start — filled circle, "
-            "entry point<br>"
-            f"<span style='color:{VOLTAGE_YELLOW}'>&#9678;</span> End — ringed circle, exit "
-            "point<br>"
-            "&#9670; Decision — diamond, branches on a guard condition<br>"
-            f"<span style='color:{OFF_WHITE}'>&#9644;</span> Split/Merge — bar joining or "
-            "forking concurrent flows<br>"
-            "Transition labels may be left blank for start/end/split-merge edges."
-        )
-        dock.setWidget(legend)
+    def _build_help_dock(self) -> None:
+        """A notation help panel, hidden by default so it costs the canvas no width.
+
+        Toggled by F1 or the "?" toolbar button via the dock's own built-in toggle
+        action, so visibility state and action checked-state can never drift apart.
+        """
+        dock = QDockWidget("Notation Help", self)
+        dock.setObjectName("helpDock")
+        self.help_panel = HelpPanel(dock)
+        dock.setWidget(self.help_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+        dock.setVisible(False)
+        self.help_dock = dock
+        self.toggle_help_action = dock.toggleViewAction()
+        self.toggle_help_action.setText("?")
+        self.toggle_help_action.setShortcut(QKeySequence(Qt.Key.Key_F1))
+        self._set_action_help(
+            self.toggle_help_action,
+            "Show or hide the notation help panel. Use this when you forget what a "
+            "block accent, border style, line, or palette shape means.",
+        )
 
     def _build_status_bar(self) -> None:
         """Reserve the plan's persistent status fields alongside transient action messages."""

@@ -33,6 +33,37 @@ OWNED_LABELS = {
     "trigger": "Triggers",
     "relationship": "Relationships",
 }
+#: One-sentence help text for each owned-object section's list and its Add/Edit/Remove
+#: buttons, written for someone new to FRC architecture modeling.
+OWNED_HELP = {
+    "device": {
+        "list": (
+            "Devices owned by this subsystem, such as motors and sensors. Select "
+            "one to Edit or Remove it."
+        ),
+        "add": "Add a new device owned by this subsystem.",
+        "edit": "Edit the selected device's name, type, bus, address and other fields.",
+        "remove": "Remove the selected device from this subsystem.",
+    },
+    "trigger": {
+        "list": (
+            "Triggers that start this command, such as a button press. Select one "
+            "to Edit or Remove it."
+        ),
+        "add": "Add a new trigger that starts this command.",
+        "edit": "Edit the selected trigger's controller expression and activation.",
+        "remove": "Remove the selected trigger from this command.",
+    },
+    "relationship": {
+        "list": (
+            "Relationships where this element is the source or target, such as "
+            "calls or triggers. Select one to Edit or Remove it."
+        ),
+        "add": "Add a new relationship involving this element.",
+        "edit": "Edit the selected relationship's type or endpoints.",
+        "remove": "Remove the selected relationship.",
+    },
+}
 
 
 class EditDescriptionCommand(QUndoCommand):
@@ -210,17 +241,69 @@ class DetailsPanel(QWidget):
         self.revert_name_button = QPushButton("Revert Proposed Name", self)
         self.open_source_button = QPushButton("Open Source", self)
         form = QFormLayout()
-        form.addRow("Name from code", self.code_name)
-        form.addRow("Design / proposed name", self.design_name)
-        form.addRow("From code", self.code_description)
-        form.addRow("Lifecycle / flow", self.lifecycle_flow)
-        form.addRow("", self.lifecycle_diagram)
-        form.addRow("Design structure", self.design_context)
-        form.addRow("Design / proposed", self.design_description)
-        form.addRow("Required subsystems", self.requirements)
+
+        def add_row(row_label: str, widget: QWidget, help_text: str) -> None:
+            form.addRow(row_label, widget)
+            self._set_help(widget, help_text)
+            label = form.labelForField(widget)
+            if label is not None:
+                self._set_help(label, help_text)
+
+        add_row(
+            "Name from code",
+            self.code_name,
+            "The name found by the last code scan, if any. Read-only — it reflects "
+            "what the code currently says, not what you've designed.",
+        )
+        add_row(
+            "Design / proposed name",
+            self.design_name,
+            "The name you want this element to have in the design. Leave blank to "
+            "keep using the code-derived name; type one to override it, then click "
+            "Apply Proposed Fields to save it.",
+        )
+        add_row(
+            "From code",
+            self.code_description,
+            "The description or JavaDoc comment found by the last code scan, if any. "
+            "Read-only fact from the code.",
+        )
+        add_row(
+            "Lifecycle / flow",
+            self.lifecycle_flow,
+            "This command's lifecycle phases (initialize, execute, isFinished, end) "
+            "as recovered from the scanned code.",
+        )
+        add_row(
+            "",
+            self.lifecycle_diagram,
+            "Click a phase to jump to where it's implemented in the source. Phases "
+            "marked (inherited) use the default WPILib behavior instead of an "
+            "override.",
+        )
+        add_row(
+            "Design structure",
+            self.design_context,
+            "How this element fits into the rest of the design — what requires it "
+            "and what it requires.",
+        )
+        add_row(
+            "Design / proposed",
+            self.design_description,
+            "Your own description of what this element is for. This is design "
+            "intent, not a copy of the code comment — click Apply Proposed Fields to "
+            "save it.",
+        )
+        add_row(
+            "Required subsystems",
+            self.requirements,
+            "Subsystems this command requires. Check a subsystem to mark this "
+            "command as using it; unchecking it releases the requirement.",
+        )
         for kind in OWNED_KINDS:
             label = QLabel(OWNED_LABELS[kind], self)
             self._owned_labels[kind] = label
+            self._set_help(label, OWNED_HELP[kind]["list"])
             form.addRow(label, self._build_owned_section(kind))
         layout.addWidget(self.title)
         layout.addLayout(form)
@@ -237,8 +320,44 @@ class DetailsPanel(QWidget):
         self.adopt_name_button.clicked.connect(self._adopt_code_name)
         self.revert_name_button.clicked.connect(self._revert_name)
         self.open_source_button.clicked.connect(self._open_source)
+        self._set_help(
+            self.save_button,
+            "Save the proposed name, description and requirement changes above to "
+            "the design. Use this after editing any of the fields.",
+        )
+        self._set_help(
+            self.revert_button,
+            "Clear your proposed description override, falling back to the "
+            "code-derived description if any.",
+        )
+        self._set_help(
+            self.adopt_description_button,
+            "Copy the code's description into the proposed description field, so "
+            "you can start from what the code already says.",
+        )
+        self._set_help(
+            self.adopt_name_button,
+            "Copy the code's name into the proposed name field. Use this to accept "
+            "the code's name as the design name.",
+        )
+        self._set_help(
+            self.revert_name_button,
+            "Clear your proposed name override, falling back to the code-derived "
+            "name if any.",
+        )
+        self._set_help(
+            self.open_source_button,
+            "Jump to this element's location in the source code. Only available "
+            "once a matching code symbol has been found.",
+        )
         self._set_editing_enabled(False)
         self._set_owned_objects(None, {})
+
+    @staticmethod
+    def _set_help(widget: QWidget, text: str) -> None:
+        """Give a details-panel field or button the same tooltip and status-bar text."""
+        widget.setToolTip(text)
+        widget.setStatusTip(text)
 
     def _build_owned_section(self, kind: str) -> QWidget:
         """Build one owned-object list with the Add / Edit / Remove management buttons."""
@@ -248,6 +367,7 @@ class DetailsPanel(QWidget):
         list_widget = QListWidget(container)
         list_widget.setObjectName(f"owned{kind.capitalize()}s")
         list_widget.setAccessibleName(f"Owned {kind}s of the selected element")
+        self._set_help(list_widget, OWNED_HELP[kind]["list"])
         container_layout.addWidget(list_widget)
         button_row = QHBoxLayout()
         buttons: dict[str, QPushButton] = {}
@@ -259,6 +379,7 @@ class DetailsPanel(QWidget):
             button = QPushButton(action.capitalize(), container)
             button.setObjectName(f"{action}{kind.capitalize()}Button")
             button.clicked.connect(lambda _checked=False, k=kind, h=handler: h(k))
+            self._set_help(button, OWNED_HELP[kind][action])
             button_row.addWidget(button)
             buttons[action] = button
         container_layout.addLayout(button_row)
