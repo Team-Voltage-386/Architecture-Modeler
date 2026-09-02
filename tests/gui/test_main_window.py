@@ -14,7 +14,11 @@ from PySide6.QtWidgets import (
 
 from frc_arch_modeler.app import create_application
 from frc_arch_modeler.domain.model import ComparisonState
-from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock
+from frc_arch_modeler.ui.architecture_scene import (
+    ArchitectureBlock,
+    DeviceBlock,
+    DeviceCountChip,
+)
 from frc_arch_modeler.ui.behavior_scene import StateBlock
 from frc_arch_modeler.ui.entity_dialogs import DeviceDialog
 from frc_arch_modeler.ui.main_window import MainWindow
@@ -173,7 +177,10 @@ def test_design_devices_and_triggers_appear_on_their_canvas_blocks(qtbot) -> Non
     blocks = [item for item in window.scene.items() if isinstance(item, ArchitectureBlock)]
     drive = next(block for block in blocks if block.title.toPlainText() == "Drive")
     command = next(block for block in blocks if block.title.toPlainText() == "Teleop Drive")
-    assert "SparkMax: Left motor" in drive.summary.toPlainText()
+    # Hardware reaches the canvas as its own tier now, announced by a count chip.
+    assert drive.device_chip is not None
+    assert drive.device_chip.label.toPlainText().endswith("1 device")
+    assert "SparkMax" not in drive.summary.toPlainText()
     assert "Driver A · onTrue" in command.summary.toPlainText()
     assert window.new_device_action.isEnabled()
     assert window.new_trigger_action.isEnabled()
@@ -382,6 +389,7 @@ def test_every_toolbar_action_has_a_tooltip_and_status_tip(qtbot) -> None:
         window.zoom_to_fit_action,
         window.minimize_action,
         window.restore_action,
+        window.device_view_action,
         window.toggle_help_action,
         *window._status_filter_actions.values(),
         window.new_behavior_state_action,
@@ -1634,3 +1642,123 @@ def test_deleting_a_subsystem_a_command_requires_is_still_refused(qtbot, monkeyp
     assert not window.delete_selected()
     assert warnings == ["Shooter is still required by Score Coral. Clear that requirement first."]
     assert window.project.subsystems
+
+
+def _new_robot_with_a_device(qtbot, name: str = "Left motor"):  # type: ignore[no-untyped-def]
+    """A saved-shaped model with one subsystem owning one fully wired device."""
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    assert window.project is not None
+    window.add_device(
+        window.project.subsystems[0].id, name, "SparkMax", "REAL", "canivore", "3"
+    )
+    return window
+
+
+def test_device_view_action_cycles_grouped_expanded_and_hidden(qtbot) -> None:
+    window = _new_robot_with_a_device(qtbot)
+    device_blocks = lambda: [  # noqa: E731
+        item for item in window.scene.items() if isinstance(item, DeviceBlock)
+    ]
+    chips = lambda: [  # noqa: E731
+        item for item in window.scene.items() if isinstance(item, DeviceCountChip)
+    ]
+
+    assert window.device_view_action.isEnabled()
+    assert window.device_view_action.text() == "Devices: Grouped"
+    assert not device_blocks()
+    assert len(chips()) == 1
+
+    window.device_view_action.trigger()
+    assert window.scene.device_view_state == "expanded"
+    assert window.device_view_action.text() == "Devices: Expanded"
+    assert [block.title.toPlainText() for block in device_blocks()] == ["Left motor"]
+    assert not chips()
+
+    window.device_view_action.trigger()
+    assert window.device_view_action.text() == "Devices: Hidden"
+    assert not device_blocks()
+    assert not chips()
+
+    window.device_view_action.trigger()
+    assert window.device_view_action.text() == "Devices: Grouped"
+    assert len(chips()) == 1
+
+
+def test_device_view_state_survives_save_and_reopen(qtbot, tmp_path) -> None:
+    window = _new_robot_with_a_device(qtbot)
+    window.device_view_action.trigger()
+    window.device_view_action.trigger()
+    assert window.scene.device_view_state == "hidden"
+    window.save_project(tmp_path)
+
+    reopened = MainWindow()
+    qtbot.addWidget(reopened)
+    reopened.open_project(tmp_path)
+
+    assert reopened.scene.device_view_state == "hidden"
+    assert reopened.device_view_action.text() == "Devices: Hidden"
+    assert not [item for item in reopened.scene.items() if isinstance(item, DeviceBlock)]
+
+
+def test_per_subsystem_device_expansion_survives_save_and_reopen(qtbot, tmp_path) -> None:
+    window = _new_robot_with_a_device(qtbot)
+    window.add_subsystem("Arm")
+    assert window.project is not None
+    window.add_device(window.project.subsystems[1].id, "Elbow", "TalonFX")
+    drive_id = window.project.subsystems[0].id
+
+    window.scene.toggle_subsystem_devices(drive_id)
+    assert [
+        item.title.toPlainText()
+        for item in window.scene.items()
+        if isinstance(item, DeviceBlock)
+    ] == ["Left motor"]
+    window.save_project(tmp_path)
+
+    reopened = MainWindow()
+    qtbot.addWidget(reopened)
+    reopened.open_project(tmp_path)
+
+    assert reopened.scene.device_view_state == "grouped"
+    assert reopened.scene.expanded_device_subsystems == {drive_id}
+    assert [
+        item.title.toPlainText()
+        for item in reopened.scene.items()
+        if isinstance(item, DeviceBlock)
+    ] == ["Left motor"]
+
+
+def test_selecting_a_device_block_shows_it_in_the_details_panel(qtbot, monkeypatch) -> None:
+    window = _new_robot_with_a_device(qtbot)
+    window.device_view_action.trigger()
+    device = window.project.devices[0]
+    block = next(
+        item for item in window.scene.items() if isinstance(item, DeviceBlock)
+    )
+
+    block.setSelected(True)
+
+    panel = window.details_panel
+    assert panel.title.text() == "Left motor (Device)"
+    context = panel.design_context.text()
+    assert "Owner subsystem: Drive" in context
+    assert "Type: SparkMax" in context
+    assert "Bus: canivore" in context
+    assert "Address: 3" in context
+    assert panel.edit_device_button.isVisibleTo(panel)
+
+    monkeypatch.setattr(
+        DeviceDialog,
+        "exec",
+        lambda self: (self.name_edit.setText("Feeder motor"), QDialog.DialogCode.Accepted)[1],
+    )
+    panel.edit_device_button.click()
+
+    assert device.name.effective == "Feeder motor"
+    assert len(window.scene.selected_device_blocks()) == 1
+    window.undo_stack.undo()
+    assert device.name.effective == "Left motor"

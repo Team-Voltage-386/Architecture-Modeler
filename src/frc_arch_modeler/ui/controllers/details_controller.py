@@ -91,6 +91,11 @@ class DetailsController:
     def update_selected_element(self) -> None:
         window = self.window
         selected = window.scene.selected_blocks()
+        device = self._selected_device()
+        if device is not None:
+            window.details_panel.set_device(device, self._device_owner_name(device))
+            self.update_compact_details()
+            return
         if len(selected) != 1:
             window.details_panel.set_element(None)
             self.update_compact_details()
@@ -139,6 +144,10 @@ class DetailsController:
         if window.compact_details_panel is None:
             return
         selected = window.scene.selected_blocks()
+        device = self._selected_device()
+        if device is not None:
+            window.compact_details_panel.set_device(device, self._device_owner_name(device))
+            return
         if len(selected) != 1:
             window.compact_details_panel.set_element(None)
             return
@@ -168,6 +177,27 @@ class DetailsController:
             design_context=self._design_structure(element.id) if element is not None else None,
             owned_objects=self._owned_objects(element),
         )
+
+    def _selected_device(self):  # type: ignore[no-untyped-def]
+        """Return the authored device behind a single selected device block, if any."""
+        window = self.window
+        blocks = window.scene.selected_device_blocks()
+        if window.project is None or window.scene.selected_blocks() or len(blocks) != 1:
+            return None
+        return next(
+            (item for item in window.project.devices if item.id == blocks[0].element_id),
+            None,
+        )
+
+    def _device_owner_name(self, device) -> str | None:  # type: ignore[no-untyped-def]
+        project = self.window.project
+        if project is None:
+            return None
+        owner = next(
+            (item for item in project.subsystems if item.id == device.owner_subsystem_id),
+            None,
+        )
+        return None if owner is None else owner.name.effective
 
     def _element_by_id(self, element_id):  # type: ignore[no-untyped-def]
         project = self.window.project

@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QGraphicsView, QTabWidget, QVBoxLayout, QWidget
 
-from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock
+from frc_arch_modeler.ui.architecture_scene import CanvasBlock
 from frc_arch_modeler.ui.undo_commands import MoveBlocksCommand
 
 if TYPE_CHECKING:
@@ -34,6 +34,7 @@ class CanvasController:
         window.scene.block_double_clicked.connect(window._open_compact_details)
         window.scene.delete_requested.connect(window._confirm_delete_selected)
         window.scene.connection_requested.connect(window._handle_connection_requested)
+        window.scene.device_view_changed.connect(window._device_view_changed)
         window.behavior_scene.layout_move_completed.connect(window._record_behavior_layout_move)
         window.behavior_scene.delete_requested.connect(window._confirm_delete_selected)
         window.behavior_scene.connection_requested.connect(
@@ -100,11 +101,29 @@ class CanvasController:
     def render_preserving_selection(self) -> None:
         """Refresh block text without disrupting the active details context."""
         window = self.window
-        selected_ids = {block.element_id for block in window.scene.selected_blocks()}
+        selected_ids = {block.element_id for block in window.scene.selected_canvas_blocks()}
         self.render_with_current_scan()
         for item in window.scene.items():
-            if isinstance(item, ArchitectureBlock) and item.element_id in selected_ids:
+            if isinstance(item, CanvasBlock) and item.element_id in selected_ids:
                 item.setSelected(True)
+
+    def cycle_device_view(self) -> None:
+        """Step the device tier through grouped, expanded and hidden from the toolbar."""
+        window = self.window
+        state = window.scene.cycle_device_view()
+        self.render_preserving_selection()
+        self.update_device_view_action()
+        window._mark_dirty(f"Device view: {state}")
+
+    def device_view_changed(self) -> None:
+        """Re-render after a subsystem's device chip expanded or collapsed its group."""
+        self.render_preserving_selection()
+        self.window._mark_dirty("Device view updated")
+
+    def update_device_view_action(self) -> None:
+        """Name the action for the view it is currently showing, not the one it applies."""
+        state = self.window.scene.device_view_state
+        self.window.device_view_action.setText(f"Devices: {state.capitalize()}")
 
     def toggle_command_forms(self, visible: bool) -> None:
         """Keep inline forms in the inventory unless the user explicitly expands the canvas."""

@@ -278,6 +278,16 @@ def build_toolbar(window: MainWindow) -> None:
         "to reduce visual clutter for blocks you don't need full detail on right "
         "now.",
     )
+    window.device_view_action = window.addAction(
+        "Devices: Grouped", window._cycle_device_view
+    )
+    set_action_help(
+        window.device_view_action,
+        "Cycle how hardware devices are drawn: Grouped shows each subsystem a "
+        "device-count chip you can click to expand just that subsystem, Expanded "
+        "shows every device block at once, and Hidden shows none. Use this to study "
+        "wiring without crowding the canvas.",
+    )
     window.restore_action = window.addAction("Restore Selected", window.restore_selected)
     set_action_help(
         window.restore_action,
@@ -289,6 +299,7 @@ def build_toolbar(window: MainWindow) -> None:
         window.zoom_to_fit_action,
         window.minimize_action,
         window.restore_action,
+        window.device_view_action,
     ):
         action.setEnabled(False)
     organize_toolbar(window, toolbar)
@@ -357,6 +368,7 @@ def organize_toolbar(window: MainWindow, toolbar: QToolBar) -> None:
             window.zoom_to_fit_action,
             window.minimize_action,
             window.restore_action,
+            window.device_view_action,
         ],
     )
     toolbar.addSeparator()

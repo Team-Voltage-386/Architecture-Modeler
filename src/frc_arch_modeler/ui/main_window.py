@@ -265,6 +265,12 @@ class MainWindow(QMainWindow):
     def _toggle_command_forms(self, visible: bool) -> None:
         self.canvas_controller.toggle_command_forms(visible)
 
+    def _cycle_device_view(self) -> None:
+        self.canvas_controller.cycle_device_view()
+
+    def _device_view_changed(self) -> None:
+        self.canvas_controller.device_view_changed()
+
     def _apply_status_filters(self) -> None:
         self.canvas_controller.apply_status_filters()
 
@@ -442,6 +448,8 @@ class MainWindow(QMainWindow):
         self.zoom_to_fit_action.setEnabled(project is not None)
         self.minimize_action.setEnabled(project is not None)
         self.restore_action.setEnabled(project is not None)
+        self.device_view_action.setEnabled(project is not None)
+        self.canvas_controller.update_device_view_action()
         self.export_architecture_action.setEnabled(project is not None)
         self.compare_action.setEnabled(project is not None and self.last_scan is not None)
         self.export_change_request_action.setEnabled(

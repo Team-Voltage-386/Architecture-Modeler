@@ -6,7 +6,7 @@ from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QKeyEvent, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsPathItem,
@@ -17,10 +17,23 @@ from PySide6.QtWidgets import (
     QMenu,
 )
 
-from frc_arch_modeler.domain.model import ArchitectureProject, Command, ComparisonState, Subsystem
+from frc_arch_modeler.domain.model import (
+    ArchitectureProject,
+    Command,
+    ComparisonState,
+    Device,
+    Subsystem,
+)
 from frc_arch_modeler.importers.base import ScannedSymbol, ScanResult
 from frc_arch_modeler.ui import edge_routing
-from frc_arch_modeler.ui.theme import MUTED_TEXT, PANEL_BLACK, VOLTAGE_BLUE, VOLTAGE_YELLOW
+from frc_arch_modeler.ui.theme import (
+    MUTED_TEXT,
+    NEAR_BLACK,
+    OFF_WHITE,
+    PANEL_BLACK,
+    VOLTAGE_BLUE,
+    VOLTAGE_YELLOW,
+)
 
 BLOCK_WIDTH = 210
 BLOCK_HEIGHT = 116
@@ -28,6 +41,12 @@ HORIZONTAL_GAP = 42
 VERTICAL_GAP = 40
 COMMAND_Y = 0
 SUBSYSTEM_Y = 250
+# The device tier: short blocks on a third row, grouped under their owning subsystem.
+DEVICE_BLOCK_WIDTH = 168
+DEVICE_BLOCK_HEIGHT = 40
+DEVICE_HORIZONTAL_GAP = 16
+DEVICE_GROUP_GAP = 44
+DEVICE_TIER_GAP = 56
 MATCHED_GREEN = "#35C759"
 MODIFIED_AMBER = "#FFAA33"
 UNRESOLVED_MAGENTA = "#E75BCB"
@@ -38,6 +57,33 @@ RELATIONSHIP_MARKERS: dict[str, tuple[str, bool]] = {
     "triggers": ("arrow", True),
     "contains": ("diamond", False),
     "owns_device": ("diamond", True),
+}
+
+#: Device tier presentation, in the order the toolbar action cycles through them.
+#: "grouped" is the default: a robot with forty-five devices then opens no busier than
+#: one with none, because a grouped subsystem draws one chip instead of its devices.
+DEVICE_VIEW_STATES = ("grouped", "expanded", "hidden")
+#: Reserved, deliberately non-UUID ``layout.json`` key holding the device tier's state.
+DEVICE_VIEW_LAYOUT_KEY = "deviceView"
+
+#: Status is carried by border color *and* a border style, never by color alone.
+STATUS_ACCENTS: dict[ComparisonState, str] = {
+    ComparisonState.MATCHED: MATCHED_GREEN,
+    ComparisonState.MODIFIED: MODIFIED_AMBER,
+    ComparisonState.DESIGN_ONLY: VOLTAGE_YELLOW,
+    ComparisonState.CODE_ONLY: VOLTAGE_BLUE,
+    ComparisonState.UNRESOLVED: UNRESOLVED_MAGENTA,
+    ComparisonState.AMBIGUOUS: UNRESOLVED_MAGENTA,
+    ComparisonState.SCAN_ERROR: "#FF5C5C",
+}
+STATUS_LABELS: dict[ComparisonState, str] = {
+    ComparisonState.MATCHED: "✓ MATCHED",
+    ComparisonState.MODIFIED: "Δ MODIFIED",
+    ComparisonState.DESIGN_ONLY: "+ DESIGN ONLY",
+    ComparisonState.UNRESOLVED: "? UNRESOLVED",
+    ComparisonState.AMBIGUOUS: "? AMBIGUOUS",
+    ComparisonState.SCAN_ERROR: "! SCAN ERROR",
+    ComparisonState.CODE_ONLY: "↓ CODE ONLY",
 }
 
 
@@ -60,7 +106,77 @@ class ConnectorHandle(QGraphicsEllipseItem):
         self.setPos(rect.width(), rect.height() / 2)
 
 
-class ArchitectureBlock(QGraphicsRectItem):
+class CanvasBlock(QGraphicsRectItem):
+    """What every canvas tier has in common: identity, a title, a status and search text.
+
+    Selection, filtering, layout persistence and edge routing are all written against
+    this base, so adding a tier only means teaching a new subclass how to draw itself.
+    """
+
+    #: Set by every subclass; filtering reads both as displayed text.
+    title: QGraphicsTextItem
+    caption: QGraphicsTextItem
+
+    def __init__(
+        self,
+        element_id: UUID,
+        kind: str,
+        width: float,
+        height: float,
+        imported: bool = False,
+        comparison_state: ComparisonState | None = None,
+        search_text: str = "",
+    ) -> None:
+        super().__init__(0, 0, width, height)
+        self.element_id = element_id
+        self.kind = kind
+        self.imported = imported
+        self.comparison_state = comparison_state
+        self.search_text = search_text.casefold()
+        self.minimized = False
+        self.setFlags(
+            QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable
+            | QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsRectItem.GraphicsItemFlag.ItemIsFocusable
+        )
+
+
+class DeviceCountChip(QGraphicsRectItem):
+    """The grouped view's click target: expands or collapses one subsystem's devices.
+
+    It stands in for the device blocks themselves, so the default canvas carries one
+    small chip per subsystem however many devices that subsystem owns.
+    """
+
+    def __init__(self, owner: ArchitectureBlock, count: int, expanded: bool) -> None:
+        super().__init__(owner)
+        self.owner = owner
+        self.count = count
+        self.expanded = expanded
+        accent = VOLTAGE_YELLOW if expanded else MUTED_TEXT
+        arrow = "\u25be" if expanded else "\u25b8"
+        self.label = QGraphicsTextItem(
+            f"{arrow} {count} device{'' if count == 1 else 's'}", self
+        )
+        self.label.document().setDocumentMargin(0)
+        font = self.label.font()
+        font.setPointSize(8)
+        self.label.setFont(font)
+        self.label.setDefaultTextColor(QColor(accent))
+        self.label.setPos(8, 4)
+        self.setRect(
+            0,
+            0,
+            self.label.boundingRect().width() + 16,
+            self.label.boundingRect().height() + 8,
+        )
+        self.setBrush(QColor(NEAR_BLACK))
+        self.setPen(QPen(QColor(accent), 1))
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Show or hide this subsystem's devices on the canvas")
+
+
+class ArchitectureBlock(CanvasBlock):
     """Movable visual representation of one command or subsystem."""
 
     def __init__(
@@ -74,26 +190,22 @@ class ArchitectureBlock(QGraphicsRectItem):
         code_summary: str | None = None,
         search_text: str = "",
         detail_lines: list[str] | None = None,
+        device_count: int | None = None,
+        devices_expanded: bool = False,
     ) -> None:
-        super().__init__(0, 0, BLOCK_WIDTH, BLOCK_HEIGHT)
-        self.element_id = element_id
-        self.kind = kind
-        self.imported = imported
+        super().__init__(
+            element_id,
+            kind,
+            BLOCK_WIDTH,
+            BLOCK_HEIGHT,
+            imported,
+            comparison_state,
+            search_text,
+        )
         self.source_anchor = source_anchor
         self.code_summary = code_summary
-        self.search_text = search_text.casefold()
-        self.minimized = False
-        accents = {
-            ComparisonState.MATCHED: MATCHED_GREEN,
-            ComparisonState.MODIFIED: MODIFIED_AMBER,
-            ComparisonState.DESIGN_ONLY: VOLTAGE_YELLOW,
-            ComparisonState.CODE_ONLY: VOLTAGE_BLUE,
-            ComparisonState.UNRESOLVED: UNRESOLVED_MAGENTA,
-            ComparisonState.AMBIGUOUS: UNRESOLVED_MAGENTA,
-            ComparisonState.SCAN_ERROR: "#FF5C5C",
-        }
         default_accent = VOLTAGE_YELLOW if kind == "command" else VOLTAGE_BLUE
-        accent = accents.get(comparison_state, default_accent)
+        accent = STATUS_ACCENTS.get(comparison_state, default_accent)
         self.setBrush(QColor(PANEL_BLACK))
         if imported:
             style = Qt.PenStyle.DotLine
@@ -104,13 +216,8 @@ class ArchitectureBlock(QGraphicsRectItem):
         else:
             style = Qt.PenStyle.SolidLine
         self.setPen(QPen(QColor(accent), 3 if kind == "command" else 2, style))
-        self.setFlags(
-            QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable
-            | QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable
-            | QGraphicsRectItem.GraphicsItemFlag.ItemIsFocusable
-        )
         self.title = QGraphicsTextItem(label, self)
-        self.title.setDefaultTextColor(QColor("#F4F6FA"))
+        self.title.setDefaultTextColor(QColor(OFF_WHITE))
         self.title.setTextWidth(BLOCK_WIDTH - 24)
         self.title.setPos(12, 12)
         title_bottom = self.title.pos().y() + self.title.boundingRect().height()
@@ -130,26 +237,24 @@ class ArchitectureBlock(QGraphicsRectItem):
             else title_bottom
         )
 
-        status_labels = {
-            ComparisonState.MATCHED: "✓ MATCHED",
-            ComparisonState.MODIFIED: "Δ MODIFIED",
-            ComparisonState.DESIGN_ONLY: "+ DESIGN ONLY",
-            ComparisonState.UNRESOLVED: "? UNRESOLVED",
-            ComparisonState.AMBIGUOUS: "? AMBIGUOUS",
-            ComparisonState.SCAN_ERROR: "! SCAN ERROR",
-            ComparisonState.CODE_ONLY: "↓ CODE ONLY",
-        }
-        caption = status_labels.get(comparison_state, "IMPORTED" if imported else "")
+        caption = STATUS_LABELS.get(comparison_state, "IMPORTED" if imported else "")
         self.caption = QGraphicsTextItem(caption, self)
         self.caption.setDefaultTextColor(QColor(accent))
         caption_y = summary_bottom + 8
         self.caption.setPos(12, caption_y)
+        content_bottom = caption_y + self.caption.boundingRect().height()
+
+        # A subsystem in the grouped device view carries its device count as a chip
+        # instead of the device blocks themselves; every other view leaves it out.
+        self.device_chip: DeviceCountChip | None = None
+        if device_count:
+            self.device_chip = DeviceCountChip(self, device_count, devices_expanded)
+            self.device_chip.setPos(12, content_bottom + 6)
+            content_bottom += 6 + self.device_chip.rect().height()
 
         # Size the block to fully contain wrapped title/summary/caption text
         # instead of relying on a fixed height that mechanism text can overflow.
-        self.expanded_height = max(
-            BLOCK_HEIGHT, caption_y + self.caption.boundingRect().height() + 12
-        )
+        self.expanded_height = max(BLOCK_HEIGHT, content_bottom + 12)
         self.setRect(0, 0, BLOCK_WIDTH, self.expanded_height)
 
         # Imported code facts are read-only evidence, not valid relationship endpoints.
@@ -164,8 +269,82 @@ class ArchitectureBlock(QGraphicsRectItem):
         self.setRect(0, 0, BLOCK_WIDTH, 42 if minimized else self.expanded_height)
         self.caption.setVisible(not minimized)
         self.summary.setVisible(not minimized)
+        if self.device_chip is not None:
+            self.device_chip.setVisible(not minimized)
         if self.connector_handle is not None:
             self.connector_handle.reposition()
+
+
+class DeviceBlock(CanvasBlock):
+    """One hardware device, about a third the height of an ``ArchitectureBlock``.
+
+    Selectable and movable like any block, but deliberately not a relationship drag
+    source: a device's only structural edge is the filled-diamond composition line back
+    to the subsystem that owns it, so it carries no connector handle.
+    """
+
+    def __init__(
+        self,
+        device_id: UUID,
+        owner_subsystem_id: UUID,
+        name: str,
+        device_type: str,
+        badge: str = "",
+        comparison_state: ComparisonState | None = None,
+        search_text: str = "",
+    ) -> None:
+        super().__init__(
+            device_id,
+            "device",
+            DEVICE_BLOCK_WIDTH,
+            DEVICE_BLOCK_HEIGHT,
+            comparison_state=comparison_state,
+            search_text=search_text,
+        )
+        self.owner_subsystem_id = owner_subsystem_id
+        # A device inherits its owner's comparison status, so filtering by status keeps
+        # a subsystem and the hardware hanging off it on screen together.
+        accent = STATUS_ACCENTS.get(comparison_state, MUTED_TEXT)
+        self.setBrush(QColor(PANEL_BLACK))
+        self.setPen(
+            QPen(
+                QColor(accent),
+                1,
+                Qt.PenStyle.DashLine
+                if comparison_state == ComparisonState.DESIGN_ONLY
+                else Qt.PenStyle.SolidLine,
+            )
+        )
+        self.title = self._text(name, OFF_WHITE, 8, bold=True)
+        self.title.setTextWidth(DEVICE_BLOCK_WIDTH - 14)
+        self.title.setPos(7, 2)
+        self.caption = self._text(device_type, MUTED_TEXT, 7)
+        self.caption.setPos(7, 21)
+        self.badge = self._text(badge, VOLTAGE_YELLOW, 7, mono=True)
+        self.badge.setPos(DEVICE_BLOCK_WIDTH - 7 - self.badge.boundingRect().width(), 21)
+        self.badge.setVisible(bool(badge))
+
+    def _text(
+        self,
+        value: str,
+        color: str,
+        point_size: int,
+        bold: bool = False,
+        mono: bool = False,
+    ) -> QGraphicsTextItem:
+        """One tightly-margined line of block text; a device has 40px for three of them."""
+        item = QGraphicsTextItem(value, self)
+        item.setDefaultTextColor(QColor(color))
+        item.document().setDocumentMargin(0)
+        if mono:
+            font = QFont("Consolas")
+            font.setStyleHint(QFont.StyleHint.Monospace)
+        else:
+            font = item.font()
+        font.setPointSize(point_size)
+        font.setBold(bold)
+        item.setFont(font)
+        return item
 
 
 class ArchitectureScene(QGraphicsScene):
@@ -176,12 +355,15 @@ class ArchitectureScene(QGraphicsScene):
     block_double_clicked = Signal()
     delete_requested = Signal()
     connection_requested = Signal(object, object, QPointF)
+    device_view_changed = Signal()
 
     def __init__(self, parent: object | None = None) -> None:
         super().__init__(parent)
         self._drag_start_positions: dict[UUID, QPointF] = {}
         self._edges: list[QGraphicsPathItem] = []
         self.show_command_forms = False
+        self.device_view_state = DEVICE_VIEW_STATES[0]
+        self.expanded_device_subsystems: set[UUID] = set()
         self._search_query = ""
         self._visible_states = set(ComparisonState)
         self._connection_source: ArchitectureBlock | None = None
@@ -196,11 +378,24 @@ class ArchitectureScene(QGraphicsScene):
                 self._begin_connection_drag(hit.owner, event.scenePos())
                 event.accept()
                 return
+            chip = self._chip_at(hit)
+            if chip is not None:
+                self.toggle_subsystem_devices(chip.owner.element_id)
+                event.accept()
+                return
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_start_positions = {
-                block.element_id: QPointF(block.pos()) for block in self.selected_blocks()
+                block.element_id: QPointF(block.pos())
+                for block in self.selected_canvas_blocks()
             }
         super().mousePressEvent(event)
+
+    @staticmethod
+    def _chip_at(hit: object) -> DeviceCountChip | None:
+        """Resolve a click on a chip or on the text drawn inside it, and nothing else."""
+        while hit is not None and not isinstance(hit, (DeviceCountChip, CanvasBlock)):
+            hit = hit.parentItem()  # type: ignore[attr-defined]
+        return hit if isinstance(hit, DeviceCountChip) else None
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._connection_source is not None:
@@ -211,7 +406,7 @@ class ArchitectureScene(QGraphicsScene):
         self._update_edge_paths()
         moved_blocks = {
             block.element_id: QPointF(block.pos())
-            for block in self.selected_blocks()
+            for block in self.selected_canvas_blocks()
             if (position := self._drag_start_positions.get(block.element_id)) is not None
             and block.pos() != position
         }
@@ -277,7 +472,7 @@ class ArchitectureScene(QGraphicsScene):
             Qt.Key.Key_Down: QPointF(0, 1),
         }
         direction = offsets.get(event.key())
-        blocks = self.selected_blocks()
+        blocks = self.selected_canvas_blocks()
         if direction is None or not blocks:
             super().keyPressEvent(event)
             return
@@ -294,7 +489,7 @@ class ArchitectureScene(QGraphicsScene):
     def apply_block_positions(self, positions: dict[UUID, QPointF]) -> None:
         """Apply persisted/undoable positions without recreating the architecture scene."""
         for item in self.items():
-            if isinstance(item, ArchitectureBlock) and item.element_id in positions:
+            if isinstance(item, CanvasBlock) and item.element_id in positions:
                 item.setPos(positions[item.element_id])
         self._update_edge_paths()
 
@@ -352,6 +547,7 @@ class ArchitectureScene(QGraphicsScene):
             return
 
         layout = layout or {}
+        self._restore_device_view(layout)
         statuses = statuses or {}
         code_only_symbols = code_only_symbols or set()
         blocks: dict[UUID, ArchitectureBlock] = {}
@@ -373,6 +569,9 @@ class ArchitectureScene(QGraphicsScene):
             blocks[command.id] = block
         subsystem_row_y = self._subsystem_row_y(list(blocks.values()))
         for index, subsystem in enumerate(project.subsystems):
+            device_count = sum(
+                1 for device in project.devices if device.owner_subsystem_id == subsystem.id
+            )
             block = self._add_block(
                 subsystem,
                 "subsystem",
@@ -380,14 +579,13 @@ class ArchitectureScene(QGraphicsScene):
                 subsystem_row_y,
                 layout,
                 statuses,
-                [
-                    f"{device.device_type.effective or 'Device'}: "
-                    f"{device.name.effective or 'Unnamed'}"
-                    for device in project.devices
-                    if device.owner_subsystem_id == subsystem.id
-                ],
+                # Hardware lives on its own tier now, so it never crowds this block's text.
+                None,
+                device_count if self.device_view_state == "grouped" else None,
+                subsystem.id in self.expanded_device_subsystems,
             )
             blocks[subsystem.id] = block
+        self._add_device_tier(project, blocks, layout, statuses)
         for command in project.commands:
             command_block = blocks[command.id]
             for subsystem_id in command.requirement_ids:
@@ -429,6 +627,8 @@ class ArchitectureScene(QGraphicsScene):
         layout: dict[str, dict[str, Any]],
         statuses: dict[UUID, ComparisonState],
         design_detail_lines: list[str] | None = None,
+        device_count: int | None = None,
+        devices_expanded: bool = False,
     ) -> ArchitectureBlock:
         block = ArchitectureBlock(
             element.id,
@@ -446,6 +646,8 @@ class ArchitectureScene(QGraphicsScene):
                 )
             ),
             detail_lines=[element.description.effective or "", *(design_detail_lines or [])],
+            device_count=device_count,
+            devices_expanded=devices_expanded,
         )
         item_layout = layout.get(str(element.id), {})
         block.setPos(
@@ -453,6 +655,156 @@ class ArchitectureScene(QGraphicsScene):
             float(item_layout.get("y", y_position)),
         )
         block.set_minimized(bool(item_layout.get("minimized", False)))
+        self.addItem(block)
+        return block
+
+    def _restore_device_view(self, layout: dict[str, dict[str, Any]]) -> None:
+        """Adopt a saved device view, leaving the current one alone when none was saved.
+
+        Auto Layout re-renders without a layout dict on purpose; the device view is a
+        view toggle rather than a position, so it must survive that.
+        """
+        saved = layout.get(DEVICE_VIEW_LAYOUT_KEY)
+        if not isinstance(saved, dict):
+            return
+        state = saved.get("state")
+        if state in DEVICE_VIEW_STATES:
+            self.device_view_state = state
+        expanded = saved.get("expandedSubsystems")
+        if isinstance(expanded, list):
+            self.expanded_device_subsystems = {
+                parsed
+                for value in expanded
+                if (parsed := self._parsed_uuid(value)) is not None
+            }
+
+    @staticmethod
+    def _parsed_uuid(value: object) -> UUID | None:
+        """Ignore a layout entry that is no longer a usable id rather than failing to open."""
+        try:
+            return UUID(str(value))
+        except ValueError:
+            return None
+
+    def _devices_expanded_for(self, subsystem_id: UUID) -> bool:
+        """Whether this subsystem's device blocks are drawn under the current view."""
+        if self.device_view_state == "expanded":
+            return True
+        return (
+            self.device_view_state == "grouped"
+            and subsystem_id in self.expanded_device_subsystems
+        )
+
+    def toggle_subsystem_devices(self, subsystem_id: UUID) -> None:
+        """Expand or collapse one subsystem's devices from its count chip."""
+        if subsystem_id in self.expanded_device_subsystems:
+            self.expanded_device_subsystems.discard(subsystem_id)
+        else:
+            self.expanded_device_subsystems.add(subsystem_id)
+        self.device_view_changed.emit()
+
+    def cycle_device_view(self) -> str:
+        """Advance grouped -> expanded -> hidden, returning the newly active state."""
+        index = DEVICE_VIEW_STATES.index(self.device_view_state)
+        self.device_view_state = DEVICE_VIEW_STATES[(index + 1) % len(DEVICE_VIEW_STATES)]
+        return self.device_view_state
+
+    def _add_device_tier(
+        self,
+        project: ArchitectureProject,
+        blocks: dict[UUID, ArchitectureBlock],
+        layout: dict[str, dict[str, Any]],
+        statuses: dict[UUID, ComparisonState],
+    ) -> None:
+        """Lay visible devices out on a third row, grouped under the subsystem owning them.
+
+        Groups are placed left to right in subsystem order and never overlap, so a
+        forty-five device robot still reads as one band of hardware per subsystem.
+        """
+        subsystem_blocks = [
+            blocks[subsystem.id] for subsystem in project.subsystems if subsystem.id in blocks
+        ]
+        row_y = self._device_row_y(subsystem_blocks)
+        cursor_x = 0.0
+        for subsystem in project.subsystems:
+            owner_block = blocks.get(subsystem.id)
+            devices = [
+                device
+                for device in project.devices
+                if device.owner_subsystem_id == subsystem.id
+            ]
+            if owner_block is None or not devices:
+                continue
+            if not self._devices_expanded_for(subsystem.id):
+                continue
+            group_x = max(cursor_x, owner_block.pos().x())
+            for index, device in enumerate(devices):
+                block = self._add_device_block(device, subsystem, statuses)
+                item_layout = layout.get(str(device.id), {})
+                block.setPos(
+                    float(
+                        item_layout.get(
+                            "x", group_x + index * (DEVICE_BLOCK_WIDTH + DEVICE_HORIZONTAL_GAP)
+                        )
+                    ),
+                    float(item_layout.get("y", row_y)),
+                )
+                self._add_design_relationship_edge(
+                    owner_block,
+                    block,
+                    "owns_device",
+                    tooltip=(
+                        f"{subsystem.name.effective or 'Subsystem'} owns "
+                        f"{device.name.effective or 'device'}"
+                    ),
+                )
+            cursor_x = (
+                group_x
+                + len(devices) * (DEVICE_BLOCK_WIDTH + DEVICE_HORIZONTAL_GAP)
+                + DEVICE_GROUP_GAP
+            )
+
+    @staticmethod
+    def _device_row_y(subsystem_blocks: list[ArchitectureBlock]) -> float:
+        """Open the device tier below the tallest subsystem, leaving both rows where they are."""
+        if not subsystem_blocks:
+            return SUBSYSTEM_Y + BLOCK_HEIGHT + DEVICE_TIER_GAP
+        lowest = max(
+            block.pos().y() + block.rect().height() for block in subsystem_blocks
+        )
+        return lowest + DEVICE_TIER_GAP
+
+    def _add_device_block(
+        self,
+        device: Device,
+        owner: Subsystem,
+        statuses: dict[UUID, ComparisonState],
+    ) -> DeviceBlock:
+        badge = " ".join(
+            part for part in (device.bus.effective, device.address.effective) if part
+        )
+        block = DeviceBlock(
+            device.id,
+            owner.id,
+            device.name.effective or "Unnamed",
+            device.device_type.effective or "Device",
+            badge,
+            comparison_state=statuses.get(device.id, statuses.get(owner.id)),
+            search_text=" ".join(
+                filter(
+                    None,
+                    [
+                        device.name.effective,
+                        device.device_type.effective,
+                        device.mode.effective,
+                        device.bus.effective,
+                        device.address.effective,
+                        device.notes.effective,
+                        owner.name.effective,
+                    ],
+                )
+            ),
+        )
         self.addItem(block)
         return block
 
@@ -587,18 +939,32 @@ class ArchitectureScene(QGraphicsScene):
 
     def layout_state(self) -> dict[str, dict[str, Any]]:
         """Return independently persistable presentation state for all blocks."""
-        return {
+        state: dict[str, dict[str, Any]] = {
             str(item.element_id): {
                 "x": item.pos().x(),
                 "y": item.pos().y(),
                 "minimized": item.minimized,
             }
             for item in self.items()
-            if isinstance(item, ArchitectureBlock) and not item.imported
+            if isinstance(item, CanvasBlock) and not item.imported
         }
+        state[DEVICE_VIEW_LAYOUT_KEY] = {
+            "state": self.device_view_state,
+            "expandedSubsystems": sorted(
+                str(subsystem_id) for subsystem_id in self.expanded_device_subsystems
+            ),
+        }
+        return state
 
     def selected_blocks(self) -> list[ArchitectureBlock]:
         return [item for item in self.selectedItems() if isinstance(item, ArchitectureBlock)]
+
+    def selected_device_blocks(self) -> list[DeviceBlock]:
+        return [item for item in self.selectedItems() if isinstance(item, DeviceBlock)]
+
+    def selected_canvas_blocks(self) -> list[CanvasBlock]:
+        """Every selected block on any tier, for the drag, nudge and undo paths."""
+        return [item for item in self.selectedItems() if isinstance(item, CanvasBlock)]
 
     def set_selected_minimized(self, minimized: bool) -> bool:
         """Minimize or restore selected blocks, returning whether anything changed."""
@@ -622,7 +988,7 @@ class ArchitectureScene(QGraphicsScene):
     def _apply_filters(self) -> None:
         visible_ids: set[UUID] = set()
         for item in self.items():
-            if isinstance(item, ArchitectureBlock):
+            if isinstance(item, CanvasBlock):
                 caption = item.caption.toPlainText().casefold()
                 name = item.title.toPlainText().casefold()
                 matches_search = (
@@ -646,20 +1012,12 @@ class ArchitectureScene(QGraphicsScene):
                 marker.setVisible(visible)
 
     @staticmethod
-    def _block_state(block: ArchitectureBlock) -> ComparisonState:
-        labels = {
-            "✓ MATCHED": ComparisonState.MATCHED,
-            "Δ MODIFIED": ComparisonState.MODIFIED,
-            "+ DESIGN ONLY": ComparisonState.DESIGN_ONLY,
-            "? UNRESOLVED": ComparisonState.UNRESOLVED,
-            "? AMBIGUOUS": ComparisonState.AMBIGUOUS,
-            "! SCAN ERROR": ComparisonState.SCAN_ERROR,
-            "↓ CODE ONLY": ComparisonState.CODE_ONLY,
-        }
-        return labels.get(block.caption.toPlainText(), ComparisonState.UNRESOLVED)
+    def _block_state(block: CanvasBlock) -> ComparisonState:
+        """An unscanned or purely imported block filters as UNRESOLVED, as it always has."""
+        return block.comparison_state or ComparisonState.UNRESOLVED
 
     def _update_edge_visibility(self) -> None:
-        selected_ids = {block.element_id for block in self.selected_blocks()}
+        selected_ids = {block.element_id for block in self.selected_canvas_blocks()}
         for edge in self._edges:
             endpoint_ids = edge.data(0)
             is_connected = bool(selected_ids & endpoint_ids)
@@ -696,7 +1054,11 @@ class ArchitectureScene(QGraphicsScene):
         self._edges.append(edge)
 
     def _add_design_relationship_edge(
-        self, source: ArchitectureBlock, target: ArchitectureBlock, relationship_type: str
+        self,
+        source: CanvasBlock,
+        target: CanvasBlock,
+        relationship_type: str,
+        tooltip: str | None = None,
     ) -> None:
         """Render an explicit authored relationship with UML-flavored typed notation."""
         edge = QGraphicsPathItem(self._design_relationship_path(source, target))
@@ -707,7 +1069,9 @@ class ArchitectureScene(QGraphicsScene):
         edge.setData(2, "design_relationship")
         edge.setData(3, (source.element_id, target.element_id))
         edge.setData(5, relationship_type)
-        edge.setToolTip(f"Designed {relationship_type.replace('_', ' ')} relationship")
+        edge.setToolTip(
+            tooltip or f"Designed {relationship_type.replace('_', ' ')} relationship"
+        )
         edge.setZValue(-1)
         self.addItem(edge)
         self._edges.append(edge)
@@ -732,7 +1096,7 @@ class ArchitectureScene(QGraphicsScene):
         return marker
 
     def _position_relationship_marker(
-        self, edge: QGraphicsPathItem, source: ArchitectureBlock, target: ArchitectureBlock
+        self, edge: QGraphicsPathItem, source: CanvasBlock, target: CanvasBlock
     ) -> None:
         marker = edge.data(4)
         if marker is None:
@@ -814,7 +1178,7 @@ class ArchitectureScene(QGraphicsScene):
         )
 
     def _design_relationship_path(
-        self, source: ArchitectureBlock, target: ArchitectureBlock
+        self, source: CanvasBlock, target: CanvasBlock
     ) -> QPainterPath:
         return self._anchored_line(
             source.sceneBoundingRect(),
@@ -836,7 +1200,7 @@ class ArchitectureScene(QGraphicsScene):
         blocks = {
             item.element_id: item
             for item in self.items()
-            if isinstance(item, ArchitectureBlock)
+            if isinstance(item, CanvasBlock)
         }
         for edge in self._edges:
             endpoint_ids = edge.data(3)

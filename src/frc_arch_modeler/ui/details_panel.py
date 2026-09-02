@@ -20,7 +20,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from frc_arch_modeler.domain.model import Command, FieldValue, SourceAnchor, Subsystem
+from frc_arch_modeler.domain.model import (
+    Command,
+    Device,
+    FieldValue,
+    SourceAnchor,
+    Subsystem,
+)
 from frc_arch_modeler.ui.command_flow_widget import CommandFlowWidget
 
 ArchitectureElement = Command | Subsystem
@@ -201,6 +207,7 @@ class DetailsPanel(QWidget):
         self._owned_buttons: dict[str, dict[str, QPushButton]] = {}
         self._owned_objects: dict[str, list[tuple[UUID, str]]] = {}
         self._element: ArchitectureElement | None = None
+        self._device_id: UUID | None = None
         self._source_anchor: SourceAnchor | None = None
         self._code_name: str | None = None
         self._code_description: str | None = None
@@ -239,6 +246,8 @@ class DetailsPanel(QWidget):
         self.adopt_description_button = QPushButton("Adopt Code Description", self)
         self.adopt_name_button = QPushButton("Adopt Code Name", self)
         self.revert_name_button = QPushButton("Revert Proposed Name", self)
+        self.edit_device_button = QPushButton("Edit Device", self)
+        self.edit_device_button.setObjectName("editDeviceButton")
         self.open_source_button = QPushButton("Open Source", self)
         form = QFormLayout()
 
@@ -312,6 +321,7 @@ class DetailsPanel(QWidget):
         layout.addWidget(self.adopt_description_button)
         layout.addWidget(self.adopt_name_button)
         layout.addWidget(self.revert_name_button)
+        layout.addWidget(self.edit_device_button)
         layout.addWidget(self.open_source_button)
         layout.addStretch()
         self.save_button.clicked.connect(self._apply_description)
@@ -319,6 +329,7 @@ class DetailsPanel(QWidget):
         self.adopt_description_button.clicked.connect(self._adopt_code_description)
         self.adopt_name_button.clicked.connect(self._adopt_code_name)
         self.revert_name_button.clicked.connect(self._revert_name)
+        self.edit_device_button.clicked.connect(self._edit_device)
         self.open_source_button.clicked.connect(self._open_source)
         self._set_help(
             self.save_button,
@@ -346,12 +357,19 @@ class DetailsPanel(QWidget):
             "name if any.",
         )
         self._set_help(
+            self.edit_device_button,
+            "Open this device's editing form to change its name, type, bus, address, "
+            "breaker rating, mass or notes. Use this after selecting a device on the "
+            "canvas.",
+        )
+        self._set_help(
             self.open_source_button,
             "Jump to this element's location in the source code. Only available "
             "once a matching code symbol has been found.",
         )
         self._set_editing_enabled(False)
         self._set_owned_objects(None, {})
+        self.edit_device_button.setVisible(False)
 
     @staticmethod
     def _set_help(widget: QWidget, text: str) -> None:
@@ -402,6 +420,8 @@ class DetailsPanel(QWidget):
         owned_objects: dict[str, list[tuple[UUID, str]]] | None = None,
     ) -> None:
         self._element = element
+        self._device_id = None
+        self.edit_device_button.setVisible(False)
         self._owned_objects = dict(owned_objects or {})
         self._source_anchor = code_anchor
         self._code_name = code_name
@@ -464,6 +484,8 @@ class DetailsPanel(QWidget):
     ) -> None:
         """Present selected regenerated code evidence without enabling design edits."""
         self._element = None
+        self._device_id = None
+        self.edit_device_button.setVisible(False)
         self._source_anchor = anchor
         self._code_name = label
         self._code_description = documentation
@@ -513,6 +535,66 @@ class DetailsPanel(QWidget):
         self.adopt_name_button.setEnabled(False)
         self.adopt_description_button.setEnabled(False)
         self.revert_name_button.setEnabled(False)
+
+    def set_device(self, device: Device, owner_name: str | None = None) -> None:
+        """Present a canvas-selected device, edited through its own single-form dialog.
+
+        A device's fields are the dialog's fields -- owner, type, mode, wiring and
+        budget -- so the panel shows them together and hands editing to that dialog
+        rather than duplicating nine validated inputs inline.
+        """
+        self._element = None
+        self._device_id = device.id
+        self._owned_objects = {}
+        self._source_anchor = device.code_binding
+        self._code_name = device.name.scanned
+        self._code_description = None
+        self.title.setText(f"{device.name.effective} (Device)")
+        self.code_name.setText(device.name.scanned or "No code-derived name available.")
+        self.code_description.setText(
+            device.device_type.scanned or "No code-derived description available."
+        )
+        self.design_name.setText(device.name.design or device.name.effective or "")
+        self.design_description.clear()
+        self.design_context.setText("\n".join(self._device_rows(device, owner_name)))
+        self.design_context.setVisible(True)
+        self.lifecycle_flow.clear()
+        self.lifecycle_flow.setVisible(False)
+        self.lifecycle_diagram.set_phases([])
+        self.requirements.clear()
+        self.requirements.setVisible(False)
+        self._set_owned_objects(None, {})
+        self._set_editing_enabled(False)
+        self.edit_device_button.setVisible(True)
+        self.edit_device_button.setEnabled(self._on_owned_edit is not None)
+        self.open_source_button.setEnabled(
+            device.code_binding is not None and self._on_open_source is not None
+        )
+        self.adopt_name_button.setEnabled(False)
+        self.adopt_description_button.setEnabled(False)
+        self.revert_name_button.setEnabled(False)
+
+    @staticmethod
+    def _device_rows(device: Device, owner_name: str | None) -> list[str]:
+        """Only the fields this device actually carries, so blanks never pad the panel."""
+        return [
+            f"{label}: {value}"
+            for label, value in (
+                ("Owner subsystem", owner_name),
+                ("Type", device.device_type.effective),
+                ("Mode", device.mode.effective),
+                ("Bus", device.bus.effective),
+                ("Address", device.address.effective),
+                ("Breaker (A)", device.breaker_amps.effective),
+                ("Mass (kg)", device.mass_kg.effective),
+                ("Notes", device.notes.effective),
+            )
+            if value
+        ]
+
+    def _edit_device(self) -> None:
+        if self._device_id is not None and self._on_owned_edit is not None:
+            self._on_owned_edit("device", self._device_id)
 
     def _open_lifecycle_source(self, display_phase: str) -> None:
         """Open only an explicit override; inherited phases deliberately have no source link."""

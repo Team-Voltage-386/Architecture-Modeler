@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QDialog, QInputDialog, QMenu, QMessageBox
 
-from frc_arch_modeler.ui.architecture_scene import ArchitectureBlock
+from frc_arch_modeler.ui.architecture_scene import CanvasBlock
 from frc_arch_modeler.ui.details_panel import EditEntityFieldsCommand, EditRequirementsCommand
 from frc_arch_modeler.ui.entity_dialogs import DeviceDialog, RelationshipDialog, TriggerDialog
 from frc_arch_modeler.ui.undo_commands import AddDesignEntityCommand, RemoveDesignEntityCommand
@@ -348,11 +348,16 @@ class ElementController:
             None,
         )
 
+    def selected_device_id(self):  # type: ignore[no-untyped-def]
+        """Return the id of the single device block selected on the canvas, if any."""
+        blocks = self.window.scene.selected_device_blocks()
+        return blocks[0].element_id if len(blocks) == 1 else None
+
     def reselect_element(self, element_id) -> None:  # type: ignore[no-untyped-def]
         """Keep the details panel on its element after an edit rebuilt the canvas."""
         window = self.window
         for item in window.scene.items():
-            if isinstance(item, ArchitectureBlock) and item.element_id == element_id:
+            if isinstance(item, CanvasBlock) and item.element_id == element_id:
                 item.setSelected(True)
         window._update_selected_element()
 
@@ -393,6 +398,9 @@ class ElementController:
         """Edit an owned entity in place through the undo stack."""
         window = self.window
         element = self.selected_design_element()
+        # A device edited from its own canvas block has no owning element selected, so
+        # remember the block itself to reselect after the edit re-renders the scene.
+        reselect_id = element.id if element is not None else self.selected_device_id()
         entity = self._owned_entity(kind, entity_id) if window.project is not None else None
         if window.project is None or entity is None:
             return
@@ -445,8 +453,8 @@ class ElementController:
         window.undo_stack.push(
             EditEntityFieldsCommand(entity, fields, kind, self.refresh_after_edit)
         )
-        if element is not None:
-            self.reselect_element(element.id)
+        if reselect_id is not None:
+            self.reselect_element(reselect_id)
 
     def remove_owned_object(self, kind: str, entity_id) -> None:  # type: ignore[no-untyped-def]
         """Delete an owned entity from its owning element's details panel."""

@@ -1,8 +1,13 @@
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QKeyEvent
-from PySide6.QtWidgets import QGraphicsPathItem, QGraphicsPolygonItem, QGraphicsView
+from PySide6.QtWidgets import (
+    QGraphicsPathItem,
+    QGraphicsPolygonItem,
+    QGraphicsSceneMouseEvent,
+    QGraphicsView,
+)
 
 from frc_arch_modeler.domain.model import (
     ArchitectureProject,
@@ -13,10 +18,18 @@ from frc_arch_modeler.domain.model import (
     Relationship,
     SourceAnchor,
     Subsystem,
+    TriggerBinding,
 )
 from frc_arch_modeler.importers.base import ScannedDevice, ScannedSymbol, ScanResult
 from frc_arch_modeler.importers.java.scanner import JavaProjectScanner
-from frc_arch_modeler.ui.architecture_scene import SUBSYSTEM_Y, ArchitectureBlock, ArchitectureScene
+from frc_arch_modeler.ui.architecture_scene import (
+    SUBSYSTEM_Y,
+    ArchitectureBlock,
+    ArchitectureScene,
+    ConnectorHandle,
+    DeviceBlock,
+    DeviceCountChip,
+)
 from frc_arch_modeler.ui.theme import VOLTAGE_BLUE, VOLTAGE_YELLOW
 
 
@@ -39,17 +52,17 @@ def test_scene_places_commands_and_subsystems_and_draws_requirements(qapp) -> No
     assert edges[0].toolTip() == "Designed requirement"
 
 
-def test_subsystem_block_shows_a_more_line_when_devices_are_dropped_past_the_cap(qapp) -> None:
-    drive = Subsystem(name=FieldValue(design="Drive"))
-    devices = [
-        Device(
-            name=FieldValue(design=f"Motor {index}"),
-            device_type=FieldValue(design="SparkMax"),
-            owner_subsystem_id=drive.id,
+def test_command_block_shows_a_more_line_when_triggers_are_dropped_past_the_cap(qapp) -> None:
+    command = Command(name=FieldValue(design="Score"))
+    triggers = [
+        TriggerBinding(
+            expression=FieldValue(design=f"Driver {index}"),
+            activation=FieldValue(design="onTrue"),
+            command_id=command.id,
         )
         for index in range(5)
     ]
-    project = ArchitectureProject(name="Robot", subsystems=[drive], devices=devices)
+    project = ArchitectureProject(name="Robot", commands=[command], triggers=triggers)
     scene = ArchitectureScene()
 
     scene.render_project(project)
@@ -450,3 +463,235 @@ def test_status_filter_hides_blocks_outside_the_selected_state(qapp) -> None:
         for block in scene.items()
         if isinstance(block, ArchitectureBlock) and block.isVisible()
     ] == ["Modified"]
+
+
+def _robot_with_devices() -> tuple[ArchitectureProject, Subsystem, Subsystem]:
+    """Two subsystems, three devices: enough to tell "just this one" from "all of them"."""
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    arm = Subsystem(name=FieldValue(design="Arm"))
+    devices = [
+        Device(
+            name=FieldValue(design="Left motor"),
+            device_type=FieldValue(design="SparkMax"),
+            owner_subsystem_id=drive.id,
+            bus=FieldValue(design="canivore"),
+            address=FieldValue(design="3"),
+        ),
+        Device(
+            name=FieldValue(design="Right motor"),
+            device_type=FieldValue(design="SparkMax"),
+            owner_subsystem_id=drive.id,
+        ),
+        Device(
+            name=FieldValue(design="Elbow"),
+            device_type=FieldValue(design="TalonFX"),
+            owner_subsystem_id=arm.id,
+        ),
+    ]
+    project = ArchitectureProject(name="Robot", subsystems=[drive, arm], devices=devices)
+    return project, drive, arm
+
+
+def _device_titles(scene: ArchitectureScene) -> set[str]:
+    return {
+        item.title.toPlainText()
+        for item in scene.items()
+        if isinstance(item, DeviceBlock)
+    }
+
+
+def _click_scene(scene: ArchitectureScene, point: QPointF) -> None:
+    event = QGraphicsSceneMouseEvent(QEvent.Type.GraphicsSceneMousePress)
+    event.setScenePos(point)
+    event.setButton(Qt.MouseButton.LeftButton)
+    scene.mousePressEvent(event)
+
+
+def test_the_grouped_default_draws_count_chips_and_no_device_blocks(qapp) -> None:
+    project, _, _ = _robot_with_devices()
+    scene = ArchitectureScene()
+    assert scene.device_view_state == "grouped"
+
+    scene.render_project(project)
+
+    assert _device_titles(scene) == set()
+    chips = {
+        chip.owner.title.toPlainText(): chip.label.toPlainText()
+        for chip in scene.items()
+        if isinstance(chip, DeviceCountChip)
+    }
+    assert chips.keys() == {"Drive", "Arm"}
+    assert chips["Drive"].endswith("2 devices")
+    assert chips["Arm"].endswith("1 device")
+
+
+def test_expanding_one_subsystem_shows_only_its_devices_with_filled_diamond_edges(
+    qapp,
+) -> None:
+    project, drive, _ = _robot_with_devices()
+    scene = ArchitectureScene()
+    scene.render_project(project)
+
+    scene.toggle_subsystem_devices(drive.id)
+    scene.render_project(project, scene.layout_state())
+
+    assert _device_titles(scene) == {"Left motor", "Right motor"}
+    ownership_edges = [edge for edge in scene._edges if edge.data(5) == "owns_device"]
+    assert len(ownership_edges) == 2
+    drive_block = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.element_id == drive.id
+    )
+    for edge in ownership_edges:
+        marker = edge.data(4)
+        assert isinstance(marker, QGraphicsPolygonItem)
+        assert marker.polygon().count() == 4
+        assert marker.brush().style() == Qt.BrushStyle.SolidPattern
+        # A composition diamond belongs at the owner's end of the line.
+        assert drive_block.sceneBoundingRect().adjusted(-8, -8, 8, 8).contains(
+            marker.polygon().boundingRect().center()
+        )
+
+
+def test_expanded_device_view_shows_every_device_and_hidden_shows_none(qapp) -> None:
+    project, _, _ = _robot_with_devices()
+    scene = ArchitectureScene()
+
+    assert scene.cycle_device_view() == "expanded"
+    scene.render_project(project, scene.layout_state())
+    assert _device_titles(scene) == {"Left motor", "Right motor", "Elbow"}
+    assert not [item for item in scene.items() if isinstance(item, DeviceCountChip)]
+
+    assert scene.cycle_device_view() == "hidden"
+    scene.render_project(project, scene.layout_state())
+    assert _device_titles(scene) == set()
+    assert not [item for item in scene.items() if isinstance(item, DeviceCountChip)]
+    subsystem = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.title.toPlainText() == "Drive"
+    )
+    assert "SparkMax" not in subsystem.summary.toPlainText()
+
+    assert scene.cycle_device_view() == "grouped"
+
+
+def test_devices_open_a_third_tier_below_the_two_existing_rows(qapp) -> None:
+    project, drive, arm = _robot_with_devices()
+    scene = ArchitectureScene()
+    scene.device_view_state = "expanded"
+
+    scene.render_project(project)
+
+    subsystems = [
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.kind == "subsystem"
+    ]
+    assert {block.pos().y() for block in subsystems} == {SUBSYSTEM_Y}
+    devices = {
+        item.title.toPlainText(): item
+        for item in scene.items()
+        if isinstance(item, DeviceBlock)
+    }
+    lowest_subsystem = max(
+        block.pos().y() + block.rect().height() for block in subsystems
+    )
+    assert all(block.pos().y() > lowest_subsystem for block in devices.values())
+    assert {block.owner_subsystem_id for block in devices.values()} == {drive.id, arm.id}
+    # Devices are grouped: both of Drive's sit left of the group belonging to Arm.
+    assert devices["Elbow"].pos().x() > devices["Right motor"].pos().x()
+
+
+def test_device_view_state_and_per_subsystem_expansion_round_trip_through_layout(
+    qapp,
+) -> None:
+    project, _, arm = _robot_with_devices()
+    scene = ArchitectureScene()
+    scene.render_project(project)
+    scene.toggle_subsystem_devices(arm.id)
+
+    restored = ArchitectureScene()
+    restored.render_project(project, scene.layout_state())
+
+    assert restored.device_view_state == "grouped"
+    assert restored.expanded_device_subsystems == {arm.id}
+    assert _device_titles(restored) == {"Elbow"}
+
+
+def test_devices_take_part_in_search_and_in_the_status_filters(qapp) -> None:
+    project, drive, arm = _robot_with_devices()
+    scene = ArchitectureScene()
+    scene.device_view_state = "expanded"
+    scene.render_project(
+        project,
+        statuses={drive.id: ComparisonState.MATCHED, arm.id: ComparisonState.DESIGN_ONLY},
+    )
+
+    scene.filter_blocks("elbow")
+    assert {
+        item.title.toPlainText()
+        for item in scene.items()
+        if isinstance(item, DeviceBlock) and item.isVisible()
+    } == {"Elbow"}
+
+    scene.filter_blocks("")
+    scene.set_status_filter({ComparisonState.MATCHED})
+    assert {
+        item.title.toPlainText()
+        for item in scene.items()
+        if isinstance(item, DeviceBlock) and item.isVisible()
+    } == {"Left motor", "Right motor"}
+
+
+def test_a_device_block_is_a_short_badge_block_and_not_a_relationship_drag_source(
+    qapp,
+) -> None:
+    project, _, _ = _robot_with_devices()
+    scene = ArchitectureScene()
+    scene.device_view_state = "expanded"
+    scene.render_project(project)
+    blocks = {
+        item.title.toPlainText(): item
+        for item in scene.items()
+        if isinstance(item, DeviceBlock)
+    }
+    subsystem = next(
+        item
+        for item in scene.items()
+        if isinstance(item, ArchitectureBlock) and item.kind == "subsystem"
+    )
+
+    left = blocks["Left motor"]
+    assert left.caption.toPlainText() == "SparkMax"
+    assert left.badge.toPlainText() == "canivore 3"
+    assert left.badge.isVisible()
+    assert not blocks["Right motor"].badge.isVisible()
+    assert left.rect().height() <= subsystem.rect().height() / 2
+    assert not [
+        child for child in left.childItems() if isinstance(child, ConnectorHandle)
+    ]
+
+
+def test_clicking_a_count_chip_toggles_only_that_subsystems_devices(qapp) -> None:
+    project, drive, _ = _robot_with_devices()
+    scene = ArchitectureScene()
+    view = QGraphicsView(scene)
+    scene.render_project(project)
+    assert view.scene() is scene
+    toggles: list[bool] = []
+    scene.device_view_changed.connect(lambda: toggles.append(True))
+    chip = next(
+        item
+        for item in scene.items()
+        if isinstance(item, DeviceCountChip) and item.owner.element_id == drive.id
+    )
+
+    _click_scene(scene, chip.sceneBoundingRect().center())
+    assert toggles == [True]
+    assert scene.expanded_device_subsystems == {drive.id}
+
+    _click_scene(scene, chip.sceneBoundingRect().center())
+    assert toggles == [True, True]
+    assert scene.expanded_device_subsystems == set()
