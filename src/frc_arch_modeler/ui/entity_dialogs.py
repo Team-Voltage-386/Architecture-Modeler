@@ -35,6 +35,9 @@ DEVICE_TYPES = DEVICE_PATTERN.pattern.split("(?P<type>", 1)[1].split(r")\s*\(", 
 #: name CANivore buses themselves.
 DEVICE_BUSES = ["rio", "canivore", "rio-pwm", "rio-dio", "rio-analog"]
 
+#: ``setDefaultCommand`` is not a button binding but belongs here all the same: it is
+#: the other way a command gets scheduled, and without it the design layer has no way to
+#: say that a command runs whenever its subsystem is idle.
 TRIGGER_ACTIVATIONS = [
     "onTrue",
     "onFalse",
@@ -42,6 +45,7 @@ TRIGGER_ACTIVATIONS = [
     "whileFalse",
     "toggleOnTrue",
     "toggleOnFalse",
+    "setDefaultCommand",
 ]
 RELATIONSHIP_TYPES = ["calls", "contains", "triggers", "owns_device"]
 

@@ -153,6 +153,17 @@ class ReconciliationService:
         for designed in designed_triggers:
             expression = ReconciliationService._normalize(designed.expression.effective or "")
             activation = ReconciliationService._normalize(designed.activation.effective or "")
+            if activation == "setdefaultcommand":
+                # A default command is scheduled by ``subsystem.setDefaultCommand(...)``,
+                # which the scanner reports as a relationship rather than a trigger.
+                if not any(
+                    relationship.kind == "default_command"
+                    and ReconciliationService._normalize(symbol.name)
+                    in ReconciliationService._normalize(relationship.target_expression)
+                    for relationship in scan.relationships
+                ):
+                    return False
+                continue
             if not any(
                 expression == ReconciliationService._normalize(trigger.controller_expression)
                 and activation == ReconciliationService._normalize(trigger.activation)

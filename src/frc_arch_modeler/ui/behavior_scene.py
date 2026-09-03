@@ -794,6 +794,12 @@ class BehaviorScene(QGraphicsScene):
         """Return the transition id of each currently selected transition line."""
         return [edge.transition_id for edge in self._edges if edge.isSelected()]
 
+    def edge_for_transition(self, transition_id: object) -> TransitionEdge | None:
+        """The drawn line for a transition id, so a caller can select or reveal it."""
+        return next(
+            (edge for edge in self._edges if edge.transition_id == transition_id), None
+        )
+
     def _update_edge_visibility(self) -> None:
         selected_ids = {block.state_id for block in self.selected_blocks()}
         for edge in self._edges:

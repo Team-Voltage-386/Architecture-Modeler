@@ -22,12 +22,13 @@ def test_create_seeds_the_standard_robot_mode_behavior_diagram() -> None:
     diagram = project.behavior_diagrams[0]
     assert diagram.name == "Robot Modes"
     assert {state.name.effective for state in diagram.states} == {
+        "Start",
         "Disabled",
         "Autonomous",
         "Teleop",
         "Test",
     }
-    assert len(diagram.transitions) == 5
+    assert len(diagram.transitions) == 6
 
 
 def test_add_behavior_state_defaults_to_plain_state_kind() -> None:

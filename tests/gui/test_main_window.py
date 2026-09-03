@@ -451,6 +451,7 @@ def test_new_project_seeds_and_renders_the_robot_mode_behavior_diagram(qtbot) ->
     assert len(window.project.behavior_diagrams) == 1
     blocks = [item for item in window.behavior_scene.items() if isinstance(item, StateBlock)]
     assert {block.title.toPlainText() for block in blocks} == {
+        "Start",
         "Disabled",
         "Autonomous",
         "Teleop",
@@ -812,6 +813,7 @@ def test_behavior_diagram_survives_save_and_reopen(qtbot, tmp_path) -> None:
     reopened_project = reopened_window.open_project(tmp_path)
 
     assert {state.name.effective for state in reopened_project.behavior_diagrams[0].states} == {
+        "Start",
         "Disabled",
         "Autonomous",
         "Teleop",
@@ -821,7 +823,7 @@ def test_behavior_diagram_survives_save_and_reopen(qtbot, tmp_path) -> None:
     reopened_blocks = [
         item for item in reopened_window.behavior_scene.items() if isinstance(item, StateBlock)
     ]
-    assert len(reopened_blocks) == 5
+    assert len(reopened_blocks) == 6
 
 
 def test_recent_model_action_is_hidden_until_a_model_has_been_saved_or_opened(qtbot) -> None:

@@ -152,7 +152,9 @@
         "confidence": null
       },
       "codeBinding": null,
-      "requirementIds": []
+      "requirementIds": [
+        "d09903c5-3d3a-4fa1-9293-1a94ceb4239a"
+      ]
     }
   ],
   "subsystems": [
@@ -242,6 +244,22 @@
         "endLine": 8,
         "sourceHash": null
       }
+    },
+    {
+      "id": "d09903c5-3d3a-4fa1-9293-1a94ceb4239a",
+      "name": {
+        "design": "Status LEDs",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "description": {
+        "design": "Addressable LED strip that tells the drive team and human player what the robot is doing. Planned in the design; not yet implemented in code.",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "codeBinding": null
     }
   ],
   "devices": [
@@ -1497,6 +1515,40 @@
       },
       "commandId": "3f77d169-5fd0-4d42-b9ee-ed5f493fcb9d",
       "codeBinding": null
+    },
+    {
+      "id": "6f2039d5-1e20-4fc6-8528-6ac67264d118",
+      "expression": {
+        "design": "intake.hasNote()",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "activation": {
+        "design": "onTrue",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "commandId": "181507d5-8f4a-4f82-8aa6-a6cd5c3a1994",
+      "codeBinding": null
+    },
+    {
+      "id": "d3aee720-4d05-470b-b6d1-45c3788bd374",
+      "expression": {
+        "design": "drivetrain",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "activation": {
+        "design": "setDefaultCommand",
+        "scanned": null,
+        "evidence": null,
+        "confidence": null
+      },
+      "commandId": "09162c55-d4f3-464b-8470-0487a473c95e",
+      "codeBinding": null
     }
   ],
   "relationships": [],
@@ -1505,6 +1557,22 @@
       "id": "222f6885-a500-4280-ae16-b8e58a4e406b",
       "name": "Robot Modes",
       "states": [
+        {
+          "id": "c93ec1b7-1428-40ec-9b54-a44c8bbbdc0c",
+          "name": {
+            "design": "Start",
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "description": {
+            "design": null,
+            "scanned": null,
+            "evidence": null,
+            "confidence": null
+          },
+          "kind": "start"
+        },
         {
           "id": "4036c5fb-a4b6-4f09-84c2-4b3beb9a818c",
           "name": {
@@ -1571,6 +1639,13 @@
         }
       ],
       "transitions": [
+        {
+          "id": "abe114c8-9479-41b5-9231-60c5e97dc8cb",
+          "sourceStateId": "c93ec1b7-1428-40ec-9b54-a44c8bbbdc0c",
+          "targetStateId": "4036c5fb-a4b6-4f09-84c2-4b3beb9a818c",
+          "triggerLabel": "",
+          "commandId": null
+        },
         {
           "id": "6ed4204b-925a-4870-9f16-5029b838cfd2",
           "sourceStateId": "4036c5fb-a4b6-4f09-84c2-4b3beb9a818c",

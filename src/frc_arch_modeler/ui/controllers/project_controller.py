@@ -135,6 +135,10 @@ class ProjectController:
             DraftStore(window.model_root).save(window.project)
         window.statusBar().showMessage(message)
         self.update_status_indicators()
+        # Every design edit reaches the model through here, so this is the one place
+        # model health needs re-deriving. It is queued, not computed now, so a burst of
+        # edits costs one pass and none of it runs while a canvas is painting.
+        window._schedule_model_health_refresh()
 
     def prompt_new_project(self) -> None:
         name, accepted = QInputDialog.getText(self.window, "New model", "Model name:")

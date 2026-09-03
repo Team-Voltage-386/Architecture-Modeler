@@ -153,10 +153,15 @@ class ProjectService:
     def seed_default_behavior_diagram(self, project: ArchitectureProject) -> BehaviorDiagram:
         """Seed the standard FRC match-mode state machine so the behavior view starts populated."""
         diagram = self.add_behavior_diagram(project, "Robot Modes")
+        # The start marker is seeded too: a diagram that never says which state the
+        # robot begins in is exactly what the Model Health panel flags, and the tool's
+        # own starting point should not be the first thing it complains about.
+        start = self.add_behavior_state(diagram, "Start", kind="start")
         disabled = self.add_behavior_state(diagram, "Disabled")
         autonomous = self.add_behavior_state(diagram, "Autonomous")
         teleop = self.add_behavior_state(diagram, "Teleop")
         test = self.add_behavior_state(diagram, "Test")
+        self.add_behavior_transition(diagram, start.id, disabled.id, "")
         self.add_behavior_transition(
             diagram, disabled.id, autonomous.id, "Autonomous period starts"
         )

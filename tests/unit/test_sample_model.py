@@ -10,6 +10,7 @@ from frc_arch_modeler.services.allocation_service import (
     SEVERITY_INCOMPLETE,
     AllocationService,
 )
+from frc_arch_modeler.services.health_service import HealthService
 from frc_arch_modeler.services.reconcile_service import ReconciliationService
 
 SAMPLE_MODEL_ROOT = Path(__file__).parents[2] / "resources" / "sample_model"
@@ -20,7 +21,7 @@ def test_sample_model_loads_and_validates() -> None:
     project = ProjectStore(SAMPLE_MODEL_ROOT).load()
 
     assert project.name
-    assert len(project.subsystems) == 5
+    assert len(project.subsystems) == 6
     assert len(project.commands) == 8
     assert len(project.devices) == 22
     assert len(project.behavior_diagrams) == 2
@@ -40,6 +41,13 @@ def test_sample_model_has_no_hardware_allocation_conflicts() -> None:
 
     assert [finding for finding in findings if finding.severity == SEVERITY_ERROR] == []
     assert [finding for finding in findings if finding.severity == SEVERITY_INCOMPLETE] == []
+
+
+def test_sample_model_reports_no_model_health_findings() -> None:
+    """The worked example has to satisfy every rule the tool teaches, not just most."""
+    project = ProjectStore(SAMPLE_MODEL_ROOT).load()
+
+    assert HealthService().check(project) == []
 
 
 def test_sample_model_reconciles_against_its_fixture_in_all_four_comparison_states() -> None:

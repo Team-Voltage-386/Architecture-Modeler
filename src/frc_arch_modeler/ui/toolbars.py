@@ -417,6 +417,7 @@ def organize_toolbar(window: MainWindow, toolbar: QToolBar) -> None:
     toolbar.addSeparator()
     toolbar.addWidget(window.search_field)
     toolbar.addSeparator()
+    toolbar.addAction(window.toggle_health_action)
     toolbar.addAction(window.toggle_help_action)
 
 

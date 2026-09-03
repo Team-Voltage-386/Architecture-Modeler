@@ -44,6 +44,7 @@ from frc_arch_modeler.ui.controllers.details_controller import DetailsController
 from frc_arch_modeler.ui.controllers.element_controller import ElementController
 from frc_arch_modeler.ui.controllers.export_controller import ExportController
 from frc_arch_modeler.ui.controllers.hardware_controller import HardwareController
+from frc_arch_modeler.ui.controllers.health_controller import HealthController
 from frc_arch_modeler.ui.controllers.project_controller import ProjectController
 from frc_arch_modeler.ui.controllers.scan_controller import ScanController
 from frc_arch_modeler.ui.empty_state import EmptyStateWidget
@@ -73,6 +74,7 @@ class MainWindow(QMainWindow):
         self.element_controller = ElementController(self)
         self.export_controller = ExportController(self)
         self.hardware_controller = HardwareController(self)
+        self.health_controller = HealthController(self)
         self.project_controller = ProjectController(self)
         self.scan_controller = ScanController(self)
         self.undo_stack = QUndoStack(self)
@@ -80,12 +82,15 @@ class MainWindow(QMainWindow):
         self.behavior_scene = BehaviorScene(self)
         self.canvas_controller.connect_scenes()
         self._build_help_dock()
+        self.health_controller.build_health_dock()
         self._build_toolbar()
         self.canvas_controller.build_canvas()
         self.hardware_controller.build_hardware_tab()
         self.details_controller.build_details_dock()
         self._build_inventory_dock()
         self.project_controller.build_status_bar()
+        self.health_controller.build_status_badge()
+        self.health_controller.refresh()
         self.statusBar().showMessage("No robot project connected")
 
     def resizeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
@@ -464,6 +469,18 @@ class MainWindow(QMainWindow):
     def _sync_canvas_to_hardware_selection(self) -> None:
         self.hardware_controller.sync_canvas_to_table_selection()
 
+    def _refresh_model_health(self) -> None:
+        self.health_controller.refresh()
+
+    def _schedule_model_health_refresh(self) -> None:
+        self.health_controller.schedule_refresh()
+
+    def _reveal_health_finding(self, finding) -> bool:  # type: ignore[no-untyped-def]
+        return self.health_controller.reveal(finding)
+
+    def _apply_health_fix(self, finding) -> bool:  # type: ignore[no-untyped-def]
+        return self.health_controller.apply_fix(finding)
+
     def _update_details_presentation(self) -> None:
         self.details_controller.update_details_presentation()
 
@@ -544,6 +561,7 @@ class MainWindow(QMainWindow):
             self.undo_stack.clear()
             self.statusBar().showMessage(f"Design model: {project.name}")
         self._update_status_indicators()
+        self._refresh_model_health()
         self._update_central_stack()
         self._update_structure_empty_state()
         self._sync_left_dock_to_active_tab(self.diagram_tabs.currentIndex())
