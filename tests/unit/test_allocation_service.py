@@ -5,7 +5,9 @@ from frc_arch_modeler.services.allocation_service import (
     SEVERITY_WARNING,
     AllocationService,
     findings_by_device,
+    next_free_address,
     other_device_ids,
+    used_addresses,
 )
 
 
@@ -245,3 +247,66 @@ def test_other_device_ids_is_empty_for_a_single_device_finding() -> None:
     grouped = findings_by_device(AllocationService().check(project))
 
     assert other_device_ids(motor.id, grouped[motor.id]) == []
+
+
+def test_next_free_address_on_an_empty_bus_is_one() -> None:
+    project = ArchitectureProject(name="Robot")
+
+    assert next_free_address(project, "canivore") == "1"
+
+
+def test_next_free_address_skips_a_gap_in_used_addresses() -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    devices = [
+        _device(drive, address=FieldValue(design="1")),
+        _device(drive, address=FieldValue(design="3")),
+    ]
+    project = ArchitectureProject(name="Robot", subsystems=[drive], devices=devices)
+
+    assert next_free_address(project, "canivore") == "2"
+
+    devices.append(_device(drive, address=FieldValue(design="2")))
+    project = ArchitectureProject(name="Robot", subsystems=[drive], devices=devices)
+
+    assert next_free_address(project, "canivore") == "4"
+
+
+def test_next_free_address_is_scoped_per_bus() -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    devices = [
+        _device(drive, bus=FieldValue(design="canivore"), address=FieldValue(design="1")),
+        _device(drive, bus=FieldValue(design="rio"), address=FieldValue(design="1")),
+    ]
+    project = ArchitectureProject(name="Robot", subsystems=[drive], devices=devices)
+
+    assert next_free_address(project, "canivore") == "2"
+    assert next_free_address(project, "rio") == "2"
+    assert next_free_address(project, "pdh") == "1"
+
+
+def test_next_free_address_ignores_case_and_punctuation_differences_in_bus_names() -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    device = _device(drive, bus=FieldValue(design="CANivore"), address=FieldValue(design="1"))
+    project = ArchitectureProject(name="Robot", subsystems=[drive], devices=[device])
+
+    assert next_free_address(project, "canivore") == "2"
+
+
+def test_next_free_address_ignores_non_numeric_addresses_on_the_same_bus() -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    device = _device(drive, address=FieldValue(design="TBD"))
+    project = ArchitectureProject(name="Robot", subsystems=[drive], devices=[device])
+
+    assert next_free_address(project, "canivore") == "1"
+
+
+def test_used_addresses_returns_only_numeric_addresses_on_the_matching_bus() -> None:
+    drive = Subsystem(name=FieldValue(design="Drive"))
+    devices = [
+        _device(drive, bus=FieldValue(design="canivore"), address=FieldValue(design="1")),
+        _device(drive, bus=FieldValue(design="canivore"), address=FieldValue(design="TBD")),
+        _device(drive, bus=FieldValue(design="rio"), address=FieldValue(design="2")),
+    ]
+    project = ArchitectureProject(name="Robot", subsystems=[drive], devices=devices)
+
+    assert used_addresses(project, "canivore") == {1}

@@ -192,6 +192,36 @@ def _normalize(value: str) -> str:
     return "".join(character for character in value.casefold() if character.isalnum())
 
 
+def used_addresses(project: ArchitectureProject, bus: str) -> set[int]:
+    """Return every numeric address already assigned on `bus` (matched like duplicate detection).
+
+    Only numeric addresses count — PWM/DIO/breaker channel numbers and CAN IDs are all
+    digits in `address`, but a placeholder like "TBD" is ignored rather than raising.
+    """
+    normalized_bus = _normalize(bus)
+    used: set[int] = set()
+    for device in project.devices:
+        if _normalize(device.bus.effective or "") != normalized_bus:
+            continue
+        address = (device.address.effective or "").strip()
+        if address.isdigit():
+            used.add(int(address))
+    return used
+
+
+def next_free_address(project: ArchitectureProject, bus: str) -> str:
+    """Propose the lowest free numeric address on `bus`, so a student doesn't need a spreadsheet.
+
+    The result is a suggestion only — the caller decides whether to use it, and it never
+    overwrites a value someone already typed.
+    """
+    used = used_addresses(project, bus)
+    candidate = 1
+    while candidate in used:
+        candidate += 1
+    return str(candidate)
+
+
 def _parse_number(value: str | None) -> float | None:
     if not value:
         return None

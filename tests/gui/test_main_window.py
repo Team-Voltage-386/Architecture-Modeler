@@ -20,7 +20,11 @@ from frc_arch_modeler.ui.architecture_scene import (
     DeviceCountChip,
 )
 from frc_arch_modeler.ui.behavior_scene import StateBlock
-from frc_arch_modeler.ui.entity_dialogs import DeviceDialog
+from frc_arch_modeler.ui.entity_dialogs import (
+    CommandTemplateDialog,
+    DeviceDialog,
+    SubsystemTemplateDialog,
+)
 from frc_arch_modeler.ui.main_window import MainWindow
 from frc_arch_modeler.ui.theme import MUTED_TEXT, OFF_WHITE
 
@@ -234,6 +238,132 @@ def test_new_device_dialog_add_another_creates_three_devices_in_one_visit(
     assert all(device.device_type.effective == "SparkMax" for device in window.project.devices)
 
 
+def test_new_subsystem_from_template_creates_a_swerve_drivetrain_undone_by_one_ctrl_z(
+    qtbot, monkeypatch
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    assert window.project is not None
+    assert window.new_subsystem_from_template_action.isEnabled()
+
+    def fake_exec(self):
+        index = self.template_combo.findText("Swerve Drivetrain")
+        self.template_combo.setCurrentIndex(index)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(SubsystemTemplateDialog, "exec", fake_exec)
+
+    window._prompt_new_subsystem_from_template()
+
+    assert [subsystem.name.effective for subsystem in window.project.subsystems] == [
+        "Swerve Drivetrain"
+    ]
+    devices = window.project.devices
+    assert len(devices) == 13
+    subsystem_id = window.project.subsystems[0].id
+    assert all(device.owner_subsystem_id == subsystem_id for device in devices)
+    addresses = [device.address.effective for device in devices if device.bus.effective]
+    assert len(addresses) == len(set(addresses)), "template devices must not collide"
+
+    window.undo_stack.undo()
+
+    assert not window.project.subsystems
+    assert not window.project.devices
+
+    window.undo_stack.redo()
+
+    assert len(window.project.subsystems) == 1
+    assert len(window.project.devices) == 13
+
+
+def test_new_subsystem_from_template_proposes_addresses_after_existing_devices(
+    qtbot, monkeypatch
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Existing")
+    assert window.project is not None
+    window.add_device(
+        window.project.subsystems[0].id, "Existing Motor", "TalonFX", bus="canivore", address="1"
+    )
+
+    def fake_exec(self):
+        index = self.template_combo.findText("Vision")
+        self.template_combo.setCurrentIndex(index)
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(SubsystemTemplateDialog, "exec", fake_exec)
+
+    window._prompt_new_subsystem_from_template()
+
+    vision_devices = [
+        device for device in window.project.devices if device.name.effective == "Camera"
+    ]
+    assert len(vision_devices) == 1
+
+
+def test_new_command_from_template_creates_command_requirement_and_trigger_in_one_undo_entry(
+    qtbot, monkeypatch
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    assert window.project is not None
+    assert window.new_command_from_template_action.isEnabled()
+
+    def fake_exec(self):
+        self.name_edit.setText("Teleop Drive")
+        self.add_trigger_checkbox.setChecked(True)
+        self.expression_edit.setText("Driver A")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(CommandTemplateDialog, "exec", fake_exec)
+
+    window._prompt_new_command_from_template()
+
+    assert [command.name.effective for command in window.project.commands] == ["Teleop Drive"]
+    command = window.project.commands[0]
+    assert command.requirement_ids == [window.project.subsystems[0].id]
+    assert len(window.project.triggers) == 1
+    assert window.project.triggers[0].expression.effective == "Driver A"
+
+    window.undo_stack.undo()
+
+    assert not window.project.commands
+    assert not window.project.triggers
+
+    window.undo_stack.redo()
+
+    assert len(window.project.commands) == 1
+    assert len(window.project.triggers) == 1
+
+
+def test_new_command_from_template_without_a_trigger_creates_no_trigger(qtbot, monkeypatch) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+    assert window.project is not None
+
+    def fake_exec(self):
+        self.name_edit.setText("Teleop Drive")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(CommandTemplateDialog, "exec", fake_exec)
+
+    window._prompt_new_command_from_template()
+
+    assert len(window.project.commands) == 1
+    assert not window.project.triggers
+
+
 def test_explicit_design_relationship_is_rendered_with_evidence_tooltip(qtbot) -> None:
     create_application([])
     window = MainWindow()
@@ -377,7 +507,9 @@ def test_every_toolbar_action_has_a_tooltip_and_status_tip(qtbot) -> None:
         window.export_change_request_action,
         window.export_architecture_action,
         window.new_command_action,
+        window.new_command_from_template_action,
         window.new_subsystem_action,
+        window.new_subsystem_from_template_action,
         window.new_device_action,
         window.new_trigger_action,
         window.new_relationship_action,

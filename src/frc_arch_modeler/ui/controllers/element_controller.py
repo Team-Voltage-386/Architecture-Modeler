@@ -8,9 +8,20 @@ from typing import TYPE_CHECKING
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QDialog, QInputDialog, QMenu, QMessageBox
 
+from frc_arch_modeler.services.template_service import (
+    SUBSYSTEM_TEMPLATES,
+    SubsystemTemplate,
+    instantiate_subsystem_template,
+)
 from frc_arch_modeler.ui.architecture_scene import CanvasBlock
 from frc_arch_modeler.ui.details_panel import EditEntityFieldsCommand, EditRequirementsCommand
-from frc_arch_modeler.ui.entity_dialogs import DeviceDialog, RelationshipDialog, TriggerDialog
+from frc_arch_modeler.ui.entity_dialogs import (
+    CommandTemplateDialog,
+    DeviceDialog,
+    RelationshipDialog,
+    SubsystemTemplateDialog,
+    TriggerDialog,
+)
 from frc_arch_modeler.ui.undo_commands import AddDesignEntityCommand, RemoveDesignEntityCommand
 
 if TYPE_CHECKING:
@@ -50,6 +61,62 @@ class ElementController:
                 window.project.subsystems, subsystem, "subsystem", self.refresh_after_edit
             )
         )
+
+    def add_subsystem_from_template(
+        self, template: SubsystemTemplate, subsystem_name: str
+    ) -> None:
+        """Create a subsystem and every device its template describes as one undo entry."""
+        window = self.window
+        if window.project is None:
+            raise RuntimeError("Create or open a model before adding a subsystem.")
+        subsystem, devices = instantiate_subsystem_template(
+            window.project, template, subsystem_name
+        )
+        window.undo_stack.beginMacro(f"Add {subsystem_name} from template")
+        window.undo_stack.push(
+            AddDesignEntityCommand(
+                window.project.subsystems, subsystem, "subsystem", self.refresh_after_edit
+            )
+        )
+        for device in devices:
+            window.undo_stack.push(
+                AddDesignEntityCommand(
+                    window.project.devices, device, "device", self.refresh_after_edit
+                )
+            )
+        window.undo_stack.endMacro()
+
+    def add_command_from_template(
+        self,
+        name: str,
+        requirement_subsystem_id,  # type: ignore[no-untyped-def]
+        trigger_expression: str | None,
+        trigger_activation: str | None,
+    ) -> None:
+        """Create a command, its subsystem requirement, and an optional trigger as one entry."""
+        window = self.window
+        if window.project is None:
+            raise RuntimeError("Create or open a model before adding a command.")
+        command = window.project_service.add_command(window.project, name)
+        window.project.commands.remove(command)
+        command.requirement_ids = [requirement_subsystem_id]
+        window.undo_stack.beginMacro(f"Add {name} from template")
+        window.undo_stack.push(
+            AddDesignEntityCommand(
+                window.project.commands, command, "command", self.refresh_after_edit
+            )
+        )
+        if trigger_expression:
+            trigger = window.project_service.add_trigger(
+                window.project, command.id, trigger_expression, trigger_activation or "onTrue"
+            )
+            window.project.triggers.remove(trigger)
+            window.undo_stack.push(
+                AddDesignEntityCommand(
+                    window.project.triggers, trigger, "trigger", self.refresh_after_edit
+                )
+            )
+        window.undo_stack.endMacro()
 
     def add_device(  # type: ignore[no-untyped-def]
         self,
@@ -325,6 +392,7 @@ class ElementController:
             allocation_findings=window._allocation_findings(),
         )
         window.new_device_action.setEnabled(bool(window.project.subsystems))
+        window.new_command_from_template_action.setEnabled(bool(window.project.subsystems))
         window.new_trigger_action.setEnabled(bool(window.project.commands))
         window.new_relationship_action.setEnabled(
             len(window.project.commands) + len(window.project.subsystems) > 1
@@ -504,6 +572,25 @@ class ElementController:
 
     def prompt_new_subsystem(self) -> None:
         self._prompt_element("New subsystem", self.window.add_subsystem)
+
+    def prompt_new_subsystem_from_template(self) -> None:
+        window = self.window
+        if window.project is None:
+            return
+        dialog = SubsystemTemplateDialog(SUBSYSTEM_TEMPLATES, parent=window)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.add_subsystem_from_template(dialog.selected_template(), dialog.subsystem_name())
+
+    def prompt_new_command_from_template(self) -> None:
+        window = self.window
+        if window.project is None or not window.project.subsystems:
+            return
+        dialog = CommandTemplateDialog(window.project, parent=window)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        name, requirement_id, expression, activation = dialog.values()
+        self.add_command_from_template(name, requirement_id, expression, activation)
 
     def prompt_new_device(self) -> None:
         window = self.window

@@ -332,6 +332,20 @@ class MainWindow(QMainWindow):
     def add_subsystem(self, name: str) -> None:
         self.element_controller.add_subsystem(name)
 
+    def add_subsystem_from_template(self, template, subsystem_name: str) -> None:  # type: ignore[no-untyped-def]
+        self.element_controller.add_subsystem_from_template(template, subsystem_name)
+
+    def add_command_from_template(
+        self,
+        name: str,
+        requirement_subsystem_id,  # type: ignore[no-untyped-def]
+        trigger_expression: str | None,
+        trigger_activation: str | None,
+    ) -> None:
+        self.element_controller.add_command_from_template(
+            name, requirement_subsystem_id, trigger_expression, trigger_activation
+        )
+
     def add_device(  # type: ignore[no-untyped-def]
         self,
         owner_subsystem_id,
@@ -402,6 +416,12 @@ class MainWindow(QMainWindow):
 
     def _prompt_new_subsystem(self) -> None:
         self.element_controller.prompt_new_subsystem()
+
+    def _prompt_new_subsystem_from_template(self) -> None:
+        self.element_controller.prompt_new_subsystem_from_template()
+
+    def _prompt_new_command_from_template(self) -> None:
+        self.element_controller.prompt_new_command_from_template()
 
     def _prompt_new_device(self) -> None:
         self.element_controller.prompt_new_device()
@@ -491,7 +511,11 @@ class MainWindow(QMainWindow):
         self._update_compact_details()
         self.new_command_action.setEnabled(project is not None)
         self.new_subsystem_action.setEnabled(project is not None)
+        self.new_subsystem_from_template_action.setEnabled(project is not None)
         self.new_device_action.setEnabled(project is not None and bool(project.subsystems))
+        self.new_command_from_template_action.setEnabled(
+            project is not None and bool(project.subsystems)
+        )
         self.new_trigger_action.setEnabled(project is not None and bool(project.commands))
         self.new_relationship_action.setEnabled(
             project is not None and len(project.commands) + len(project.subsystems) > 1

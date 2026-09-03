@@ -6,15 +6,18 @@ cancelling partway through does not discard already-entered values.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -22,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from frc_arch_modeler.domain.model import ArchitectureProject, Device, Relationship, TriggerBinding
 from frc_arch_modeler.importers.java.scanner import DEVICE_PATTERN
+from frc_arch_modeler.services.template_service import SubsystemTemplate
 
 #: Device types recognized by the Java scanner, in the order they appear in
 #: DEVICE_PATTERN, offered as suggestions for the (still-editable) device type field.
@@ -353,3 +357,150 @@ class RelationshipDialog(_EntityDialog):
     def reset_for_another(self) -> None:
         """Keep the source selection but refocus the target for the next relationship."""
         self.target_combo.setFocus()
+
+
+class SubsystemTemplateDialog(QDialog):
+    """Pick a subsystem template, name it, and preview the devices it will create."""
+
+    def __init__(
+        self, templates: Sequence[SubsystemTemplate], parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("New subsystem from template")
+        self._templates = list(templates)
+
+        self.template_combo = QComboBox(self)
+        for template in self._templates:
+            self.template_combo.addItem(template.name, template)
+
+        self.name_edit = QLineEdit(self)
+
+        self.description_label = QLabel(self)
+        self.description_label.setWordWrap(True)
+
+        self.preview_list = QListWidget(self)
+        self.preview_list.setEnabled(False)
+
+        form = QFormLayout()
+        form.addRow("Template:", self.template_combo)
+        form.addRow("Subsystem name:", self.name_edit)
+        form.addRow("Description:", self.description_label)
+        form.addRow("Devices:", self.preview_list)
+
+        self._validation_label = QLabel(self)
+        self._validation_label.setWordWrap(True)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            parent=self,
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        self._ok_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(self._validation_label)
+        layout.addWidget(buttons)
+
+        self.template_combo.currentIndexChanged.connect(self._template_changed)
+        self.name_edit.textChanged.connect(self._update_validity)
+        self._template_changed()
+        self.name_edit.setFocus()
+
+    def _template_changed(self) -> None:
+        template = self.template_combo.currentData()
+        self.name_edit.setText(template.name)
+        self.description_label.setText(template.description)
+        self.preview_list.clear()
+        for device in template.devices:
+            bus = f" on {device.bus}" if device.bus else ""
+            self.preview_list.addItem(f"{device.name} ({device.device_type}){bus}")
+        self._update_validity()
+
+    def _update_validity(self) -> None:
+        error = None if self.name_edit.text().strip() else "Enter a subsystem name."
+        self._validation_label.setText(error or "")
+        self._ok_button.setEnabled(error is None)
+
+    def selected_template(self) -> SubsystemTemplate:
+        return self.template_combo.currentData()
+
+    def subsystem_name(self) -> str:
+        return self.name_edit.text().strip()
+
+
+class CommandTemplateDialog(QDialog):
+    """Create a command, its subsystem requirement, and an optional trigger in one step."""
+
+    def __init__(self, project: ArchitectureProject, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("New command from template")
+
+        self.name_edit = QLineEdit(self)
+
+        self.subsystem_combo = QComboBox(self)
+        for subsystem in project.subsystems:
+            self.subsystem_combo.addItem(subsystem.name.effective or "Unnamed", subsystem.id)
+
+        self.add_trigger_checkbox = QCheckBox("Add a trigger", self)
+        self.expression_edit = QLineEdit(self)
+        self.expression_edit.setPlaceholderText("Controller / trigger expression")
+        self.expression_edit.setEnabled(False)
+        self.activation_combo = QComboBox(self)
+        self.activation_combo.addItems(TRIGGER_ACTIVATIONS)
+        self.activation_combo.setEnabled(False)
+
+        form = QFormLayout()
+        form.addRow("Command name:", self.name_edit)
+        form.addRow("Requires subsystem:", self.subsystem_combo)
+        form.addRow("", self.add_trigger_checkbox)
+        form.addRow("Trigger expression:", self.expression_edit)
+        form.addRow("Activation:", self.activation_combo)
+
+        self._validation_label = QLabel(self)
+        self._validation_label.setWordWrap(True)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            parent=self,
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        self._ok_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(self._validation_label)
+        layout.addWidget(buttons)
+
+        self.add_trigger_checkbox.toggled.connect(self.expression_edit.setEnabled)
+        self.add_trigger_checkbox.toggled.connect(self.activation_combo.setEnabled)
+        self.name_edit.textChanged.connect(self._update_validity)
+        self.expression_edit.textChanged.connect(self._update_validity)
+        self.add_trigger_checkbox.toggled.connect(self._update_validity)
+        self._update_validity()
+        self.name_edit.setFocus()
+
+    def _validity_error(self) -> str | None:
+        if not self.name_edit.text().strip():
+            return "Enter a command name."
+        if self.subsystem_combo.count() == 0:
+            return "Add a subsystem before creating a command from a template."
+        if self.add_trigger_checkbox.isChecked() and not self.expression_edit.text().strip():
+            return "Enter a controller / trigger expression, or uncheck Add a trigger."
+        return None
+
+    def _update_validity(self) -> None:
+        error = self._validity_error()
+        self._validation_label.setText(error or "")
+        self._ok_button.setEnabled(error is None)
+
+    def values(self) -> tuple[str, UUID, str | None, str | None]:
+        has_trigger = self.add_trigger_checkbox.isChecked()
+        return (
+            self.name_edit.text().strip(),
+            self.subsystem_combo.currentData(),
+            self.expression_edit.text().strip() if has_trigger else None,
+            self.activation_combo.currentText() if has_trigger else None,
+        )

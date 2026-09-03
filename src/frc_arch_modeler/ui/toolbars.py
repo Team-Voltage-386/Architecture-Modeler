@@ -143,6 +143,25 @@ def build_toolbar(window: MainWindow) -> None:
         "to the design. Use this to model a mechanical or electrical grouping of "
         "devices.",
     )
+    window.new_subsystem_from_template_action = window.addAction(
+        "New Subsystem from Template", window._prompt_new_subsystem_from_template
+    )
+    window.new_subsystem_from_template_action.setEnabled(False)
+    set_action_help(
+        window.new_subsystem_from_template_action,
+        "Create a common subsystem — swerve drivetrain, intake, elevator, and more "
+        "— with all its devices already named, typed, and addressed in one step. "
+        "Use this instead of adding each device by hand.",
+    )
+    window.new_command_from_template_action = window.addAction(
+        "New Command from Template", window._prompt_new_command_from_template
+    )
+    window.new_command_from_template_action.setEnabled(False)
+    set_action_help(
+        window.new_command_from_template_action,
+        "Create a Command, set its subsystem requirement, and optionally add a "
+        "trigger in one step. Use this instead of three separate actions.",
+    )
     window.new_device_action = window.addAction("New Device", window._prompt_new_device)
     window.new_device_action.setEnabled(False)
     set_action_help(
@@ -369,7 +388,9 @@ def organize_toolbar(window: MainWindow, toolbar: QToolBar) -> None:
         "New",
         [
             window.new_command_action,
+            window.new_command_from_template_action,
             window.new_subsystem_action,
+            window.new_subsystem_from_template_action,
             window.new_device_action,
             window.new_trigger_action,
             window.new_relationship_action,
