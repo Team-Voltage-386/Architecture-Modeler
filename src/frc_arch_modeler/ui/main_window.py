@@ -46,6 +46,7 @@ from frc_arch_modeler.ui.controllers.export_controller import ExportController
 from frc_arch_modeler.ui.controllers.hardware_controller import HardwareController
 from frc_arch_modeler.ui.controllers.project_controller import ProjectController
 from frc_arch_modeler.ui.controllers.scan_controller import ScanController
+from frc_arch_modeler.ui.empty_state import EmptyStateWidget
 from frc_arch_modeler.ui.help_panel import HelpPanel
 
 
@@ -319,6 +320,12 @@ class MainWindow(QMainWindow):
     def _sync_left_dock_to_active_tab(self, index: int) -> None:
         self.canvas_controller.sync_left_dock_to_active_tab(index)
 
+    def _update_central_stack(self) -> None:
+        self.canvas_controller.update_central_stack()
+
+    def _update_structure_empty_state(self) -> None:
+        self.canvas_controller.update_structure_empty_state()
+
     def add_command(self, name: str) -> None:
         self.element_controller.add_command(name)
 
@@ -478,7 +485,9 @@ class MainWindow(QMainWindow):
         )
         self.behavior_model_browser.rebuild(project, self._selected_behavior_diagram_id)
         self.behavior_scene.render_diagram(self._active_behavior_diagram())
-        self.details_panel.set_element(None)
+        self.details_panel.set_element(
+            None, show_create_action=self.details_controller.show_create_prompt()
+        )
         self._update_compact_details()
         self.new_command_action.setEnabled(project is not None)
         self.new_subsystem_action.setEnabled(project is not None)
@@ -511,6 +520,9 @@ class MainWindow(QMainWindow):
             self.undo_stack.clear()
             self.statusBar().showMessage(f"Design model: {project.name}")
         self._update_status_indicators()
+        self._update_central_stack()
+        self._update_structure_empty_state()
+        self._sync_left_dock_to_active_tab(self.diagram_tabs.currentIndex())
 
     def export_architecture(self, root: Path | None = None) -> Path:
         return self.export_controller.export_architecture(root)
@@ -531,6 +543,14 @@ class MainWindow(QMainWindow):
         self.inventory_tree.setObjectName("codeInventoryTree")
         self.inventory_tree.setHeaderLabels(["Symbol", "Source"])
         self.inventory_tree.itemDoubleClicked.connect(self._open_inventory_source)
+        self._inventory_empty_state = EmptyStateWidget(
+            "inventoryEmptyState",
+            "No code scan yet. Connect a robot project to see its commands, "
+            "subsystems and devices here.",
+            "Connect Robot Project",
+            self._prompt_connect_robot_project,
+            dock,
+        )
         self.behavior_model_browser = BehaviorModelBrowser(dock)
         self.behavior_model_browser.diagram_selected.connect(self._select_behavior_diagram)
         self.behavior_model_browser.new_root_diagram_requested.connect(
@@ -541,14 +561,32 @@ class MainWindow(QMainWindow):
         )
         self.behavior_model_browser.rename_requested.connect(self._rename_behavior_diagram)
         self.behavior_model_browser.delete_requested.connect(self._delete_behavior_diagram)
+        self._behavior_empty_state = EmptyStateWidget(
+            "behaviorEmptyState",
+            "No behavior diagrams yet. Create one to model your robot's states "
+            "and transitions.",
+            "New Behavior Diagram",
+            self._add_root_behavior_diagram,
+            dock,
+        )
         self._left_dock_stack = QStackedWidget(dock)
         self._left_dock_stack.addWidget(self.inventory_tree)
+        self._left_dock_stack.addWidget(self._inventory_empty_state)
         self._left_dock_stack.addWidget(self.behavior_model_browser)
+        self._left_dock_stack.addWidget(self._behavior_empty_state)
         self._left_dock = dock
         dock.setWidget(self._left_dock_stack)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
         self.diagram_tabs.currentChanged.connect(self._sync_left_dock_to_active_tab)
         self._sync_left_dock_to_active_tab(self.diagram_tabs.currentIndex())
+        self.toggle_left_dock_action = dock.toggleViewAction()
+        self.toggle_left_dock_action.setText("Left Panel")
+        self._set_action_help(
+            self.toggle_left_dock_action,
+            "Show or hide the left panel (Code Inventory or Behavior Diagrams). Use "
+            "this to bring it back if you've closed it.",
+        )
+        self._toolbar.addAction(self.toggle_left_dock_action)
 
     def _build_help_dock(self) -> None:
         """A notation help panel, hidden by default so it costs the canvas no width.

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHeaderView,
     QLineEdit,
+    QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QToolBar,
@@ -27,6 +28,7 @@ from frc_arch_modeler.services.allocation_service import (
 from frc_arch_modeler.ui import toolbars
 from frc_arch_modeler.ui.architecture_scene import DeviceBlock
 from frc_arch_modeler.ui.details_panel import EditEntityFieldsCommand
+from frc_arch_modeler.ui.empty_state import EmptyStateWidget
 from frc_arch_modeler.ui.entity_dialogs import DeviceDialog
 from frc_arch_modeler.ui.theme import ALERT_RED, MUTED_TEXT
 
@@ -142,12 +144,22 @@ class HardwareController:
         window.hardware_filter_field = filter_field
         window.hardware_toolbar = toolbar
 
+        window._hardware_empty_state = EmptyStateWidget(
+            "hardwareEmptyState",
+            "No hardware devices yet. Add a device to a subsystem to see it here.",
+            "New Device",
+            window._prompt_new_device,
+        )
+        window._hardware_stack = QStackedWidget(window)
+        window._hardware_stack.addWidget(table)
+        window._hardware_stack.addWidget(window._hardware_empty_state)
+
         window._hardware_tab = QWidget(window)
         layout = QVBoxLayout(window._hardware_tab)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(toolbar)
-        layout.addWidget(table)
+        layout.addWidget(window._hardware_stack)
 
         window.diagram_tabs.addTab(window._hardware_tab, "Hardware")
         window.scene.selectionChanged.connect(window._sync_hardware_table_selection)
@@ -165,6 +177,8 @@ class HardwareController:
             project = window.project
             if project is None:
                 self._findings_by_device = {}
+                window._hardware_empty_state.button.setEnabled(False)
+                window._hardware_stack.setCurrentWidget(window._hardware_empty_state)
                 return
             self._findings_by_device = findings_by_device(AllocationService().check(project))
             devices = sorted(
@@ -173,6 +187,10 @@ class HardwareController:
             table.setRowCount(len(devices))
             for row, device in enumerate(devices):
                 self._populate_row(row, device)
+            window._hardware_empty_state.button.setEnabled(bool(project.subsystems))
+            window._hardware_stack.setCurrentWidget(
+                window._hardware_empty_state if not devices else table
+            )
         finally:
             self._populating = False
         table.resizeRowsToContents()

@@ -193,6 +193,7 @@ class DetailsPanel(QWidget):
         on_owned_add: Callable[[str], None] | None = None,
         on_owned_edit: Callable[[str, UUID], None] | None = None,
         on_owned_remove: Callable[[str, UUID], None] | None = None,
+        on_new_subsystem: Callable[[], None] | None = None,
     ) -> None:
         super().__init__()
         self._on_description_edit = on_description_edit
@@ -201,6 +202,7 @@ class DetailsPanel(QWidget):
         self._on_owned_add = on_owned_add
         self._on_owned_edit = on_owned_edit
         self._on_owned_remove = on_owned_remove
+        self._on_new_subsystem = on_new_subsystem
         self._owned_lists: dict[str, QListWidget] = {}
         self._owned_rows: dict[str, QWidget] = {}
         self._owned_labels: dict[str, QLabel] = {}
@@ -216,6 +218,13 @@ class DetailsPanel(QWidget):
         layout = QVBoxLayout(self)
         self.title = QLabel("Select a command or subsystem to inspect its details.", self)
         self.title.setObjectName("detailsTitle")
+        self.empty_state_button = QPushButton("New Subsystem", self)
+        self.empty_state_button.setObjectName("detailsEmptyStateButton")
+        self.empty_state_button.clicked.connect(self._create_subsystem)
+        self._set_help(
+            self.empty_state_button,
+            "Nothing to select yet — add a subsystem to get started.",
+        )
         self.code_description = QLabel("No code-derived description available.", self)
         self.code_description.setObjectName("codeDescription")
         self.code_description.setWordWrap(True)
@@ -315,6 +324,7 @@ class DetailsPanel(QWidget):
             self._set_help(label, OWNED_HELP[kind]["list"])
             form.addRow(label, self._build_owned_section(kind))
         layout.addWidget(self.title)
+        layout.addWidget(self.empty_state_button)
         layout.addLayout(form)
         layout.addWidget(self.save_button)
         layout.addWidget(self.revert_button)
@@ -367,8 +377,17 @@ class DetailsPanel(QWidget):
             "Jump to this element's location in the source code. Only available "
             "once a matching code symbol has been found.",
         )
+        self._code_action_buttons = [
+            self.revert_button,
+            self.adopt_description_button,
+            self.adopt_name_button,
+            self.revert_name_button,
+            self.open_source_button,
+        ]
         self._set_editing_enabled(False)
         self._set_owned_objects(None, {})
+        self._set_code_actions_visible(False)
+        self.empty_state_button.setVisible(False)
         self.edit_device_button.setVisible(False)
 
     @staticmethod
@@ -418,6 +437,8 @@ class DetailsPanel(QWidget):
         subsystem_options: list[tuple[UUID, str]] | None = None,
         design_context: str | None = None,
         owned_objects: dict[str, list[tuple[UUID, str]]] | None = None,
+        scan_available: bool = False,
+        show_create_action: bool = False,
     ) -> None:
         self._element = element
         self._device_id = None
@@ -442,11 +463,15 @@ class DetailsPanel(QWidget):
             self.design_context.setVisible(False)
             self._set_owned_objects(None, {})
             self._set_editing_enabled(False)
+            self._set_code_actions_visible(False)
+            self.empty_state_button.setVisible(show_create_action)
             self.open_source_button.setEnabled(False)
             self.adopt_name_button.setEnabled(False)
             self.adopt_description_button.setEnabled(False)
             self.revert_name_button.setEnabled(False)
             return
+        self.empty_state_button.setVisible(False)
+        self._set_code_actions_visible(scan_available)
         self.title.setText(f"{element.name.effective} ({type(element).__name__})")
         effective_code_name = code_name or element.name.scanned
         self.code_name.setText(effective_code_name or "No code-derived name available.")
@@ -485,6 +510,8 @@ class DetailsPanel(QWidget):
         """Present selected regenerated code evidence without enabling design edits."""
         self._element = None
         self._device_id = None
+        self.empty_state_button.setVisible(False)
+        self._set_code_actions_visible(True)
         self.edit_device_button.setVisible(False)
         self._source_anchor = anchor
         self._code_name = label
@@ -536,7 +563,9 @@ class DetailsPanel(QWidget):
         self.adopt_description_button.setEnabled(False)
         self.revert_name_button.setEnabled(False)
 
-    def set_device(self, device: Device, owner_name: str | None = None) -> None:
+    def set_device(
+        self, device: Device, owner_name: str | None = None, scan_available: bool = False
+    ) -> None:
         """Present a canvas-selected device, edited through its own single-form dialog.
 
         A device's fields are the dialog's fields -- owner, type, mode, wiring and
@@ -546,6 +575,8 @@ class DetailsPanel(QWidget):
         self._element = None
         self._device_id = device.id
         self._owned_objects = {}
+        self.empty_state_button.setVisible(False)
+        self._set_code_actions_visible(scan_available)
         self._source_anchor = device.code_binding
         self._code_name = device.name.scanned
         self._code_description = None
@@ -605,6 +636,16 @@ class DetailsPanel(QWidget):
 
     def refresh(self) -> None:
         self.set_element(self._element, owned_objects=self._owned_objects)
+
+    def _set_code_actions_visible(self, visible: bool) -> None:
+        """Hide the actions that only make sense once a code scan exists, rather than
+        showing them permanently disabled in a design-only model."""
+        for button in self._code_action_buttons:
+            button.setVisible(visible)
+
+    def _create_subsystem(self) -> None:
+        if self._on_new_subsystem is not None:
+            self._on_new_subsystem()
 
     def _set_editing_enabled(self, enabled: bool) -> None:
         self.design_name.setEnabled(enabled)

@@ -334,6 +334,9 @@ class ElementController:
             window.project, window._selected_behavior_diagram_id
         )
         window.hardware_controller.refresh_table()
+        window._update_structure_empty_state()
+        window._sync_left_dock_to_active_tab(window.diagram_tabs.currentIndex())
+        window._update_selected_element()
         window._mark_dirty(f"Unsaved design model: {window.project.name}")
 
     # -- owned objects on the details panel -------------------------------

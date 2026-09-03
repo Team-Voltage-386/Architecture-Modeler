@@ -159,13 +159,19 @@ class ProjectController:
             QMessageBox.critical(self.window, "Could not open model", str(error))
 
     def refresh_recent_model_action(self) -> None:
-        """Reflect the last-opened model (if any) on the Model menu's Recent entry."""
+        """Reflect the last-opened model (if any) on the Model menu's Recent entry
+        and the start screen's Open Recent button."""
         recent_path = self.window.recent_model_store.load()
         action = self.window.open_recent_model_action
         action.setVisible(recent_path is not None)
         if recent_path is not None:
             action.setText(f"Recent: {recent_path.name}")
             action.setToolTip(str(recent_path))
+        start_screen = getattr(self.window, "start_screen", None)
+        if start_screen is not None:
+            start_screen.set_recent_visible(
+                recent_path is not None, recent_path.name if recent_path is not None else None
+            )
 
     def prompt_save_project(self) -> None:
         if self.window.model_root is None:

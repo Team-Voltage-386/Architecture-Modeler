@@ -58,7 +58,16 @@ class DetailsController:
             window.add_owned_object,
             window.edit_owned_object,
             window.remove_owned_object,
+            window._prompt_new_subsystem,
         )
+
+    def scan_available(self) -> bool:
+        return self.window.last_scan is not None
+
+    def show_create_prompt(self) -> bool:
+        """Only offer the quick-add button when there is truly nothing to select yet."""
+        project = self.window.project
+        return project is not None and not project.subsystems and not project.commands
 
     def update_details_presentation(self) -> None:
         """Use a dock on wide screens and reserve a sheet on laptop-width windows."""
@@ -93,11 +102,13 @@ class DetailsController:
         selected = window.scene.selected_blocks()
         device = self._selected_device()
         if device is not None:
-            window.details_panel.set_device(device, self._device_owner_name(device))
+            window.details_panel.set_device(
+                device, self._device_owner_name(device), scan_available=self.scan_available()
+            )
             self.update_compact_details()
             return
         if len(selected) != 1:
-            window.details_panel.set_element(None)
+            window.details_panel.set_element(None, show_create_action=self.show_create_prompt())
             self.update_compact_details()
             return
         imported_anchor = selected[0].source_anchor
@@ -124,7 +135,7 @@ class DetailsController:
             self.update_compact_details()
             return
         if window.project is None:
-            window.details_panel.set_element(None)
+            window.details_panel.set_element(None, show_create_action=False)
             self.update_compact_details()
             return
         element_id = selected[0].element_id
@@ -135,6 +146,7 @@ class DetailsController:
             subsystem_options=self.subsystem_options(),
             design_context=self._design_structure(element.id) if element is not None else None,
             owned_objects=self._owned_objects(element),
+            scan_available=self.scan_available(),
         )
         self.update_compact_details()
 
@@ -146,10 +158,14 @@ class DetailsController:
         selected = window.scene.selected_blocks()
         device = self._selected_device()
         if device is not None:
-            window.compact_details_panel.set_device(device, self._device_owner_name(device))
+            window.compact_details_panel.set_device(
+                device, self._device_owner_name(device), scan_available=self.scan_available()
+            )
             return
         if len(selected) != 1:
-            window.compact_details_panel.set_element(None)
+            window.compact_details_panel.set_element(
+                None, show_create_action=self.show_create_prompt()
+            )
             return
         block = selected[0]
         if isinstance(block.source_anchor, SourceAnchor):
@@ -167,7 +183,7 @@ class DetailsController:
             )
             return
         if window.project is None:
-            window.compact_details_panel.set_element(None)
+            window.compact_details_panel.set_element(None, show_create_action=False)
             return
         element = self._element_by_id(block.element_id)
         window.compact_details_panel.set_element(
@@ -176,6 +192,7 @@ class DetailsController:
             subsystem_options=self.subsystem_options(),
             design_context=self._design_structure(element.id) if element is not None else None,
             owned_objects=self._owned_objects(element),
+            scan_available=self.scan_available(),
         )
 
     def _selected_device(self):  # type: ignore[no-untyped-def]

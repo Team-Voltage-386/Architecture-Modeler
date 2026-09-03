@@ -741,6 +741,8 @@ def test_behavior_model_browser_replaces_inventory_dock_on_behavior_tab(qtbot) -
     window = MainWindow()
     qtbot.addWidget(window)
     window.new_project("Competition Robot")
+    fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+    window.connect_robot_project(fixture_root)
 
     assert window._left_dock_stack.currentWidget() is window.inventory_tree
 
@@ -1792,3 +1794,195 @@ def test_selecting_a_device_block_shows_it_in_the_details_panel(qtbot, monkeypat
     assert len(window.scene.selected_device_blocks()) == 1
     window.undo_stack.undo()
     assert device.name.effective == "Left motor"
+
+
+def test_closing_the_left_panel_can_be_restored_from_the_toolbar(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+
+    window._left_dock.close()
+
+    assert not window._left_dock.isVisibleTo(window)
+    assert not window.toggle_left_dock_action.isChecked()
+
+    window.toggle_left_dock_action.trigger()
+
+    assert window._left_dock.isVisibleTo(window)
+    assert window.toggle_left_dock_action.isChecked()
+
+
+def test_launching_with_no_project_shows_the_start_screen(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window._central_stack.currentWidget() is window.start_screen
+    assert not window.start_screen.open_recent_button.isVisibleTo(window.start_screen)
+    assert not window.start_screen.tour_button.isEnabled()
+
+
+def test_creating_a_new_model_dismisses_the_start_screen(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.new_project("Competition Robot")
+
+    assert window._central_stack.currentWidget() is window.diagram_tabs
+
+
+def test_opening_the_sample_model_dismisses_the_start_screen(qtbot, tmp_path) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_sample_model(tmp_path / "my_robot")
+
+    assert window._central_stack.currentWidget() is window.diagram_tabs
+
+
+def test_connecting_a_robot_project_without_a_model_dismisses_the_start_screen(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+
+    window.connect_robot_project(fixture_root)
+
+    assert window.project is None
+    assert window._central_stack.currentWidget() is window.diagram_tabs
+
+
+def test_start_screen_shows_open_recent_only_once_a_model_has_been_saved(
+    qtbot, tmp_path
+) -> None:
+    create_application([])
+    first_window = MainWindow()
+    qtbot.addWidget(first_window)
+    first_window.new_project("Competition Robot")
+    first_window.save_project(tmp_path)
+
+    second_window = MainWindow()
+    qtbot.addWidget(second_window)
+
+    assert second_window.start_screen.open_recent_button.isVisibleTo(
+        second_window.start_screen
+    )
+    assert tmp_path.name in second_window.start_screen.open_recent_button.text()
+
+
+def test_structure_canvas_shows_a_purposeful_empty_state_until_something_exists(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.new_project("Competition Robot")
+
+    assert window._structure_stack.currentWidget() is window._structure_empty_state
+    assert window._structure_empty_state.button is not None
+
+    window.add_subsystem("Drive")
+
+    assert window._structure_stack.currentWidget() is window.canvas
+
+
+def test_code_inventory_shows_a_purposeful_empty_state_until_a_scan_exists(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window._left_dock_stack.currentWidget() is window._inventory_empty_state
+
+    fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+    window.connect_robot_project(fixture_root)
+
+    assert window._left_dock_stack.currentWidget() is window.inventory_tree
+
+
+def test_behavior_diagram_list_shows_a_purposeful_empty_state_until_a_diagram_exists(
+    qtbot,
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    # A new project ships with a seeded "Robot Modes" diagram; remove it to reach the
+    # genuinely empty state a loaded project with none could also be in.
+    window._delete_behavior_diagram(window.project.behavior_diagrams[0].id)
+
+    window.diagram_tabs.setCurrentWidget(window._behavior_tab)
+
+    assert window._left_dock_stack.currentWidget() is window._behavior_empty_state
+
+    window._add_root_behavior_diagram()
+
+    assert window._left_dock_stack.currentWidget() is window.behavior_model_browser
+
+
+def test_hardware_table_shows_a_purposeful_empty_state_until_a_device_exists(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_subsystem("Drive")
+
+    assert window._hardware_stack.currentWidget() is window._hardware_empty_state
+    assert window._hardware_empty_state.button.isEnabled()
+
+    window.add_device(window.project.subsystems[0].id, "Left motor", "SparkMax")
+
+    assert window._hardware_stack.currentWidget() is window.hardware_table
+
+
+def test_details_panel_offers_to_add_a_subsystem_when_nothing_exists_to_select(
+    qtbot, monkeypatch
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+
+    assert window.details_panel.empty_state_button.isVisibleTo(window.details_panel)
+
+    monkeypatch.setattr(QInputDialog, "getText", lambda *args, **kwargs: ("Drive", True))
+    window.details_panel.empty_state_button.click()
+
+    assert window.project.subsystems[0].name.effective == "Drive"
+    assert not window.details_panel.empty_state_button.isVisibleTo(window.details_panel)
+
+
+def test_details_panel_hides_code_actions_until_a_scan_exists(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.add_command("Teleop Drive")
+    block = next(item for item in window.scene.items() if isinstance(item, ArchitectureBlock))
+    block.setSelected(True)
+
+    panel = window.details_panel
+    assert not panel.adopt_name_button.isVisibleTo(panel)
+    assert not panel.adopt_description_button.isVisibleTo(panel)
+    assert not panel.revert_name_button.isVisibleTo(panel)
+    assert not panel.revert_button.isVisibleTo(panel)
+    assert not panel.open_source_button.isVisibleTo(panel)
+    assert panel.save_button.isVisibleTo(panel)
+
+    fixture_root = Path(__file__).parents[1] / "fixtures" / "java_basic"
+    window.connect_robot_project(fixture_root)
+    block = next(
+        item
+        for item in window.scene.items()
+        if isinstance(item, ArchitectureBlock)
+        and not item.imported
+        and item.title.toPlainText() == "Teleop Drive"
+    )
+    block.setSelected(True)
+
+    assert panel.adopt_name_button.isVisibleTo(panel)
+    assert panel.adopt_description_button.isVisibleTo(panel)
+    assert panel.revert_name_button.isVisibleTo(panel)
+    assert panel.revert_button.isVisibleTo(panel)
+    assert panel.open_source_button.isVisibleTo(panel)

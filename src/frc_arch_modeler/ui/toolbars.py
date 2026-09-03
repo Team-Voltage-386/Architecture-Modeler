@@ -26,6 +26,7 @@ def build_toolbar(window: MainWindow) -> None:
     toolbar = QToolBar("Architecture actions", window)
     toolbar.setMovable(False)
     window.addToolBar(toolbar)
+    window._toolbar = toolbar
     window.new_model_action = window.addAction("New Model", window._prompt_new_project)
     window.new_model_action.setShortcut(QKeySequence.StandardKey.New)
     set_action_help(

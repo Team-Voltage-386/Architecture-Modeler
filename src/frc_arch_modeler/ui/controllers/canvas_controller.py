@@ -6,7 +6,13 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter
-from PySide6.QtWidgets import QGraphicsView, QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QGraphicsView,
+    QStackedWidget,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from frc_arch_modeler.services.allocation_service import (
     AllocationFinding,
@@ -14,6 +20,8 @@ from frc_arch_modeler.services.allocation_service import (
     findings_by_device,
 )
 from frc_arch_modeler.ui.architecture_scene import CanvasBlock
+from frc_arch_modeler.ui.empty_state import EmptyStateWidget
+from frc_arch_modeler.ui.start_screen import StartScreen
 from frc_arch_modeler.ui.undo_commands import MoveBlocksCommand
 
 if TYPE_CHECKING:
@@ -86,12 +94,35 @@ class CanvasController:
         behavior_layout.addWidget(window.behavior_toolbar)
         behavior_layout.addWidget(window.behavior_canvas)
 
+        window._structure_empty_state = EmptyStateWidget(
+            "structureEmptyState",
+            "Nothing here yet. A subsystem is a good place to start — try the "
+            "drivetrain.",
+            "New Subsystem",
+            window._prompt_new_subsystem,
+        )
+        window._structure_stack = QStackedWidget(window)
+        window._structure_stack.addWidget(window.canvas)
+        window._structure_stack.addWidget(window._structure_empty_state)
+
         window.diagram_tabs = QTabWidget(window)
-        window.diagram_tabs.addTab(window.canvas, "Structure")
+        window.diagram_tabs.addTab(window._structure_stack, "Structure")
         window.diagram_tabs.addTab(window._behavior_tab, "Behavior")
         window.diagram_tabs.currentChanged.connect(window._update_delete_selected_action)
         window.behavior_scene.selectionChanged.connect(window._update_delete_selected_action)
-        window.setCentralWidget(window.diagram_tabs)
+
+        window.start_screen = StartScreen(
+            window._prompt_new_project,
+            window._prompt_open_project,
+            window._open_recent_model,
+            window._prompt_open_sample_model,
+            window,
+        )
+        window._central_stack = QStackedWidget(window)
+        window._central_stack.addWidget(window.start_screen)
+        window._central_stack.addWidget(window.diagram_tabs)
+        window.setCentralWidget(window._central_stack)
+        window._refresh_recent_model_action()
 
     # -- rendering --------------------------------------------------------
 
@@ -244,13 +275,49 @@ class CanvasController:
         )
 
     def sync_left_dock_to_active_tab(self, index: int) -> None:
-        """Show the behavior model browser only while the Behavior tab is active."""
+        """Show the behavior model browser only while the Behavior tab is active,
+        and a purposeful placeholder instead of either tree while it has nothing to show."""
         window = self.window
         on_behavior = window.diagram_tabs.currentWidget() is window._behavior_tab
-        window._left_dock_stack.setCurrentWidget(
-            window.behavior_model_browser if on_behavior else window.inventory_tree
-        )
+        if on_behavior:
+            project = window.project
+            behavior_empty = project is None or (
+                not project.behavior_diagrams and not project.commands
+            )
+            window._left_dock_stack.setCurrentWidget(
+                window._behavior_empty_state
+                if behavior_empty
+                else window.behavior_model_browser
+            )
+        elif window.last_scan is None:
+            window._left_dock_stack.setCurrentWidget(window._inventory_empty_state)
+        else:
+            window._left_dock_stack.setCurrentWidget(window.inventory_tree)
         window._left_dock.setWindowTitle(
             "Behavior Diagrams" if on_behavior else "Code Inventory"
         )
         window.help_panel.set_active_context("behavior" if on_behavior else "structure")
+
+    # -- empty states and start screen -------------------------------------
+
+    def update_central_stack(self) -> None:
+        """Show the start screen only while there is neither a project nor a code scan."""
+        window = self.window
+        show_start = window.project is None and window.last_scan is None
+        window._central_stack.setCurrentWidget(
+            window.start_screen if show_start else window.diagram_tabs
+        )
+
+    def update_structure_empty_state(self) -> None:
+        """Show a purposeful placeholder instead of a blank Structure canvas."""
+        window = self.window
+        project = window.project
+        is_empty = (
+            project is not None
+            and not project.subsystems
+            and not project.commands
+            and window.last_scan is None
+        )
+        window._structure_stack.setCurrentWidget(
+            window._structure_empty_state if is_empty else window.canvas
+        )

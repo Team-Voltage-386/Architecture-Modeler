@@ -68,6 +68,9 @@ class ScanController:
         self._show_scan_inventory()
         self._show_scan_status(action)
         window._update_status_indicators()
+        window._update_central_stack()
+        window._update_structure_empty_state()
+        window._sync_left_dock_to_active_tab(window.diagram_tabs.currentIndex())
 
     def start_scan(self, root: Path, action: str) -> None:
         """Run a toolbar-initiated scan off the UI thread, preserving the old view on failure."""

@@ -296,4 +296,5 @@ class BehaviorController:
             self.active_diagram(), window.behavior_scene.layout_state()
         )
         window.behavior_model_browser.rebuild(window.project, self.selected_diagram_id)
+        window._sync_left_dock_to_active_tab(window.diagram_tabs.currentIndex())
         window._mark_dirty(f"Unsaved design model: {window.project.name}")
