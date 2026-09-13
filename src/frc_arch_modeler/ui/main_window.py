@@ -47,6 +47,7 @@ from frc_arch_modeler.ui.controllers.hardware_controller import HardwareControll
 from frc_arch_modeler.ui.controllers.health_controller import HealthController
 from frc_arch_modeler.ui.controllers.project_controller import ProjectController
 from frc_arch_modeler.ui.controllers.scan_controller import ScanController
+from frc_arch_modeler.ui.controllers.tour_controller import GuidedTourController
 from frc_arch_modeler.ui.empty_state import EmptyStateWidget
 from frc_arch_modeler.ui.help_panel import HelpPanel
 
@@ -77,6 +78,7 @@ class MainWindow(QMainWindow):
         self.health_controller = HealthController(self)
         self.project_controller = ProjectController(self)
         self.scan_controller = ScanController(self)
+        self.tour_controller = GuidedTourController(self)
         self.undo_stack = QUndoStack(self)
         self.scene = ArchitectureScene(self)
         self.behavior_scene = BehaviorScene(self)
@@ -96,6 +98,7 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         super().resizeEvent(event)
         self._update_details_presentation()
+        self._reposition_guided_tour()
 
     def _build_toolbar(self) -> None:
         toolbars.build_toolbar(self)
@@ -148,6 +151,18 @@ class MainWindow(QMainWindow):
 
     def _refresh_recent_model_action(self) -> None:
         self.project_controller.refresh_recent_model_action()
+
+    def _start_guided_tour(self) -> None:
+        self.tour_controller.start()
+
+    def _exit_guided_tour(self) -> None:
+        self.tour_controller.exit_tour()
+
+    def _reposition_guided_tour(self) -> None:
+        self.tour_controller.reposition()
+
+    def _check_guided_tour_progress(self) -> None:
+        self.tour_controller.check_progress()
 
     @property
     def _scan_thread(self) -> QThread | None:

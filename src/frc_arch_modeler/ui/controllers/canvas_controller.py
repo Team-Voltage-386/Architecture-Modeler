@@ -116,6 +116,7 @@ class CanvasController:
             window._prompt_open_project,
             window._open_recent_model,
             window._prompt_open_sample_model,
+            window._start_guided_tour,
             window,
         )
         window._central_stack = QStackedWidget(window)

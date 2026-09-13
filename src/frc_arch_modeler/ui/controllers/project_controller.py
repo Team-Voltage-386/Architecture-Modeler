@@ -139,6 +139,7 @@ class ProjectController:
         # model health needs re-deriving. It is queued, not computed now, so a burst of
         # edits costs one pass and none of it runs while a canvas is painting.
         window._schedule_model_health_refresh()
+        window._check_guided_tour_progress()
 
     def prompt_new_project(self) -> None:
         name, accepted = QInputDialog.getText(self.window, "New model", "Model name:")
@@ -221,12 +222,13 @@ class ProjectController:
         else:
             event.ignore()
 
-    def ui_preferences(self) -> dict[str, int]:
+    def ui_preferences(self) -> dict[str, object]:
         """Persist bounded presentation values separately from semantic design data."""
         return {
             "windowWidth": self.window.width(),
             "windowHeight": self.window.height(),
             "detailsWidth": self.window.details_dock.width(),
+            **self.window.tour_controller.preferences(),
         }
 
     def restore_ui_preferences(self, preferences: dict[str, object]) -> None:
@@ -242,6 +244,7 @@ class ProjectController:
                 [window.details_dock], [details_width], Qt.Orientation.Horizontal
             )
         window._update_details_presentation()
+        window.tour_controller.restore_preferences(preferences)
 
     def build_status_bar(self) -> None:
         """Reserve the plan's persistent status fields alongside transient action messages."""

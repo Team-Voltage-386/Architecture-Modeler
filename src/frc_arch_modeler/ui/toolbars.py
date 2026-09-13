@@ -323,6 +323,13 @@ def build_toolbar(window: MainWindow) -> None:
         "Expand previously minimized blocks back to full size. Use this to see "
         "full details again.",
     )
+    window.start_tour_action = window.addAction("Take the Tour", window._start_guided_tour)
+    set_action_help(
+        window.start_tour_action,
+        "Start a six-step guided tour of subsystems, devices, commands, triggers "
+        "and behavior diagrams. Use this if you're new to the tool. Creates a new "
+        "model first if none is open.",
+    )
     for action in (
         window.auto_layout_action,
         window.zoom_to_fit_action,
@@ -344,6 +351,7 @@ def set_action_help(action, text: str) -> None:  # type: ignore[no-untyped-def]
 def organize_toolbar(window: MainWindow, toolbar: QToolBar) -> None:
     """Replace a wrapping action strip with compact, named action groups."""
     toolbar.clear()
+    window._toolbar_group_buttons = {}
 
     def add_group(label: str, actions: list) -> QMenu:  # type: ignore[no-untyped-def]
         button = QToolButton(toolbar)
@@ -354,6 +362,7 @@ def organize_toolbar(window: MainWindow, toolbar: QToolBar) -> None:
         menu.addActions(actions)
         button.setMenu(menu)
         toolbar.addWidget(button)
+        window._toolbar_group_buttons[label] = button
         return menu
 
     model_menu = add_group(
@@ -418,7 +427,7 @@ def organize_toolbar(window: MainWindow, toolbar: QToolBar) -> None:
     toolbar.addWidget(window.search_field)
     toolbar.addSeparator()
     toolbar.addAction(window.toggle_health_action)
-    toolbar.addAction(window.toggle_help_action)
+    add_group("Help", [window.start_tour_action, window.toggle_help_action])
 
 
 def build_behavior_toolbar(window: MainWindow) -> None:

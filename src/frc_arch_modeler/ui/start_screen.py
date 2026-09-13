@@ -21,6 +21,7 @@ class StartScreen(QWidget):
         on_open: Callable[[], None],
         on_open_recent: Callable[[], None],
         on_open_sample: Callable[[], None],
+        on_tour: Callable[[], None],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -57,10 +58,14 @@ class StartScreen(QWidget):
             "Open Recent", on_open_recent, "startOpenRecentButton"
         )
         add_button("Open the Sample Robot", on_open_sample, "startOpenSampleButton")
-        self.tour_button = add_button("Take the Tour", lambda: None, "startTourButton")
-        self.tour_button.setEnabled(False)
-        self.tour_button.setToolTip("Coming soon.")
-        self.tour_button.setStatusTip("An interactive tour of the tool. Coming soon.")
+        self.tour_button = add_button("Take the Tour", on_tour, "startTourButton")
+        self.tour_button.setToolTip(
+            "A six-step guided tour of subsystems, devices, commands, triggers and "
+            "behavior diagrams."
+        )
+        self.tour_button.setStatusTip(
+            "Start the guided tour. Creates a new model first if none is open."
+        )
 
     def set_recent_visible(self, visible: bool, label: str | None = None) -> None:
         """Reflect the last-opened model (if any), matching the Model menu's Recent entry."""

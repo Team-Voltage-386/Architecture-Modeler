@@ -1954,7 +1954,7 @@ def test_launching_with_no_project_shows_the_start_screen(qtbot) -> None:
 
     assert window._central_stack.currentWidget() is window.start_screen
     assert not window.start_screen.open_recent_button.isVisibleTo(window.start_screen)
-    assert not window.start_screen.tour_button.isEnabled()
+    assert window.start_screen.tour_button.isEnabled()
 
 
 def test_creating_a_new_model_dismisses_the_start_screen(qtbot) -> None:
@@ -1965,6 +1965,129 @@ def test_creating_a_new_model_dismisses_the_start_screen(qtbot) -> None:
     window.new_project("Competition Robot")
 
     assert window._central_stack.currentWidget() is window.diagram_tabs
+
+
+def test_clicking_take_the_tour_on_the_start_screen_creates_a_model_and_starts_the_tour(
+    qtbot,
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.start_screen.tour_button.click()
+
+    assert window.project is not None
+    assert window._central_stack.currentWidget() is window.diagram_tabs
+    assert window.tour_controller.active
+    assert window.tour_controller.step_index == 0
+
+
+def test_the_guided_tour_advances_through_its_first_three_steps_as_the_model_gains_elements(
+    qtbot,
+) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+
+    window._start_guided_tour()
+    assert window.tour_controller.step_index == 0
+
+    window.add_subsystem("Drive")
+    assert window.tour_controller.step_index == 1
+
+    window.add_device(window.project.subsystems[0].id, "Left motor", "SparkMax", "REAL")
+    assert window.tour_controller.step_index == 2
+
+    window.add_command("Score")
+    assert window.tour_controller.step_index == 2
+
+    blocks = [item for item in window.scene.items() if isinstance(item, ArchitectureBlock)]
+    next(block for block in blocks if block.title.toPlainText() == "Drive").setSelected(True)
+    next(block for block in blocks if block.title.toPlainText() == "Score").setSelected(True)
+    assert window.link_selected_requirement()
+
+    assert window.tour_controller.step_index == 3
+
+
+def test_the_guided_tour_runs_start_to_finish_on_a_new_empty_model(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._start_guided_tour()
+    assert window.project is not None
+    assert window.tour_controller.active
+
+    window.add_subsystem("Drive")
+    window.add_device(window.project.subsystems[0].id, "Left motor", "SparkMax", "REAL")
+    window.add_command("Score")
+    blocks = [item for item in window.scene.items() if isinstance(item, ArchitectureBlock)]
+    next(block for block in blocks if block.title.toPlainText() == "Drive").setSelected(True)
+    next(block for block in blocks if block.title.toPlainText() == "Score").setSelected(True)
+    window.link_selected_requirement()
+    window.add_trigger(window.project.commands[0].id, "Driver A", "onTrue")
+    assert window.tour_controller.step_index == 4
+    assert window.tour_controller.active
+
+    diagram = window.project.behavior_diagrams[0]
+    autonomous = next(state for state in diagram.states if state.name.effective == "Autonomous")
+    test_mode = next(state for state in diagram.states if state.name.effective == "Test")
+    window.add_behavior_transition(autonomous.id, test_mode.id, "Manual override")
+
+    assert window.tour_controller.completed
+    assert not window.tour_controller.active
+
+
+def test_the_guided_tour_survives_a_window_resize(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitUntil(window.isVisible)
+    window._start_guided_tour()
+
+    window.resize(1000, 700)
+    qtbot.waitUntil(lambda: window.tour_controller._overlay.geometry() == window.rect())
+
+    assert window.tour_controller.active
+    assert window.tour_controller.step_index == 0
+    # Avoid the blocking "save changes?" dialog when qtbot closes this shown, dirty
+    # window during test teardown.
+    window.is_dirty = False
+
+
+def test_exiting_and_resuming_the_guided_tour_keeps_its_place(qtbot) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._start_guided_tour()
+    window.add_subsystem("Drive")
+    assert window.tour_controller.step_index == 1
+
+    window._exit_guided_tour()
+    assert not window.tour_controller.active
+
+    window._start_guided_tour()
+    assert window.tour_controller.active
+    assert window.tour_controller.step_index == 1
+
+
+def test_guided_tour_completion_is_remembered_in_layout_json(qtbot, tmp_path) -> None:
+    create_application([])
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.new_project("Competition Robot")
+    window.tour_controller.completed = True
+    window.tour_controller.step_index = 4
+    window.save_project(tmp_path)
+
+    reopened_window = MainWindow()
+    qtbot.addWidget(reopened_window)
+    reopened_window.open_project(tmp_path)
+
+    assert reopened_window.tour_controller.completed
+    assert reopened_window.tour_controller.step_index == 4
 
 
 def test_opening_the_sample_model_dismisses_the_start_screen(qtbot, tmp_path) -> None:
